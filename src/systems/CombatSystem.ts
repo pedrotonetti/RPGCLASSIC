@@ -63,6 +63,10 @@ export const ITEM_COOLDOWN = 3;
 const BUFF_BASE_DURATION = 8;
 const BUFF_DURATION_PER_LEVEL = 0.5;
 const LOOT_DROP_CHANCE = 0.4;
+// Enemies can now approach and gang up on the player in the open world
+// instead of appearing in a controlled, fixed-size battle group, so their
+// per-hit damage is toned down to compensate for that added exposure.
+const ENEMY_DAMAGE_MULT = 0.65;
 
 // --- action-combat depth: telegraphed enemy attacks, a timed block/parry
 // window, and a combo counter that rewards consecutive clean hits ---------
@@ -375,6 +379,7 @@ export class CombatEngine {
     const levelStats = computeSkillLevelStats(activeSkill, 1);
     const kind = activeSkill.kind === 'magical' ? 'magical' : 'physical';
     const roll = resolveAttack(enemy.stats, this.effectiveStats(), levelStats.power, kind);
+    roll.damage = Math.max(1, Math.round(roll.damage * ENEMY_DAMAGE_MULT));
     const actorIndex = this.enemies.indexOf(enemy);
 
     if (roll.missed) {

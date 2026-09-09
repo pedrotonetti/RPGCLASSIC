@@ -49,6 +49,61 @@ export function makeGrainTexture(baseColor: number, variance: number, size = 48)
   return texture;
 }
 
+/**
+ * Ground-cover texture with real macro variation: soft large blotches (clumps
+ * of slightly lighter/darker turf, like uneven real grass) with fine
+ * per-pixel grain layered on top. A single grain-only pass (`makeGrainTexture`)
+ * reads as flat and washed out once it repeats densely across a huge plane
+ * and gets blurred by minification at a grazing camera angle — the blotches
+ * survive that blur because they're much larger than one texel.
+ */
+export function makeGrassTexture(baseColor: number, size = 128): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const [r, g, b] = hexToRgb(baseColor);
+  ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+  ctx.fillRect(0, 0, size, size);
+
+  const patchCount = 18;
+  for (let i = 0; i < patchCount; i++) {
+    const px = pseudoRandom(i * 7.13) * size;
+    const py = pseudoRandom(i * 3.71 + 50) * size;
+    const radius = size * (0.12 + pseudoRandom(i * 5.31) * 0.18);
+    const shade = (pseudoRandom(i * 9.17) - 0.5) * 34;
+    const grad = ctx.createRadialGradient(px, py, 0, px, py, radius);
+    grad.addColorStop(
+      0,
+      `rgba(${clampByte(r + shade)}, ${clampByte(g + shade * 0.85)}, ${clampByte(b + shade * 0.6)}, 0.55)`,
+    );
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const imageData = ctx.getImageData(0, 0, size, size);
+  for (let i = 0; i < imageData.data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 2 * 22;
+    imageData.data[i] = clampByte(imageData.data[i] + n);
+    imageData.data[i + 1] = clampByte(imageData.data[i + 1] + n * 0.85);
+    imageData.data[i + 2] = clampByte(imageData.data[i + 2] + n * 0.6);
+  }
+  ctx.putImageData(imageData, 0, 0);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  // Grazing camera angles are the norm for this game's follow-cam — without
+  // anisotropic filtering the GPU's default mip selection blurs the texture
+  // into a flat wash exactly at those angles. WebGLRenderer clamps this to
+  // whatever the GPU actually supports, so it's safe to just ask for a lot.
+  texture.anisotropy = 8;
+  return texture;
+}
+
 export function buildOverworldMeshes(tiles: TileType[][]): WorldMeshes {
   const mapHeight = tiles.length;
   const mapWidth = tiles[0].length;
@@ -57,8 +112,8 @@ export function buildOverworldMeshes(tiles: TileType[][]): WorldMeshes {
 
   const group = new THREE.Group();
 
-  const grassTex = makeGrainTexture(0x4c8a3f, 26);
-  grassTex.repeat.set(mapWidth * 1.5, mapHeight * 1.5);
+  const grassTex = makeGrassTexture(0x4c8a3f);
+  grassTex.repeat.set(mapWidth * 1.2, mapHeight * 1.2);
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(widthWorld, depthWorld),
     new THREE.MeshStandardMaterial({ color: 0xffffff, map: grassTex, roughness: 0.95 }),
@@ -123,11 +178,17 @@ export function buildOverworldMeshes(tiles: TileType[][]): WorldMeshes {
     const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, treePositions.length);
     trunkInst.castShadow = true;
 
-    // Three overlapping lobes per tree (main crown + two smaller offset puffs)
-    // read as a fuller, rounder canopy than a single sphere.
+    // Three lobes per tree (main crown + two smaller offset puffs), offset
+    // far enough apart to read as distinct clustered canopies — like a real
+    // tree's separate leaf clumps — rather than concentric spheres that
+    // blend into one blob (the offsets used to be much smaller than the
+    // lobes' own radii, so the side puffs sat almost entirely inside the
+    // main one).
     const canopyMat = new THREE.MeshStandardMaterial({ color: 0x2f6b2f, roughness: 0.85, flatShading: true });
-    const canopyGeoMain = new THREE.IcosahedronGeometry(0.55, 1);
-    const canopyGeoSide = new THREE.IcosahedronGeometry(0.4, 1);
+    const canopyGeoMain = new THREE.IcosahedronGeometry(0.5, 1);
+    const canopyGeoSide = new THREE.IcosahedronGeometry(0.42, 1);
+    const CANOPY_SEP_A = 0.56;
+    const CANOPY_SEP_B = 0.5;
     const canopyMain = new THREE.InstancedMesh(canopyGeoMain, canopyMat, treePositions.length);
     const canopySideA = new THREE.InstancedMesh(canopyGeoSide, canopyMat, treePositions.length);
     const canopySideB = new THREE.InstancedMesh(canopyGeoSide, canopyMat, treePositions.length);
@@ -155,7 +216,11 @@ export function buildOverworldMeshes(tiles: TileType[][]): WorldMeshes {
       const sideAngle = angle + Math.PI * 0.6;
       const sideScale = scale * (0.75 + rand2 * 0.15);
       m.compose(
-        new THREE.Vector3(p.x + Math.cos(sideAngle) * 0.28 * scale, 0.92 * scale, p.z + Math.sin(sideAngle) * 0.28 * scale),
+        new THREE.Vector3(
+          p.x + Math.cos(sideAngle) * CANOPY_SEP_A * scale,
+          0.88 * scale,
+          p.z + Math.sin(sideAngle) * CANOPY_SEP_A * scale,
+        ),
         q,
         s.setScalar(sideScale),
       );
@@ -163,7 +228,11 @@ export function buildOverworldMeshes(tiles: TileType[][]): WorldMeshes {
 
       const sideAngle2 = angle - Math.PI * 0.7;
       m.compose(
-        new THREE.Vector3(p.x + Math.cos(sideAngle2) * 0.26 * scale, 0.82 * scale, p.z + Math.sin(sideAngle2) * 0.26 * scale),
+        new THREE.Vector3(
+          p.x + Math.cos(sideAngle2) * CANOPY_SEP_B * scale,
+          0.78 * scale,
+          p.z + Math.sin(sideAngle2) * CANOPY_SEP_B * scale,
+        ),
         q,
         s.setScalar(sideScale * 0.9),
       );
