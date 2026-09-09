@@ -48,6 +48,8 @@ export interface CharacterRig {
   armR: THREE.Group;
   legL: THREE.Group;
   legR: THREE.Group;
+  kneeL: THREE.Group;
+  kneeR: THREE.Group;
 }
 
 export function getRig(character: THREE.Group): CharacterRig {
@@ -82,31 +84,52 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
   const trimMat = mat(appearance.secondaryColor, { roughness: 0.55, metalness: 0.25 });
   const shoeMat = mat(0x2a2016, { roughness: 0.9 });
 
-  // Legs: each is a group pivoted at the hip joint, leg + foot hanging below it.
+  // Legs: hip-pivoted thigh, then a knee-pivoted shin + foot — mirrors the
+  // arm's shoulder->elbow chain, so the walk cycle can actually bend the
+  // knee instead of swinging one rigid capsule from the hip (which read as
+  // a stiff, marching-band gait with no articulation).
   const legRadius = 0.1 * body.limb;
   const legHeight = 0.78;
-  const legGeo = new THREE.CapsuleGeometry(legRadius, legHeight, 6, 12);
+  const thighLength = legHeight * 0.5;
+  const shinLength = legHeight * 0.5;
+  const thighGeo = new THREE.CapsuleGeometry(legRadius, thighLength * 0.82, 6, 12);
+  const shinGeo = new THREE.CapsuleGeometry(legRadius * 0.85, shinLength * 0.8, 6, 12);
+  const kneeCapGeo = new THREE.SphereGeometry(legRadius * 1.05, 8, 8);
   const footGeo = new THREE.BoxGeometry(0.13, 0.09, 0.26);
   const hipWidth = isFem ? 0.16 : 0.13;
   const hipY = legHeight + 0.06;
 
   const legGroups: THREE.Group[] = [];
+  const kneeGroups: THREE.Group[] = [];
   for (const side of [-1, 1] as const) {
     const legGroup = new THREE.Group();
     legGroup.position.set(hipWidth * side, hipY, 0);
 
-    const leg = mesh(legGeo, clothMat);
-    leg.position.set(0, -legHeight / 2, 0);
-    legGroup.add(leg);
+    const thigh = mesh(thighGeo, clothMat);
+    thigh.position.set(0, -thighLength / 2, 0);
+    legGroup.add(thigh);
+
+    const kneeGroup = new THREE.Group();
+    kneeGroup.position.set(0, -thighLength, 0);
+    legGroup.add(kneeGroup);
+
+    const kneeCap = mesh(kneeCapGeo, clothMat);
+    kneeGroup.add(kneeCap);
+
+    const shin = mesh(shinGeo, clothMat);
+    shin.position.set(0, -shinLength / 2, 0);
+    kneeGroup.add(shin);
 
     const foot = mesh(footGeo, shoeMat);
-    foot.position.set(0, 0.045 - hipY, 0.05);
-    legGroup.add(foot);
+    foot.position.set(0, 0.045 - hipY + thighLength, 0.05);
+    kneeGroup.add(foot);
 
     root.add(legGroup);
     legGroups.push(legGroup);
+    kneeGroups.push(kneeGroup);
   }
   const [legL, legR] = legGroups;
+  const [kneeL, kneeR] = kneeGroups;
 
   // Hips + torso (added to upperBody, which sits at the world origin — the
   // whole upper body can be nudged/leaned as one unit for animation).
@@ -195,7 +218,7 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
 
   root.scale.setScalar(appearance.heightScale);
 
-  const rig: CharacterRig = { root, upperBody, head: headGroup, armL, armR, legL, legR };
+  const rig: CharacterRig = { root, upperBody, head: headGroup, armL, armR, legL, legR, kneeL, kneeR };
   root.userData.rig = rig;
   return root;
 }

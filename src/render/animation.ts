@@ -18,6 +18,8 @@ interface Pose {
   armR: number;
   legL: number;
   legR: number;
+  kneeL: number;
+  kneeR: number;
   upperBodyY: number;
   upperBodyRotX: number;
   upperBodyRotZ: number;
@@ -29,6 +31,8 @@ const REST_POSE: Pose = {
   armR: 0,
   legL: 0,
   legR: 0,
+  kneeL: 0,
+  kneeR: 0,
   upperBodyY: 0,
   upperBodyRotX: 0,
   upperBodyRotZ: 0,
@@ -123,14 +127,14 @@ const ACTION_CLIPS: Record<ActionName, ActionClip> = {
     duration: 0.5,
     keyframes: [
       { t: 0, pose: {} },
-      { t: 0.5, pose: { legL: -1.3, legR: -1.3, upperBodyRotX: -0.05 } },
-      { t: 1, pose: { legL: -1.3, legR: -1.3, upperBodyRotX: -0.05 } },
+      { t: 0.5, pose: { legL: -1.3, legR: -1.3, kneeL: 1.4, kneeR: 1.4, upperBodyRotX: -0.05 } },
+      { t: 1, pose: { legL: -1.3, legR: -1.3, kneeL: 1.4, kneeR: 1.4, upperBodyRotX: -0.05 } },
     ],
   },
   dismount: {
     duration: 0.4,
     keyframes: [
-      { t: 0, pose: { legL: -1.3, legR: -1.3, upperBodyRotX: -0.05 } },
+      { t: 0, pose: { legL: -1.3, legR: -1.3, kneeL: 1.4, kneeR: 1.4, upperBodyRotX: -0.05 } },
       { t: 1, pose: REST_POSE },
     ],
   },
@@ -147,6 +151,7 @@ const ACTION_CLIPS: Record<ActionName, ActionClip> = {
 
 const WALK_CYCLE_SPEED = 7.5;
 const WALK_SWING = 0.55;
+const KNEE_BEND = 0.9;
 const WALK_BOB = 0.028;
 const IDLE_BREATH_SPEED = 1.6;
 const IDLE_BREATH_AMOUNT = 0.012;
@@ -196,13 +201,15 @@ export class CharacterAnimator {
         cb?.();
       }
     } else if (this.mounted) {
-      pose = { ...REST_POSE, legL: -1.3, legR: -1.3, upperBodyRotX: -0.05 };
+      pose = { ...REST_POSE, legL: -1.3, legR: -1.3, kneeL: 1.4, kneeR: 1.4, upperBodyRotX: -0.05 };
     } else if (this.moving) {
       const phase = this.time * WALK_CYCLE_SPEED;
       pose = {
         ...REST_POSE,
         legL: Math.sin(phase) * WALK_SWING,
         legR: Math.sin(phase + Math.PI) * WALK_SWING,
+        kneeL: Math.max(0, Math.sin(phase)) * KNEE_BEND,
+        kneeR: Math.max(0, Math.sin(phase + Math.PI)) * KNEE_BEND,
         armL: Math.sin(phase + Math.PI) * WALK_SWING * 0.7,
         armR: Math.sin(phase) * WALK_SWING * 0.7,
         upperBodyY: Math.abs(Math.sin(phase)) * WALK_BOB,
@@ -220,6 +227,8 @@ export class CharacterAnimator {
     this.rig.armR.rotation.x = pose.armR;
     this.rig.legL.rotation.x = pose.legL;
     this.rig.legR.rotation.x = pose.legR;
+    this.rig.kneeL.rotation.x = pose.kneeL;
+    this.rig.kneeR.rotation.x = pose.kneeR;
     this.rig.upperBody.position.y = pose.upperBodyY;
     this.rig.upperBody.rotation.x = pose.upperBodyRotX;
     this.rig.upperBody.rotation.z = pose.upperBodyRotZ;
