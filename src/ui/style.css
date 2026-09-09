@@ -867,6 +867,51 @@ body {
   flex: 1;
 }
 
+/* --- Intro narrativa ---------------------------------------------- */
+.intro-screen {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+.intro-skip {
+  pointer-events: auto;
+  cursor: pointer;
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  font-size: 15px;
+  color: var(--text-dim);
+  z-index: 2;
+}
+.intro-skip:hover {
+  color: var(--accent);
+}
+.intro-panel {
+  pointer-events: auto;
+  cursor: pointer;
+  position: absolute;
+  bottom: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, 88vw);
+  padding: 20px 28px;
+  text-align: center;
+}
+.intro-line {
+  font-size: clamp(18px, 2.6vw, 24px);
+  line-height: 1.45;
+  min-height: 3.6em;
+  transition: opacity 0.35s ease;
+}
+.intro-panel .dialogue-hint {
+  text-align: center;
+  margin-top: 10px;
+}
+.intro-cta {
+  margin: 14px auto 0;
+  width: fit-content;
+}
+
 .loading-text {
   position: absolute;
   inset: 0;

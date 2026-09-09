@@ -5,7 +5,7 @@ import type { Screen } from '../engine/Screen';
 import { buildClassPreview } from '../render/characterModel';
 import { clearSave, hasSave, loadGame } from '../systems/SaveSystem';
 import { el } from '../ui/dom';
-import { CharacterSelectScreen } from './CharacterSelectScreen';
+import { IntroScreen } from './IntroScreen';
 import { OverworldScreen } from './OverworldScreen';
 
 export class MainMenuScreen implements Screen {
@@ -79,7 +79,7 @@ export class MainMenuScreen implements Screen {
               // doing nothing — clear it and let the player start fresh.
               clearSave();
               alert('Não foi possível carregar o jogo salvo (dados corrompidos). Iniciando um novo jogo.');
-              this.game.goTo(new CharacterSelectScreen(this.game));
+              this.game.goTo(new IntroScreen(this.game));
             }
           },
         }),
@@ -90,7 +90,7 @@ export class MainMenuScreen implements Screen {
       el('div', {
         className: 'btn',
         text: 'Novo Jogo',
-        onClick: () => this.game.goTo(new CharacterSelectScreen(this.game)),
+        onClick: () => this.game.goTo(new IntroScreen(this.game)),
       }),
     );
 
