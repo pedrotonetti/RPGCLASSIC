@@ -1,28 +1,22 @@
 import * as THREE from 'three';
-import { getItemById } from '../data/items';
+import { getClassById } from '../config/classes';
+import type { SkillDefinition } from '../config/types';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
-import { getClassById } from '../config/classes';
-import type { Skill } from '../config/types';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
-import { buildClassModel, buildEnemyModel } from '../render/characterModel';
-import { BattleEngine, type LogEntry, type PlayerAction, type RoundResult } from '../systems/CombatSystem';
+import { buildEnemyModel, buildPlayerCharacter } from '../render/characterModel';
+import { CombatEngine, type CombatEvent } from '../systems/CombatSystem';
+import { computeSkillLevelStats } from '../systems/skillMath';
 import { generateOverworldMap } from '../systems/MapGenerator';
+import { notifyEnemyDefeated, notifyLevelChanged } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { el } from '../ui/dom';
 import { OverworldScreen } from './OverworldScreen';
 
-interface MenuEntry {
-  label: string;
-  disabled?: boolean;
-  onSelect: () => void;
-}
-
 interface EnemySlot {
   enemy: Enemy;
   model: THREE.Group;
-  displayName: string;
   anchor: { x: number; y: number };
   labelEl: HTMLElement;
   hpFillEl: HTMLElement;
@@ -30,7 +24,16 @@ interface EnemySlot {
   dead: boolean;
 }
 
-const ENTRY_DELAY = 0.85;
+interface HotbarSlot {
+  skill: SkillDefinition;
+  level: number;
+  totalCooldown: number;
+  cost: number;
+  el: HTMLElement;
+  fillEl: HTMLElement;
+  costEl: HTMLElement;
+}
+
 const FLASH_DURATION = 0.16;
 const PLAYER_POS = new THREE.Vector3(-2.3, 0, 0.6);
 const CAMERA_POS = new THREE.Vector3(0, 2.7, 7.2);
@@ -43,17 +46,17 @@ export class BattleScreen implements Screen {
   private playerModel!: THREE.Group;
   private playerFlashTime = 0;
   private enemySlots: EnemySlot[] = [];
-  private engine!: BattleEngine;
+  private engine!: CombatEngine;
+  private ended = false;
 
   private statusPanel!: HTMLElement;
-  private bottomPanel!: HTMLElement;
+  private hpFillEl!: HTMLElement;
+  private mpFillEl!: HTMLElement;
+  private messageEl!: HTMLElement;
+  private fleeFillEl!: HTMLElement;
+  private hotbar: HotbarSlot[] = [];
 
-  private currentMenu: MenuEntry[] = [];
-  private menuCursor = 0;
   private pendingTargetPick: ((index: number) => void) | null = null;
-  private busy = false;
-
-  private playback: { entries: LogEntry[]; index: number; timer: number; onDone: () => void } | null = null;
 
   private keydownHandler = (e: KeyboardEvent) => this.onKeyDown(e);
 
@@ -92,26 +95,18 @@ export class BattleScreen implements Screen {
     this.camera.position.copy(CAMERA_POS);
     this.camera.lookAt(CAMERA_LOOKAT);
 
-    const classDef = getClassById(this.player.classId);
-    this.playerModel = buildClassModel(this.player.classId, classDef.color);
+    this.playerModel = buildPlayerCharacter(this.player);
     this.playerModel.position.copy(PLAYER_POS);
     this.playerModel.rotation.y = Math.PI * 0.68;
     this.scene.add(this.playerModel);
 
     this.buildEnemies();
-
-    this.engine = new BattleEngine(
-      this.player,
-      this.enemySlots.map((s) => s.enemy),
-    );
+    this.engine = new CombatEngine(this.player, this.enemySlots.map((s) => s.enemy));
 
     this.buildStatusPanel();
-    this.buildBottomPanel();
-    this.refreshPlayerStatus();
+    this.buildHotbar();
 
     window.addEventListener('keydown', this.keydownHandler);
-
-    this.showMainMenu();
   }
 
   unmount(): void {
@@ -127,21 +122,20 @@ export class BattleScreen implements Screen {
   update(dt: number): void {
     if (this.playerFlashTime > 0) {
       this.playerFlashTime = Math.max(0, this.playerFlashTime - dt);
-      const s = 1 + 0.15 * (this.playerFlashTime / FLASH_DURATION);
-      this.playerModel.scale.setScalar(s);
+      this.playerModel.scale.setScalar(1 + 0.15 * (this.playerFlashTime / FLASH_DURATION));
     }
     for (const slot of this.enemySlots) {
       if (slot.flashTime > 0) {
         slot.flashTime = Math.max(0, slot.flashTime - dt);
-        const s = 1 + 0.15 * (slot.flashTime / FLASH_DURATION);
-        slot.model.scale.setScalar(s);
+        slot.model.scale.setScalar(1 + 0.15 * (slot.flashTime / FLASH_DURATION));
       }
     }
 
-    if (this.playback) {
-      this.playback.timer -= dt;
-      if (this.playback.timer <= 0) this.advancePlayback();
-    }
+    if (this.ended) return;
+    const events = this.engine.tick(dt);
+    this.processEvents(events);
+    this.refreshHotbarCooldowns();
+    this.refreshStatusBars();
   }
 
   // --- setup -----------------------------------------------------------
@@ -161,8 +155,9 @@ export class BattleScreen implements Screen {
 
       const model = buildEnemyModel(id, enemy.color);
       const x = (i - (n - 1) / 2) * 1.9;
-      model.position.set(x, 0, -2.2);
+      model.position.set(x, enemy.def.isBoss ? 0.2 : 0, -2.2);
       if (id === 'bat') model.position.y = 1.0;
+      if (enemy.def.isBoss) model.scale.multiplyScalar(1.15);
       model.rotation.y = -Math.PI * 0.35;
       this.scene.add(model);
 
@@ -171,7 +166,7 @@ export class BattleScreen implements Screen {
       const labelEl = el(
         'div',
         {
-          className: 'enemy-label',
+          className: `enemy-label ${enemy.def.isBoss ? 'boss' : ''}`,
           style: { left: `${anchor.x}px`, top: `${anchor.y}px` },
           onClick: () => this.onEnemyPicked(i),
         },
@@ -179,18 +174,13 @@ export class BattleScreen implements Screen {
       );
       this.game.uiRoot.append(labelEl);
 
-      this.enemySlots.push({ enemy, model, displayName, anchor, labelEl, hpFillEl, flashTime: 0, dead: false });
+      this.enemySlots.push({ enemy, model, anchor, labelEl, hpFillEl, flashTime: 0, dead: false });
     });
-
-    this.refreshEnemyBars();
   }
 
   private projectToScreen(pos: THREE.Vector3): { x: number; y: number } {
     const p = pos.clone().project(this.camera);
-    return {
-      x: (p.x * 0.5 + 0.5) * window.innerWidth,
-      y: (-p.y * 0.5 + 0.5) * window.innerHeight,
-    };
+    return { x: (p.x * 0.5 + 0.5) * window.innerWidth, y: (-p.y * 0.5 + 0.5) * window.innerHeight };
   }
 
   private repositionEnemyLabels(): void {
@@ -205,36 +195,68 @@ export class BattleScreen implements Screen {
   }
 
   private buildStatusPanel(): void {
-    this.statusPanel = el('div', { className: 'panel battle-status' });
+    this.hpFillEl = el('div', { className: 'stat-bar-fg hp' });
+    this.mpFillEl = el('div', { className: 'stat-bar-fg mp' });
+    this.statusPanel = el('div', { className: 'panel battle-status' }, [
+      el('div', { className: 'name-line', text: `${this.player.name} Nv.${this.player.level}` }),
+      el('div', { className: 'stat-bar-bg' }, [this.hpFillEl]),
+      el('div', { className: 'stat-bar-bg' }, [this.mpFillEl]),
+    ]);
     this.game.uiRoot.append(this.statusPanel);
+    this.refreshStatusBars();
+
+    this.messageEl = el('div', { className: 'panel battle-message-bar' });
+    this.game.uiRoot.append(this.messageEl);
   }
 
-  private buildBottomPanel(): void {
-    this.bottomPanel = el('div', { className: 'panel battle-bottom' });
-    this.game.uiRoot.append(this.bottomPanel);
+  private buildHotbar(): void {
+    const classDef = getClassById(this.player.classId);
+    const skills = [classDef.basicAttack, ...this.player.unlockedSkills.map((u) => u.skill)];
+
+    const fleeFillEl = el('div', { className: 'cd-fill' });
+    this.fleeFillEl = fleeFillEl;
+    const fleeBtn = el(
+      'div',
+      { className: 'hotbar-slot flee', onClick: () => this.onFleeClicked() },
+      [el('div', { className: 'hotbar-name', text: 'Fugir' }), fleeFillEl],
+    );
+
+    const slotEls: HTMLElement[] = [];
+    skills.forEach((skill, i) => {
+      const isBasic = skill.id === classDef.basicAttack.id;
+      const level = isBasic ? 1 : this.player.skillLevel(skill.id);
+      const stats = computeSkillLevelStats(skill, level);
+      const fillEl = el('div', { className: 'cd-fill' });
+      const costEl = el('div', { className: 'hotbar-cost', text: stats.cost > 0 ? `MP ${stats.cost}` : '' });
+      const keyLabel = i === 0 ? 'Básico' : skill.isUltimate ? 'ULT' : `Nv.${level}`;
+      const slotEl = el(
+        'div',
+        { className: `hotbar-slot ${skill.isUltimate ? 'ultimate' : ''}`, onClick: () => this.onHotbarClicked(skill.id) },
+        [
+          el('div', { className: 'hotbar-name', text: skill.name }),
+          el('div', { className: 'hotbar-level', text: keyLabel }),
+          costEl,
+          fillEl,
+        ],
+      );
+      slotEls.push(slotEl);
+      this.hotbar.push({ skill, level, totalCooldown: stats.cooldown, cost: stats.cost, el: slotEl, fillEl, costEl });
+    });
+
+    const bar = el('div', { className: 'hotbar' }, [...slotEls, fleeBtn]);
+    this.game.uiRoot.append(bar);
   }
 
   private onKeyDown(e: KeyboardEvent): void {
-    if (e.key === 'ArrowUp') this.moveCursor(-1);
-    else if (e.key === 'ArrowDown') this.moveCursor(1);
-    else if (e.key === 'Enter') this.confirmCursor();
-    else if (e.key === 'Escape' && this.pendingTargetPick) {
+    if (e.key === 'Escape' && this.pendingTargetPick) {
       this.pendingTargetPick = null;
-      this.showMainMenu();
+      this.showMessage('Alvo cancelado.');
+      return;
     }
-  }
-
-  private moveCursor(delta: number): void {
-    if (this.busy || this.currentMenu.length === 0) return;
-    const len = this.currentMenu.length;
-    this.menuCursor = (this.menuCursor + delta + len) % len;
-    this.renderMenuList();
-  }
-
-  private confirmCursor(): void {
-    if (this.busy || this.currentMenu.length === 0) return;
-    const entry = this.currentMenu[this.menuCursor];
-    if (!entry.disabled) entry.onSelect();
+    const num = Number(e.key);
+    if (num >= 1 && num <= this.hotbar.length) {
+      this.onHotbarClicked(this.hotbar[num - 1].skill.id);
+    }
   }
 
   private onEnemyPicked(index: number): void {
@@ -245,156 +267,147 @@ export class BattleScreen implements Screen {
     cb(index);
   }
 
-  // --- menu rendering ----------------------------------------------------
-
-  private renderMenuList(): void {
-    this.bottomPanel.replaceChildren();
-    const list = el(
-      'div',
-      { className: 'battle-menu-list' },
-      this.currentMenu.map((entry, i) =>
-        el('div', {
-          className: `battle-menu-item ${entry.disabled ? 'disabled' : ''} ${i === this.menuCursor ? 'active' : ''}`,
-          text: `${i === this.menuCursor ? '▶ ' : '  '}${entry.label}`,
-          onClick: () => {
-            if (entry.disabled) return;
-            this.menuCursor = i;
-            entry.onSelect();
-          },
-        }),
-      ),
-    );
-    this.bottomPanel.append(list);
-  }
-
-  private showMessage(text: string): void {
-    this.bottomPanel.replaceChildren(el('div', { className: 'battle-message', text }));
-  }
-
-  // --- top-level menus -----------------------------------------------
-
-  private showMainMenu(): void {
-    this.busy = false;
-    this.pendingTargetPick = null;
-    this.menuCursor = 0;
-    this.currentMenu = [
-      { label: 'Atacar', onSelect: () => this.chooseAttack() },
-      { label: 'Habilidade', onSelect: () => this.showSkillMenu() },
-      { label: 'Item', onSelect: () => this.showItemMenu() },
-      { label: 'Fugir', onSelect: () => this.performAction({ type: 'run' }) },
-    ];
-    this.renderMenuList();
-  }
-
   private aliveEnemyIndexes(): number[] {
     return this.enemySlots.map((_, i) => i).filter((i) => !this.enemySlots[i].dead);
   }
 
-  private chooseAttack(): void {
-    const alive = this.aliveEnemyIndexes();
-    if (alive.length === 1) {
-      this.performAction({ type: 'attack', targetIndex: alive[0] });
+  private onHotbarClicked(skillId: string): void {
+    if (this.ended) return;
+    const skill = this.hotbar.find((h) => h.skill.id === skillId)?.skill;
+    if (!skill) return;
+
+    if (skill.target === 'enemy') {
+      const alive = this.aliveEnemyIndexes();
+      if (alive.length === 0) return;
+      if (alive.length === 1) {
+        this.tryUseSkill(skillId, alive[0]);
+        return;
+      }
+      this.showMessage(`Escolha o alvo de ${skill.name} (clique em um inimigo)...`);
+      this.pendingTargetPick = (index) => this.tryUseSkill(skillId, index);
       return;
     }
-    this.enterTargetSelection('Escolha o alvo do ataque (clique em um inimigo)...', (index) =>
-      this.performAction({ type: 'attack', targetIndex: index }),
-    );
+
+    this.tryUseSkill(skillId);
   }
 
-  private showSkillMenu(): void {
-    this.menuCursor = 0;
-    this.currentMenu = [
-      ...this.player.availableSkills.map((s) => ({
-        label: `${s.name} (MP ${s.mpCost})`,
-        disabled: this.player.currentMp < s.mpCost,
-        onSelect: () => this.chooseSkill(s),
-      })),
-      { label: 'Voltar', onSelect: () => this.showMainMenu() },
-    ];
-    this.renderMenuList();
-  }
-
-  private chooseSkill(skill: Skill): void {
-    if (skill.target === 'self' || skill.target === 'allEnemies') {
-      this.performAction({ type: 'skill', skillId: skill.id });
+  private tryUseSkill(skillId: string, targetIndex?: number): void {
+    const result = this.engine.useSkill(skillId, targetIndex);
+    if (!result.ok) {
+      if (result.reason === 'cooldown') this.showMessage('Habilidade ainda em recarga...');
+      else if (result.reason === 'mana') this.showMessage('Mana insuficiente!');
       return;
     }
-    const alive = this.aliveEnemyIndexes();
-    if (alive.length === 1) {
-      this.performAction({ type: 'skill', skillId: skill.id, targetIndex: alive[0] });
+    this.processEvents(result.events);
+    this.refreshHotbarCooldowns();
+    this.refreshStatusBars();
+  }
+
+  private onFleeClicked(): void {
+    if (this.ended) return;
+    const result = this.engine.attemptFlee();
+    if (!result.ok) {
+      this.showMessage('Aguarde para tentar fugir novamente...');
       return;
     }
-    this.enterTargetSelection(`Escolha o alvo de ${skill.name} (clique em um inimigo)...`, (index) =>
-      this.performAction({ type: 'skill', skillId: skill.id, targetIndex: index }),
-    );
+    this.processEvents(result.events);
   }
 
-  private showItemMenu(): void {
-    this.menuCursor = 0;
-    const entries: MenuEntry[] = Object.entries(this.player.inventory)
-      .filter(([, qty]) => qty > 0)
-      .map(([itemId, qty]) => {
-        const item = getItemById(itemId);
-        return { label: `${item.name} x${qty}`, onSelect: () => this.performAction({ type: 'item', itemId }) };
-      });
-    if (entries.length === 0) entries.push({ label: '(sem itens)', disabled: true, onSelect: () => {} });
-    entries.push({ label: 'Voltar', onSelect: () => this.showMainMenu() });
-    this.currentMenu = entries;
-    this.renderMenuList();
+  // --- event processing --------------------------------------------------
+
+  private showMessage(text: string): void {
+    this.messageEl.textContent = text;
   }
 
-  private enterTargetSelection(message: string, onPick: (index: number) => void): void {
-    this.currentMenu = [];
-    this.showMessage(message);
-    this.pendingTargetPick = onPick;
+  private processEvents(events: CombatEvent[]): void {
+    for (const event of events) {
+      if (event.text) this.showMessage(event.text);
+
+      if (event.actorIndex !== undefined) this.triggerFlash(event.actorIndex);
+
+      if (event.targetIndex !== undefined) {
+        if (event.targetHpAfter !== undefined) this.setEnemyHp(event.targetIndex, event.targetHpAfter);
+        this.triggerFlash(event.targetIndex);
+        this.popupForEvent(event, this.enemySlots[event.targetIndex].anchor);
+        if (event.kind === 'defeated') this.killEnemy(event.targetIndex);
+      } else if (event.targetIsPlayer) {
+        this.playerFlashTime = FLASH_DURATION;
+        const anchor = this.projectToScreen(
+          new THREE.Vector3(this.playerModel.position.x, this.playerModel.position.y + 1.5, this.playerModel.position.z),
+        );
+        this.popupForEvent(event, anchor);
+      }
+
+      if (event.kind === 'victory') {
+        this.ended = true;
+        const questMsg = this.processQuestUpdates();
+        if (questMsg) this.showMessage(questMsg);
+        saveGame(this.player);
+        setTimeout(() => this.game.goTo(new OverworldScreen(this.game, this.player)), questMsg ? 1900 : 1400);
+      } else if (event.kind === 'fled') {
+        this.ended = true;
+        saveGame(this.player);
+        setTimeout(() => this.game.goTo(new OverworldScreen(this.game, this.player)), 1400);
+      } else if (event.kind === 'defeat') {
+        this.ended = true;
+        this.handleDefeat();
+      }
+    }
   }
 
-  // --- action resolution ------------------------------------------------
-
-  private performAction(action: PlayerAction): void {
-    this.busy = true;
-    this.pendingTargetPick = null;
-    this.currentMenu = [];
-    this.showMessage('...');
-
-    const result = this.engine.resolveRound(action);
-    this.playback = { entries: result.entries, index: -1, timer: 0, onDone: () => this.onRoundResolved(result) };
-    this.advancePlayback();
+  private processQuestUpdates(): string | null {
+    let lastMessage: string | null = null;
+    for (const enemyId of this.enemyIds) {
+      const msg = notifyEnemyDefeated(this.player, enemyId);
+      if (msg) lastMessage = msg;
+    }
+    const levelMsg = notifyLevelChanged(this.player);
+    if (levelMsg) lastMessage = levelMsg;
+    return lastMessage;
   }
 
-  private advancePlayback(): void {
-    if (!this.playback) return;
-    this.playback.index += 1;
-    if (this.playback.index >= this.playback.entries.length) {
-      const done = this.playback.onDone;
-      this.playback = null;
-      done();
+  private handleDefeat(): void {
+    const { playerStart } = generateOverworldMap();
+    this.player.mapX = playerStart.x;
+    this.player.mapY = playerStart.y;
+    this.player.currentHp = Math.max(1, Math.floor(this.player.stats.maxHp * 0.5));
+    this.player.currentMp = this.player.stats.maxMp;
+    this.player.gold = Math.floor(this.player.gold * 0.5);
+    saveGame(this.player);
+    setTimeout(() => {
+      this.showMessage('Você foi levado de volta à vila para se recuperar...');
+    }, 50);
+    setTimeout(() => this.game.goTo(new OverworldScreen(this.game, this.player)), 1900);
+  }
+
+  private popupForEvent(event: CombatEvent, anchor: { x: number; y: number }): void {
+    let text = '';
+    let color = '#ffffff';
+    if (event.kind === 'miss') {
+      text = 'Errou!';
+      color = '#cccccc';
+    } else if (event.kind === 'damage' && event.amount) {
+      text = `-${event.amount}`;
+      color = event.crit ? '#ffcf4e' : '#ffffff';
+    } else if (event.kind === 'heal' && event.amount) {
+      text = `+${event.amount}`;
+      color = '#6bff8e';
+    } else {
       return;
     }
-    const entry = this.playback.entries[this.playback.index];
-    this.showEntry(entry);
-    this.playback.timer = ENTRY_DELAY;
-  }
 
-  private showEntry(entry: LogEntry): void {
-    this.showMessage(entry.text);
-
-    if (entry.actorIndex !== undefined) this.triggerFlash(entry.actorIndex);
-
-    if (entry.targetIndex !== undefined) {
-      const slot = this.enemySlots[entry.targetIndex];
-      if (entry.targetHpAfter !== undefined) this.setEnemyHp(entry.targetIndex, entry.targetHpAfter);
-      this.triggerFlash(entry.targetIndex);
-      this.popupAt(slot.anchor, entry);
-      if (entry.defeated) this.killEnemy(entry.targetIndex);
-    } else if (entry.targetName === this.player.name) {
-      this.playerFlashTime = FLASH_DURATION;
-      this.refreshPlayerStatus();
-      const anchor = this.projectToScreen(
-        new THREE.Vector3(this.playerModel.position.x, this.playerModel.position.y + 1.5, this.playerModel.position.z),
-      );
-      this.popupAt(anchor, entry);
-    }
+    const jitterX = (Math.random() - 0.5) * 20;
+    const popup = el('div', {
+      className: 'floating-text',
+      text,
+      style: { left: `${anchor.x + jitterX}px`, top: `${anchor.y}px`, color, opacity: '1' },
+    });
+    this.game.uiRoot.append(popup);
+    requestAnimationFrame(() => {
+      popup.style.transform = 'translate(-50%, calc(-50% - 30px))';
+      popup.style.opacity = '0';
+    });
+    setTimeout(() => popup.remove(), 750);
   }
 
   private triggerFlash(enemyIndex: number): void {
@@ -415,70 +428,22 @@ export class BattleScreen implements Screen {
     slot.labelEl.classList.add('defeated');
   }
 
-  private refreshEnemyBars(): void {
-    this.enemySlots.forEach((slot, i) => this.setEnemyHp(i, slot.enemy.currentHp));
-  }
-
-  private refreshPlayerStatus(): void {
+  private refreshStatusBars(): void {
     const stats = this.player.stats;
-    this.statusPanel.replaceChildren(
-      el('div', { text: `${this.player.name} Nv.${this.player.level}` }),
-      el('div', { text: `HP ${this.player.currentHp}/${stats.maxHp}   MP ${this.player.currentMp}/${stats.maxMp}` }),
-    );
+    this.hpFillEl.style.width = `${Math.max(0, (this.player.currentHp / stats.maxHp) * 100)}%`;
+    this.mpFillEl.style.width = `${Math.max(0, (this.player.currentMp / stats.maxMp) * 100)}%`;
   }
 
-  private popupAt(anchor: { x: number; y: number }, entry: LogEntry): void {
-    let text = '';
-    let color = '#ffffff';
-    if (entry.missed) {
-      text = 'Errou!';
-      color = '#cccccc';
-    } else if (entry.damage) {
-      text = `-${entry.damage}`;
-      color = entry.crit ? '#ffcf4e' : '#ffffff';
-    } else if (entry.healed) {
-      text = `+${entry.healed}`;
-      color = '#6bff8e';
-    } else {
-      return;
+  private refreshHotbarCooldowns(): void {
+    for (const slot of this.hotbar) {
+      const remaining = this.engine.cooldownRemaining(slot.skill.id);
+      const fraction = slot.totalCooldown > 0 ? Math.min(1, remaining / slot.totalCooldown) : 0;
+      slot.fillEl.style.height = `${fraction * 100}%`;
+      slot.el.classList.toggle('on-cooldown', remaining > 0.05);
+      slot.el.classList.toggle('no-mana', this.player.currentMp < slot.cost && remaining <= 0.05);
     }
-
-    const popup = el('div', {
-      className: 'floating-text',
-      text,
-      style: { left: `${anchor.x}px`, top: `${anchor.y}px`, color, opacity: '1' },
-    });
-    this.game.uiRoot.append(popup);
-    requestAnimationFrame(() => {
-      popup.style.transform = 'translate(-50%, calc(-50% - 30px))';
-      popup.style.opacity = '0';
-    });
-    setTimeout(() => popup.remove(), 750);
-  }
-
-  // --- round outcome -----------------------------------------------------
-
-  private onRoundResolved(result: RoundResult): void {
-    saveGame(this.player);
-
-    if (result.outcome === 'ongoing') {
-      this.showMainMenu();
-      return;
-    }
-
-    if (result.outcome === 'victory' || result.outcome === 'fled') {
-      setTimeout(() => this.game.goTo(new OverworldScreen(this.game, this.player)), 1200);
-      return;
-    }
-
-    const { playerStart } = generateOverworldMap();
-    this.player.mapX = playerStart.x;
-    this.player.mapY = playerStart.y;
-    this.player.currentHp = Math.max(1, Math.floor(this.player.stats.maxHp * 0.5));
-    this.player.currentMp = this.player.stats.maxMp;
-    this.player.gold = Math.floor(this.player.gold * 0.5);
-    saveGame(this.player);
-    this.showMessage('Você foi levado de volta à vila para se recuperar...');
-    setTimeout(() => this.game.goTo(new OverworldScreen(this.game, this.player)), 1800);
+    const fleeRemaining = this.engine.fleeCooldownRemaining();
+    this.fleeFillEl.style.height = `${Math.min(1, fleeRemaining / 4) * 100}%`;
   }
 }
+

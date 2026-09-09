@@ -1,55 +1,46 @@
-import type { Skill, Stats } from '../config/types';
+import { generateLoot } from '../data/equipment';
+import type { EquipmentInstance, SkillDefinition, Stats } from '../config/types';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
+import { computeSkillLevelStats } from './skillMath';
 
-export type BattleActionType = 'attack' | 'skill' | 'item' | 'run';
+export type CombatOutcome = 'ongoing' | 'victory' | 'defeat' | 'fled';
 
-export interface PlayerAction {
-  type: BattleActionType;
-  skillId?: string;
-  itemId?: string;
-  /** Index into the engine's enemies array, for single-target actions. */
-  targetIndex?: number;
-}
-
-export interface LogEntry {
-  actorName: string;
+export interface CombatEvent {
+  kind: 'damage' | 'heal' | 'miss' | 'buff' | 'defeated' | 'victory' | 'defeat' | 'fled' | 'info';
   text: string;
-  targetName?: string;
-  /** Index into the engine's enemies array, set when the actor is an enemy. */
+  actorIsPlayer: boolean;
   actorIndex?: number;
-  /** Index into the engine's enemies array, set when the target is an enemy. */
+  targetIsPlayer?: boolean;
   targetIndex?: number;
-  damage?: number;
-  healed?: number;
+  amount?: number;
   crit?: boolean;
-  missed?: boolean;
-  defeated?: boolean;
-  /** HP of the target immediately after this entry resolves, for animating HP bars in order. */
   targetHpAfter?: number;
-}
-
-export type BattleOutcome = 'ongoing' | 'victory' | 'defeat' | 'fled';
-
-export interface RoundResult {
-  entries: LogEntry[];
-  outcome: BattleOutcome;
-  levelsGained?: number;
+  loot?: EquipmentInstance[];
   xpGained?: number;
   goldGained?: number;
+  levelsGained?: number;
 }
 
-interface AttackResult {
+export type UseSkillResult =
+  | { ok: true; events: CombatEvent[] }
+  | { ok: false; reason: 'cooldown' | 'mana' | 'dead' | 'unknown' };
+
+interface ActiveBuff {
+  stat: keyof Stats;
+  mult: number;
+  expiresAt: number;
+}
+
+interface AttackRoll {
   damage: number;
   crit: boolean;
   missed: boolean;
 }
 
-function resolveAttack(atk: Stats, def: Stats, power: number, kind: 'physical' | 'magical'): AttackResult {
+function resolveAttack(atk: Stats, def: Stats, power: number, kind: 'physical' | 'magical'): AttackRoll {
   const missChance = Math.min(0.25, Math.max(0.02, 0.05 + (def.luck - atk.luck) * 0.01));
-  if (Math.random() < missChance) {
-    return { damage: 0, crit: false, missed: true };
-  }
+  if (Math.random() < missChance) return { damage: 0, crit: false, missed: true };
   const atkStat = kind === 'physical' ? atk.attack : atk.magicAttack;
   const defStat = kind === 'physical' ? def.defense : def.magicDefense;
   const critChance = Math.min(0.5, Math.max(0.05, 0.05 + atk.luck * 0.015));
@@ -64,13 +55,23 @@ function resolveHeal(atk: Stats, power: number): number {
   return Math.round((atk.magicAttack + atk.attack * 0.3) * power) + 5;
 }
 
-interface RoundActor {
-  speed: number;
-  jitter: number;
-  act: () => void;
-}
+const FLEE_KEY = '__flee';
+const FLEE_COOLDOWN = 4;
+const BUFF_BASE_DURATION = 8;
+const BUFF_DURATION_PER_LEVEL = 0.5;
+const LOOT_DROP_CHANCE = 0.4;
 
-export class BattleEngine {
+/**
+ * Real-time action-combat engine: skills are triggered on demand (subject to
+ * their own cooldown/mana), enemies act autonomously on their own timers,
+ * and `tick()` advances everything by one frame. There is no turn queue.
+ */
+export class CombatEngine {
+  outcome: CombatOutcome = 'ongoing';
+  clock = 0;
+  private cooldowns: Record<string, number> = {};
+  private buffs: ActiveBuff[] = [];
+
   constructor(
     public player: Player,
     public enemies: Enemy[],
@@ -80,193 +81,211 @@ export class BattleEngine {
     return this.enemies.filter((e) => e.isAlive());
   }
 
-  private chooseEnemyAction(enemy: Enemy): { skill?: Skill } {
-    const usable = enemy.skills.filter((s) => enemy.currentMp >= s.mpCost);
-    if (usable.length > 0 && Math.random() < 0.5) {
-      const skill = usable[Math.floor(Math.random() * usable.length)];
-      enemy.currentMp -= skill.mpCost;
-      return { skill };
-    }
-    return {};
+  cooldownRemaining(skillId: string): number {
+    return Math.max(0, this.cooldowns[skillId] ?? 0);
   }
 
-  resolveRound(action: PlayerAction): RoundResult {
-    const entries: LogEntry[] = [];
-
-    if (action.type === 'run') {
-      const alive = this.aliveEnemies();
-      const avgSpeed = alive.reduce((s, e) => s + e.stats.speed, 0) / Math.max(1, alive.length);
-      const fleeChance = Math.min(0.9, Math.max(0.1, 0.5 + (this.player.stats.speed - avgSpeed) * 0.02));
-      if (Math.random() < fleeChance) {
-        entries.push({ actorName: this.player.name, text: 'Você fugiu da batalha!' });
-        return { entries, outcome: 'fled' };
-      }
-      entries.push({ actorName: this.player.name, text: 'Você tentou fugir, mas não conseguiu!' });
-    }
-
-    const actors: RoundActor[] = [];
-
-    // A failed flee attempt still forfeits the player's action this round.
-    if (action.type !== 'run') {
-      actors.push({
-        speed: this.player.stats.speed,
-        jitter: Math.random(),
-        act: () => this.executePlayerAction(action, entries),
-      });
-    }
-
-    for (const enemy of this.aliveEnemies()) {
-      const chosen = this.chooseEnemyAction(enemy);
-      actors.push({
-        speed: enemy.stats.speed,
-        jitter: Math.random(),
-        act: () => this.executeEnemyAction(enemy, chosen.skill, entries),
-      });
-    }
-
-    actors.sort((a, b) => b.speed - a.speed || b.jitter - a.jitter);
-
-    for (const actor of actors) {
-      if (!this.player.isAlive()) break;
-      actor.act();
-      if (!this.player.isAlive()) break;
-      if (this.aliveEnemies().length === 0) break;
-    }
-
-    if (!this.player.isAlive()) {
-      entries.push({ actorName: this.player.name, text: 'Você foi derrotado...' });
-      return { entries, outcome: 'defeat' };
-    }
-
-    if (this.aliveEnemies().length === 0 && this.enemies.length > 0) {
-      const xpGained = this.enemies.reduce((s, e) => s + e.def.xpReward, 0);
-      const goldGained = this.enemies.reduce((s, e) => s + e.def.goldReward, 0);
-      const levelsGained = this.player.gainXp(xpGained);
-      this.player.gold += goldGained;
-      entries.push({
-        actorName: this.player.name,
-        text: `Vitória! Ganhou ${xpGained} XP e ${goldGained} moedas de ouro.`,
-      });
-      if (levelsGained > 0) {
-        entries.push({
-          actorName: this.player.name,
-          text: `${this.player.name} subiu para o nível ${this.player.level}!`,
-        });
-      }
-      return { entries, outcome: 'victory', levelsGained, xpGained, goldGained };
-    }
-
-    return { entries, outcome: 'ongoing' };
+  cooldownFraction(skillId: string, totalCooldown: number): number {
+    if (totalCooldown <= 0) return 0;
+    return Math.min(1, this.cooldownRemaining(skillId) / totalCooldown);
   }
 
-  private executePlayerAction(action: PlayerAction, entries: LogEntry[]): void {
-    if (action.type === 'attack') {
-      const index = action.targetIndex ?? 0;
-      const enemy = this.enemies[index];
-      if (!enemy || !enemy.isAlive()) return;
-      const result = resolveAttack(this.player.stats, enemy.stats, 1, 'physical');
-      this.applyAttackResult(this.player.name, enemy.name, result, entries, undefined, index);
-      if (!result.missed) {
-        const dealt = enemy.takeDamage(result.damage);
-        entries[entries.length - 1].damage = dealt;
-        if (!enemy.isAlive()) entries[entries.length - 1].defeated = true;
-      }
-      entries[entries.length - 1].targetHpAfter = enemy.currentHp;
-      return;
+  fleeCooldownRemaining(): number {
+    return this.cooldownRemaining(FLEE_KEY);
+  }
+
+  /** Player's stats with active buffs applied on top. */
+  effectiveStats(): Stats {
+    const stats = { ...this.player.stats };
+    for (const buff of this.buffs) {
+      stats[buff.stat] = Math.round(stats[buff.stat] * buff.mult);
     }
+    return stats;
+  }
 
-    if (action.type === 'skill' && action.skillId) {
-      const skill = this.player.availableSkills.find((s) => s.id === action.skillId);
-      if (!skill || !this.player.spendMp(skill.mpCost)) return;
+  private findSkill(skillId: string): SkillDefinition | null {
+    if (skillId === this.player.classDef.basicAttack.id) return this.player.classDef.basicAttack;
+    return this.player.classDef.skills.find((s) => s.id === skillId) ?? null;
+  }
 
-      if (skill.kind === 'heal') {
-        const healed = this.player.heal(resolveHeal(this.player.stats, skill.power));
-        entries.push({
-          actorName: this.player.name,
-          text: `${this.player.name} usou ${skill.name} e recuperou vida.`,
-          targetName: this.player.name,
-          healed,
-          targetHpAfter: this.player.currentHp,
-        });
-        return;
-      }
+  useSkill(skillId: string, targetIndex?: number): UseSkillResult {
+    if (this.outcome !== 'ongoing') return { ok: false, reason: 'dead' };
+    const skill = this.findSkill(skillId);
+    if (!skill) return { ok: false, reason: 'unknown' };
+    if (this.cooldownRemaining(skillId) > 0) return { ok: false, reason: 'cooldown' };
 
-      const targetIndexes =
-        skill.target === 'allEnemies'
-          ? this.enemies.map((_, i) => i).filter((i) => this.enemies[i].isAlive())
-          : [action.targetIndex ?? 0];
+    const isBasic = skillId === this.player.classDef.basicAttack.id;
+    const level = isBasic ? 1 : this.player.skillLevel(skillId);
+    const levelStats = computeSkillLevelStats(skill, level);
+    if (this.player.currentMp < levelStats.cost) return { ok: false, reason: 'mana' };
 
-      for (const index of targetIndexes) {
-        const enemy = this.enemies[index];
-        if (!enemy || !enemy.isAlive()) continue;
-        const result = resolveAttack(this.player.stats, enemy.stats, skill.power, skill.kind === 'magical' ? 'magical' : 'physical');
-        this.applyAttackResult(this.player.name, enemy.name, result, entries, skill.name, index);
-        if (!result.missed) {
-          const dealt = enemy.takeDamage(result.damage);
-          entries[entries.length - 1].damage = dealt;
-          if (!enemy.isAlive()) entries[entries.length - 1].defeated = true;
-        }
-        entries[entries.length - 1].targetHpAfter = enemy.currentHp;
-      }
-      return;
-    }
+    this.player.spendMp(levelStats.cost);
+    this.cooldowns[skillId] = levelStats.cooldown;
 
-    if (action.type === 'item' && action.itemId) {
-      const result = this.player.useItem(action.itemId);
-      if (!result) return;
-      entries.push({
-        actorName: this.player.name,
-        text: `${this.player.name} usou um item.`,
-        targetName: this.player.name,
-        healed: result.hpRestored,
+    const events: CombatEvent[] = [];
+    const atkStats = this.effectiveStats();
+
+    if (skill.kind === 'heal') {
+      const healed = this.player.heal(resolveHeal(atkStats, levelStats.power));
+      events.push({
+        kind: 'heal',
+        text: `Você usou ${skill.name} e recuperou vida.`,
+        actorIsPlayer: true,
+        targetIsPlayer: true,
+        amount: healed,
         targetHpAfter: this.player.currentHp,
       });
+    } else if (skill.kind === 'buff') {
+      const stat = skill.buffStat ?? 'attack';
+      const mult = 1 + levelStats.power * 0.18;
+      const duration = BUFF_BASE_DURATION + level * BUFF_DURATION_PER_LEVEL;
+      this.buffs.push({ stat, mult, expiresAt: this.clock + duration });
+      events.push({ kind: 'buff', text: `Você usou ${skill.name}!`, actorIsPlayer: true });
+    } else {
+      const kind = skill.kind === 'magical' ? 'magical' : 'physical';
+      const targets =
+        skill.target === 'allEnemies' ? this.aliveEnemies() : [this.enemies[targetIndex ?? 0]].filter(Boolean);
+
+      for (const enemy of targets) {
+        if (!enemy.isAlive()) continue;
+        const index = this.enemies.indexOf(enemy);
+        const roll = resolveAttack(atkStats, enemy.stats, levelStats.power, kind);
+        if (roll.missed) {
+          events.push({ kind: 'miss', text: `Você errou ${enemy.name}.`, actorIsPlayer: true, targetIndex: index });
+          continue;
+        }
+        const dealt = enemy.takeDamage(roll.damage);
+        events.push({
+          kind: 'damage',
+          text: `Você usou ${skill.name} em ${enemy.name}${roll.crit ? ' (Crítico!)' : ''}`,
+          actorIsPlayer: true,
+          targetIndex: index,
+          amount: dealt,
+          crit: roll.crit,
+          targetHpAfter: enemy.currentHp,
+        });
+        if (!enemy.isAlive()) {
+          events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
+        }
+      }
     }
+
+    this.checkVictory(events);
+    return { ok: true, events };
   }
 
-  private executeEnemyAction(enemy: Enemy, skill: Skill | undefined, entries: LogEntry[]): void {
-    if (!enemy.isAlive()) return;
+  attemptFlee(): UseSkillResult {
+    if (this.outcome !== 'ongoing') return { ok: false, reason: 'dead' };
+    if (this.fleeCooldownRemaining() > 0) return { ok: false, reason: 'cooldown' };
+    this.cooldowns[FLEE_KEY] = FLEE_COOLDOWN;
+
+    const alive = this.aliveEnemies();
+    const avgSpeed = alive.reduce((s, e) => s + e.stats.speed, 0) / Math.max(1, alive.length);
+    const chance = Math.min(0.9, Math.max(0.1, 0.5 + (this.player.stats.speed - avgSpeed) * 0.02));
+    if (Math.random() < chance) {
+      this.outcome = 'fled';
+      return { ok: true, events: [{ kind: 'fled', text: 'Você fugiu da batalha!', actorIsPlayer: true }] };
+    }
+    return { ok: true, events: [{ kind: 'info', text: 'Você tentou fugir, mas não conseguiu!', actorIsPlayer: true }] };
+  }
+
+  /** Advances the battle by `dt` seconds: cooldowns, mana regen, buffs, enemy AI. */
+  tick(dt: number): CombatEvent[] {
+    if (this.outcome !== 'ongoing') return [];
+    this.clock += dt;
+
+    for (const key of Object.keys(this.cooldowns)) {
+      this.cooldowns[key] = Math.max(0, this.cooldowns[key] - dt);
+    }
+    this.buffs = this.buffs.filter((b) => b.expiresAt > this.clock);
+    this.player.regenMp(dt);
+
+    const events: CombatEvent[] = [];
+    for (const enemy of this.aliveEnemies()) {
+      enemy.actionTimer -= dt;
+      if (enemy.actionTimer > 0) continue;
+      enemy.actionTimer = enemy.def.actionInterval * (0.85 + Math.random() * 0.3);
+      this.runEnemyAction(enemy, events);
+      if (this.outcome !== 'ongoing') break;
+    }
+
+    if (this.outcome === 'ongoing') this.checkVictory(events);
+    return events;
+  }
+
+  private runEnemyAction(enemy: Enemy, events: CombatEvent[]): void {
+    const usable = enemy.skills.filter((s) => enemy.currentMp >= computeSkillLevelStats(s, 1).cost);
+    const skill = usable.length > 0 && Math.random() < 0.55 ? usable[Math.floor(Math.random() * usable.length)] : null;
+    const activeSkill = skill ?? BASIC_ENEMY_ATTACK;
+    const levelStats = computeSkillLevelStats(activeSkill, 1);
+    if (skill) enemy.currentMp -= levelStats.cost;
+
+    const kind = activeSkill.kind === 'magical' ? 'magical' : 'physical';
+    const roll = resolveAttack(enemy.stats, this.effectiveStats(), levelStats.power, kind);
     const actorIndex = this.enemies.indexOf(enemy);
-    const power = skill?.power ?? 1;
-    const kind = skill ? (skill.kind === 'magical' ? 'magical' : 'physical') : 'physical';
-    const result = resolveAttack(enemy.stats, this.player.stats, power, kind);
-    this.applyAttackResult(enemy.name, this.player.name, result, entries, skill?.name, undefined, actorIndex);
-    if (!result.missed) {
-      const dealt = this.player.takeDamage(result.damage);
-      entries[entries.length - 1].damage = dealt;
-    }
-    entries[entries.length - 1].targetHpAfter = this.player.currentHp;
-  }
 
-  private applyAttackResult(
-    actorName: string,
-    targetName: string,
-    result: AttackResult,
-    entries: LogEntry[],
-    skillName?: string,
-    targetIndex?: number,
-    actorIndex?: number,
-  ): void {
-    const verb = skillName ? `usou ${skillName} em` : 'atacou';
-    if (result.missed) {
-      entries.push({
-        actorName,
-        targetName,
-        text: `${actorName} ${verb} ${targetName}, mas errou!`,
-        missed: true,
-        targetIndex,
-        actorIndex,
-      });
+    if (roll.missed) {
+      events.push({ kind: 'miss', text: `${enemy.name} errou o ataque.`, actorIsPlayer: false, actorIndex, targetIsPlayer: true });
       return;
     }
-    const critText = result.crit ? ' (Crítico!)' : '';
-    entries.push({
-      actorName,
-      targetName,
-      text: `${actorName} ${verb} ${targetName}${critText}`,
-      crit: result.crit,
-      targetIndex,
+    const dealt = this.player.takeDamage(roll.damage);
+    events.push({
+      kind: 'damage',
+      text: `${enemy.name} usou ${skill?.name ?? 'um ataque'} em você${roll.crit ? ' (Crítico!)' : ''}`,
+      actorIsPlayer: false,
       actorIndex,
+      targetIsPlayer: true,
+      amount: dealt,
+      crit: roll.crit,
+      targetHpAfter: this.player.currentHp,
+    });
+
+    if (!this.player.isAlive()) {
+      this.outcome = 'defeat';
+      events.push({ kind: 'defeat', text: 'Você foi derrotado...', actorIsPlayer: false });
+    }
+  }
+
+  private checkVictory(events: CombatEvent[]): void {
+    if (this.enemies.length === 0 || this.aliveEnemies().length > 0) return;
+    const xpGained = this.enemies.reduce((s, e) => s + e.def.xpReward, 0);
+    const goldGained = this.enemies.reduce((s, e) => s + e.def.goldReward, 0);
+    const loot: EquipmentInstance[] = [];
+    for (let i = 0; i < this.enemies.length; i++) {
+      if (Math.random() < LOOT_DROP_CHANCE) {
+        const item = generateLoot(this.player.level, this.player.stats.luck);
+        if (this.player.addLoot(item)) loot.push(item);
+      }
+    }
+    const levelsGained = this.player.gainXp(xpGained);
+    this.player.gold += goldGained;
+    this.outcome = 'victory';
+    events.push({
+      kind: 'victory',
+      text: `Vitória! +${xpGained} XP, +${goldGained} ouro${loot.length > 0 ? `, ${loot.length} item(ns) encontrado(s)` : ''}.`,
+      actorIsPlayer: true,
+      xpGained,
+      goldGained,
+      levelsGained,
+      loot,
     });
   }
 }
+
+const BASIC_ENEMY_ATTACK: SkillDefinition = {
+  id: 'enemy_basic',
+  name: 'Ataque',
+  description: '',
+  kind: 'physical',
+  target: 'enemy',
+  isUltimate: false,
+  maxLevel: 1,
+  unlockLevel: 1,
+  baseCost: 0,
+  costPerLevel: 0,
+  basePower: 1,
+  powerPerLevel: 0,
+  baseCooldown: 1,
+  cooldownPerLevel: 0,
+  minCooldown: 1,
+};

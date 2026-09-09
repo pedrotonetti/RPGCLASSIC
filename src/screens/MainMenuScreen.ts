@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CLASS_DEFINITIONS } from '../config/classes';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
-import { buildClassModel } from '../render/characterModel';
+import { buildClassPreview } from '../render/characterModel';
 import { hasSave, loadGame } from '../systems/SaveSystem';
 import { el } from '../ui/dom';
 import { CharacterSelectScreen } from './CharacterSelectScreen';
@@ -42,7 +42,7 @@ export class MainMenuScreen implements Screen {
     this.camera.lookAt(0, 0.85, 0);
 
     const def = CLASS_DEFINITIONS[0];
-    this.showcase = buildClassModel(def.id, def.color);
+    this.showcase = buildClassPreview(def.id);
     this.scene.add(this.showcase);
 
     this.buildUi();

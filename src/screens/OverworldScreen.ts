@@ -1,17 +1,21 @@
 import * as THREE from 'three';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
-import { getClassById } from '../config/classes';
 import { isWalkable, TileType, triggersEncounter } from '../config/tiles';
+import { NPC_DEFINITIONS, type NpcDefinition } from '../data/npcs';
 import { Player } from '../entities/Player';
-import { buildClassModel } from '../render/characterModel';
+import { buildHumanCharacter, buildPlayerCharacter } from '../render/characterModel';
 import { buildOverworldMeshes, tileCenterWorld } from '../render/worldBuilder';
 import { ENCOUNTER_CHANCE_PER_STEP, pickEncounterEnemyIds } from '../systems/EncounterSystem';
 import { generateOverworldMap, MAP_HEIGHT, MAP_WIDTH } from '../systems/MapGenerator';
+import { ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { el } from '../ui/dom';
 import { BattleScreen } from './BattleScreen';
+import { InventoryScreen } from './InventoryScreen';
 import { MainMenuScreen } from './MainMenuScreen';
+import { RankingScreen } from './RankingScreen';
+import { SkillTreeScreen } from './SkillTreeScreen';
 
 type Dir = 'up' | 'down' | 'left' | 'right';
 
@@ -33,6 +37,13 @@ const MOVE_DURATION = 0.16;
 const CAM_DISTANCE = 4.4;
 const CAM_HEIGHT = 3.1;
 const LOOK_HEIGHT = 1.1;
+const INTERACT_RANGE = 1;
+
+interface NpcSlot {
+  def: NpcDefinition;
+  model: THREE.Group;
+  labelEl: HTMLElement;
+}
 
 export class OverworldScreen implements Screen {
   scene = new THREE.Scene();
@@ -41,6 +52,7 @@ export class OverworldScreen implements Screen {
   private tiles: TileType[][] = [];
   private playerModel!: THREE.Group;
   private dirLight!: THREE.DirectionalLight;
+  private npcSlots: NpcSlot[] = [];
 
   private facing: Dir = 'down';
   private isMoving = false;
@@ -48,6 +60,7 @@ export class OverworldScreen implements Screen {
   private moveFrom = new THREE.Vector3();
   private moveTo = new THREE.Vector3();
   private walkTime = 0;
+  private pendingEncounterTile: TileType | null = null;
 
   private heldKeys = new Set<string>();
   private touchDir: Dir | null = null;
@@ -55,6 +68,18 @@ export class OverworldScreen implements Screen {
   private keyupHandler = (e: KeyboardEvent) => this.onKeyUp(e);
 
   private camLookAt = new THREE.Vector3();
+
+  private paused = false;
+  private dialogueNpc: NpcDefinition | null = null;
+  private dialogueLineIndex = 0;
+  private nearbyNpc: NpcDefinition | null = null;
+
+  private promptEl!: HTMLElement;
+  private dialogueOverlay!: HTMLElement;
+  private dialogueNameEl!: HTMLElement;
+  private dialogueLineEl!: HTMLElement;
+  private pauseOverlay!: HTMLElement;
+  private questTrackerEl!: HTMLElement;
 
   constructor(
     private game: Game,
@@ -64,6 +89,8 @@ export class OverworldScreen implements Screen {
   }
 
   mount(): void {
+    ensureQuestStarted(this.player);
+
     this.scene.background = new THREE.Color(0x8ec9e8);
     this.scene.fog = new THREE.Fog(0x8ec9e8, 16, 46);
 
@@ -88,16 +115,18 @@ export class OverworldScreen implements Screen {
     this.scene.add(this.dirLight);
     this.scene.add(this.dirLight.target);
 
-    const classDef = getClassById(this.player.classId);
-    this.playerModel = buildClassModel(this.player.classId, classDef.color);
+    this.playerModel = buildPlayerCharacter(this.player);
     this.scene.add(this.playerModel);
     this.snapPlayerModelToTile(this.player.mapX, this.player.mapY);
     this.applyFacingRotation();
 
+    this.buildNpcs();
     this.positionCameraImmediate();
 
     this.buildHud();
     this.buildDpad();
+    this.buildDialogueOverlay();
+    this.buildPauseOverlay();
 
     window.addEventListener('keydown', this.keydownHandler);
     window.addEventListener('keyup', this.keyupHandler);
@@ -116,31 +145,47 @@ export class OverworldScreen implements Screen {
   }
 
   update(dt: number): void {
-    if (this.isMoving) {
-      this.moveT = Math.min(1, this.moveT + dt / MOVE_DURATION);
-      this.playerModel.position.lerpVectors(this.moveFrom, this.moveTo, this.moveT);
-      this.walkTime += dt;
-      this.playerModel.position.y = Math.abs(Math.sin(this.walkTime * 13)) * 0.06;
-      if (this.moveT >= 1) {
-        this.isMoving = false;
-        this.playerModel.position.y = 0;
-        this.onArrivedAtTile();
+    if (!this.paused && !this.dialogueNpc) {
+      if (this.isMoving) {
+        this.moveT = Math.min(1, this.moveT + dt / MOVE_DURATION);
+        this.playerModel.position.lerpVectors(this.moveFrom, this.moveTo, this.moveT);
+        this.walkTime += dt;
+        this.playerModel.position.y = Math.abs(Math.sin(this.walkTime * 13)) * 0.06;
+        if (this.moveT >= 1) {
+          this.isMoving = false;
+          this.playerModel.position.y = 0;
+          this.onArrivedAtTile();
+        }
+      } else {
+        const dir = this.heldDirection();
+        if (dir) this.tryMove(dir);
       }
-    } else {
-      const dir = this.heldDirection();
-      if (dir) this.tryMove(dir);
+      this.updateInteraction();
     }
 
     this.updateCamera(dt);
+    this.updateNpcLabels();
   }
 
   // --- input -----------------------------------------------------------
 
   private onKeyDown(e: KeyboardEvent): void {
     this.heldKeys.add(e.key.toLowerCase());
+
+    if (this.dialogueNpc) {
+      if (e.key === 'e' || e.key === 'E' || e.key === 'Enter' || e.key === ' ') this.advanceDialogue();
+      else if (e.key === 'Escape') this.closeDialogue();
+      return;
+    }
+
     if (e.key === 'Escape') {
-      saveGame(this.player);
-      this.game.goTo(new MainMenuScreen(this.game));
+      this.togglePause();
+      return;
+    }
+    if (this.paused) return;
+
+    if (e.key === 'e' || e.key === 'E') {
+      if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
     }
   }
 
@@ -170,6 +215,7 @@ export class OverworldScreen implements Screen {
 
     const destTile = this.tiles[ny][nx];
     if (!isWalkable(destTile)) return;
+    if (this.npcSlots.some((s) => s.def.mapX === nx && s.def.mapY === ny)) return;
 
     this.player.mapX = nx;
     this.player.mapY = ny;
@@ -179,8 +225,6 @@ export class OverworldScreen implements Screen {
     this.isMoving = true;
     this.pendingEncounterTile = destTile;
   }
-
-  private pendingEncounterTile: TileType | null = null;
 
   private onArrivedAtTile(): void {
     const tile = this.pendingEncounterTile;
@@ -203,6 +247,80 @@ export class OverworldScreen implements Screen {
   private applyFacingRotation(): void {
     const f = DIR_FORWARD[this.facing];
     this.playerModel.rotation.y = Math.atan2(f.x, f.z);
+  }
+
+  // --- NPCs & dialogue --------------------------------------------------
+
+  private buildNpcs(): void {
+    for (const def of NPC_DEFINITIONS) {
+      const model = buildHumanCharacter(def.appearance, 'none');
+      tileCenterWorld(def.mapX, def.mapY, model.position);
+      model.rotation.y = Math.PI;
+      this.scene.add(model);
+
+      const labelEl = el('div', { className: 'npc-label', text: def.name });
+      this.game.uiRoot.append(labelEl);
+      this.npcSlots.push({ def, model, labelEl });
+    }
+  }
+
+  private updateNpcLabels(): void {
+    for (const slot of this.npcSlots) {
+      const pos = slot.model.position.clone().add(new THREE.Vector3(0, 1.55, 0));
+      const p = pos.project(this.camera);
+      if (p.z > 1) {
+        slot.labelEl.hidden = true;
+        continue;
+      }
+      slot.labelEl.hidden = false;
+      slot.labelEl.style.left = `${(p.x * 0.5 + 0.5) * window.innerWidth}px`;
+      slot.labelEl.style.top = `${(-p.y * 0.5 + 0.5) * window.innerHeight}px`;
+    }
+  }
+
+  private updateInteraction(): void {
+    const found = this.npcSlots.find(
+      (s) => Math.abs(s.def.mapX - this.player.mapX) <= INTERACT_RANGE && Math.abs(s.def.mapY - this.player.mapY) <= INTERACT_RANGE,
+    );
+    this.nearbyNpc = found?.def ?? null;
+    if (this.nearbyNpc) {
+      this.promptEl.hidden = false;
+      this.promptEl.textContent = `[E] Falar com ${this.nearbyNpc.name}`;
+    } else {
+      this.promptEl.hidden = true;
+    }
+  }
+
+  private openDialogue(npc: NpcDefinition): void {
+    this.dialogueNpc = npc;
+    this.dialogueLineIndex = 0;
+    this.dialogueOverlay.hidden = false;
+    this.promptEl.hidden = true;
+    this.renderDialogueLine();
+    const questMsg = notifyTalkedTo(this.player, npc.id);
+    if (questMsg) saveGame(this.player);
+  }
+
+  private renderDialogueLine(): void {
+    if (!this.dialogueNpc) return;
+    this.dialogueNameEl.textContent = this.dialogueNpc.name;
+    this.dialogueLineEl.textContent = this.dialogueNpc.dialogue[this.dialogueLineIndex];
+  }
+
+  private advanceDialogue(): void {
+    if (!this.dialogueNpc) return;
+    this.dialogueLineIndex += 1;
+    if (this.dialogueLineIndex >= this.dialogueNpc.dialogue.length) {
+      this.closeDialogue();
+      return;
+    }
+    this.renderDialogueLine();
+  }
+
+  private closeDialogue(): void {
+    this.dialogueNpc = null;
+    this.dialogueOverlay.hidden = true;
+    this.refreshQuestTracker();
   }
 
   // --- camera --------------------------------------------------------
@@ -237,23 +355,30 @@ export class OverworldScreen implements Screen {
   // --- HUD -------------------------------------------------------------
 
   private buildHud(): void {
-    const classDef = getClassById(this.player.classId);
     const stats = this.player.stats;
+
+    this.questTrackerEl = el('div', { className: 'quest-tracker', text: questTrackerText(this.player) });
 
     const panel = el(
       'div',
       { className: 'panel hud-panel' },
       [
-        el('div', { className: 'name-line', text: `${this.player.name} — ${classDef.name} Nv.${this.player.level}` }),
+        el('div', { className: 'name-line', text: `${this.player.name} — ${this.player.classDef.name} Nv.${this.player.level}` }),
         el('div', { className: 'hud-hp', text: `HP ${this.player.currentHp}/${stats.maxHp}` }),
         el('div', { className: 'hud-mp', text: `MP ${this.player.currentMp}/${stats.maxMp}` }),
         el('div', { text: `Ouro: ${this.player.gold}` }),
       ],
     );
 
-    const hint = el('div', { className: 'hud-hint', text: 'ESC: salvar e sair' });
+    const hint = el('div', { className: 'hud-hint', text: 'ESC: menu' });
+    this.promptEl = el('div', { className: 'interact-prompt', text: '' });
+    this.promptEl.hidden = true;
 
-    this.game.uiRoot.append(panel, hint);
+    this.game.uiRoot.append(panel, hint, this.questTrackerEl, this.promptEl);
+  }
+
+  private refreshQuestTracker(): void {
+    this.questTrackerEl.textContent = questTrackerText(this.player);
   }
 
   private buildDpad(): void {
@@ -277,5 +402,66 @@ export class OverworldScreen implements Screen {
       makeBtn('dpad-right', 'right', '▶'),
     ]);
     this.game.uiRoot.append(dpad);
+  }
+
+  private buildDialogueOverlay(): void {
+    this.dialogueNameEl = el('div', { className: 'dialogue-name' });
+    this.dialogueLineEl = el('div', { className: 'dialogue-line' });
+    this.dialogueOverlay = el(
+      'div',
+      { className: 'panel dialogue-box', onClick: () => this.advanceDialogue() },
+      [this.dialogueNameEl, this.dialogueLineEl, el('div', { className: 'dialogue-hint', text: '(clique, E ou Enter para continuar)' })],
+    );
+    this.dialogueOverlay.hidden = true;
+    this.game.uiRoot.append(this.dialogueOverlay);
+  }
+
+  private buildPauseOverlay(): void {
+    const resumeBtn = el('div', { className: 'btn primary', text: 'Continuar Jogando', onClick: () => this.togglePause() });
+    const skillsBtn = el('div', {
+      className: 'btn',
+      text: 'Árvore de Habilidades',
+      onClick: () => {
+        saveGame(this.player);
+        this.game.goTo(new SkillTreeScreen(this.game, this.player));
+      },
+    });
+    const inventoryBtn = el('div', {
+      className: 'btn',
+      text: 'Inventário',
+      onClick: () => {
+        saveGame(this.player);
+        this.game.goTo(new InventoryScreen(this.game, this.player));
+      },
+    });
+    const rankingBtn = el('div', {
+      className: 'btn',
+      text: 'Ranking Global',
+      onClick: () => {
+        saveGame(this.player);
+        this.game.goTo(new RankingScreen(this.game, this.player));
+      },
+    });
+    const exitBtn = el('div', {
+      className: 'btn',
+      text: 'Salvar e Sair ao Menu',
+      onClick: () => {
+        saveGame(this.player);
+        this.game.goTo(new MainMenuScreen(this.game));
+      },
+    });
+
+    this.pauseOverlay = el('div', { className: 'panel pause-overlay' }, [
+      el('h2', { text: 'Pausado' }),
+      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn, exitBtn]),
+    ]);
+    this.pauseOverlay.hidden = true;
+    this.game.uiRoot.append(this.pauseOverlay);
+  }
+
+  private togglePause(): void {
+    this.paused = !this.paused;
+    this.pauseOverlay.hidden = !this.paused;
+    if (this.paused) saveGame(this.player);
   }
 }
