@@ -8,7 +8,7 @@ import { Player } from '../entities/Player';
 import { getItemById } from '../data/items';
 import { buildEnemyModel, buildPlayerCharacter, getRig } from '../render/characterModel';
 import { CharacterAnimator, type ActionName } from '../render/animation';
-import { BLOCK_COOLDOWN, CombatEngine, ITEM_COOLDOWN, type CombatEvent } from '../systems/CombatSystem';
+import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from '../systems/CombatSystem';
 import { computeSkillLevelStats } from '../systems/skillMath';
 import { makeGrainTexture } from '../render/worldBuilder';
 import { generateOverworldMap } from '../systems/MapGenerator';
@@ -66,6 +66,7 @@ export class BattleScreen implements Screen {
   private messageEl!: HTMLElement;
   private fleeFillEl!: HTMLElement;
   private blockFillEl!: HTMLElement;
+  private dodgeFillEl!: HTMLElement;
   private comboEl!: HTMLElement;
   private hotbar: HotbarSlot[] = [];
   private itemHotbar: ItemHotbarSlot[] = [];
@@ -254,6 +255,14 @@ export class BattleScreen implements Screen {
       [el('div', { className: 'hotbar-name', text: 'Bloquear' }), el('div', { className: 'hotbar-level', text: 'Espaço' }), blockFillEl],
     );
 
+    const dodgeFillEl = el('div', { className: 'cd-fill' });
+    this.dodgeFillEl = dodgeFillEl;
+    const dodgeBtn = el(
+      'div',
+      { className: 'hotbar-slot dodge', onClick: () => this.onDodgeClicked() },
+      [el('div', { className: 'hotbar-name', text: 'Esquivar' }), el('div', { className: 'hotbar-level', text: 'Shift' }), dodgeFillEl],
+    );
+
     const slotEls: HTMLElement[] = [];
     skills.forEach((skill, i) => {
       const isBasic = skill.id === classDef.basicAttack.id;
@@ -276,7 +285,7 @@ export class BattleScreen implements Screen {
       this.hotbar.push({ skill, level, totalCooldown: stats.cooldown, cost: stats.cost, el: slotEl, fillEl, costEl });
     });
 
-    const bar = el('div', { className: 'hotbar' }, [...slotEls, blockBtn, fleeBtn]);
+    const bar = el('div', { className: 'hotbar' }, [...slotEls, dodgeBtn, blockBtn, fleeBtn]);
     this.game.uiRoot.append(bar);
   }
 
@@ -311,6 +320,10 @@ export class BattleScreen implements Screen {
     if (e.key === ' ') {
       e.preventDefault();
       this.onBlockClicked();
+      return;
+    }
+    if (e.key === 'Shift') {
+      this.onDodgeClicked();
       return;
     }
     const num = Number(e.key);
@@ -403,6 +416,17 @@ export class BattleScreen implements Screen {
       return;
     }
     this.animator.play('defend');
+    this.processEvents(result.events);
+  }
+
+  private onDodgeClicked(): void {
+    if (this.ended) return;
+    const result = this.engine.attemptDodge();
+    if (!result.ok) {
+      if (result.reason === 'cooldown') this.showMessage('Esquiva ainda em recarga...');
+      return;
+    }
+    this.animator.play('dodge');
     this.processEvents(result.events);
   }
 
@@ -550,6 +574,8 @@ export class BattleScreen implements Screen {
     this.fleeFillEl.style.height = `${Math.min(1, fleeRemaining / 4) * 100}%`;
     const blockRemaining = this.engine.blockCooldownRemaining();
     this.blockFillEl.style.height = `${Math.min(1, blockRemaining / BLOCK_COOLDOWN) * 100}%`;
+    const dodgeRemaining = this.engine.dodgeCooldownRemaining();
+    this.dodgeFillEl.style.height = `${Math.min(1, dodgeRemaining / DODGE_COOLDOWN) * 100}%`;
   }
 
   private refreshCombo(): void {

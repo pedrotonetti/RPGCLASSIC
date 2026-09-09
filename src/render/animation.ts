@@ -11,7 +11,7 @@ import type { CharacterRig } from './characterModel';
  * Locomotion (idle/walk) loops continuously and blends with whichever
  * one-shot action (attack/defend/eat/hit/victory) is currently playing.
  */
-export type ActionName = 'attack' | 'defend' | 'cast' | 'eat' | 'hit' | 'victory' | 'mount' | 'dismount';
+export type ActionName = 'attack' | 'defend' | 'cast' | 'eat' | 'hit' | 'victory' | 'mount' | 'dismount' | 'dodge';
 
 interface Pose {
   armL: number;
@@ -20,10 +20,20 @@ interface Pose {
   legR: number;
   upperBodyY: number;
   upperBodyRotX: number;
+  upperBodyRotZ: number;
   headRotX: number;
 }
 
-const REST_POSE: Pose = { armL: 0, armR: 0, legL: 0, legR: 0, upperBodyY: 0, upperBodyRotX: 0, headRotX: 0 };
+const REST_POSE: Pose = {
+  armL: 0,
+  armR: 0,
+  legL: 0,
+  legR: 0,
+  upperBodyY: 0,
+  upperBodyRotX: 0,
+  upperBodyRotZ: 0,
+  headRotX: 0,
+};
 
 interface Keyframe {
   t: number;
@@ -124,6 +134,15 @@ const ACTION_CLIPS: Record<ActionName, ActionClip> = {
       { t: 1, pose: REST_POSE },
     ],
   },
+  dodge: {
+    duration: 0.3,
+    keyframes: [
+      { t: 0, pose: {} },
+      { t: 0.3, pose: { upperBodyRotZ: 0.5, upperBodyY: -0.06, legL: 0.35, legR: -0.35, armR: -0.4 } },
+      { t: 0.7, pose: { upperBodyRotZ: 0.5, upperBodyY: -0.06, legL: 0.35, legR: -0.35, armR: -0.4 } },
+      { t: 1, pose: REST_POSE },
+    ],
+  },
 };
 
 const WALK_CYCLE_SPEED = 7.5;
@@ -203,6 +222,7 @@ export class CharacterAnimator {
     this.rig.legR.rotation.x = pose.legR;
     this.rig.upperBody.position.y = pose.upperBodyY;
     this.rig.upperBody.rotation.x = pose.upperBodyRotX;
+    this.rig.upperBody.rotation.z = pose.upperBodyRotZ;
     this.rig.head.rotation.x = pose.headRotX;
   }
 }

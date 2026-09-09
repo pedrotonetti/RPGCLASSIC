@@ -75,6 +75,17 @@ const COMBO_WINDOW = 3.0;
 const COMBO_DAMAGE_PER_HIT = 0.05;
 const COMBO_MAX_STACKS = 6;
 
+// A tighter, riskier alternative to blocking: full damage negation, but a
+// much shorter active window and no "safe" partial-mitigation fallback.
+const DODGE_KEY = '__dodge';
+const DODGE_DURATION = 0.25;
+export const DODGE_COOLDOWN = 1.0;
+
+// Enough clean hits in a row on the same enemy interrupts whatever it's
+// winding up and delays its next move — a poise-break, rewarding combo play.
+const STAGGER_THRESHOLD = 3;
+const STAGGER_DELAY = 1.2;
+
 /**
  * Real-time action-combat engine: skills are triggered on demand (subject to
  * their own cooldown/mana), enemies act autonomously on their own timers,
@@ -88,8 +99,10 @@ export class CombatEngine {
 
   private blockActiveUntil = -Infinity;
   private blockStartedAt = -Infinity;
+  private dodgeActiveUntil = -Infinity;
   private comboCount = 0;
   private lastComboHitAt = -Infinity;
+  private staggerStacks = new Map<Enemy, number>();
   private pendingAttacks = new Map<Enemy, { resolveAt: number; skill: SkillDefinition | null }>();
 
   constructor(
@@ -105,8 +118,16 @@ export class CombatEngine {
     return this.clock <= this.blockActiveUntil;
   }
 
+  isDodging(): boolean {
+    return this.clock <= this.dodgeActiveUntil;
+  }
+
   blockCooldownRemaining(): number {
     return this.cooldownRemaining(BLOCK_KEY);
+  }
+
+  dodgeCooldownRemaining(): number {
+    return this.cooldownRemaining(DODGE_KEY);
   }
 
   private aliveEnemies(): Enemy[] {
@@ -205,6 +226,9 @@ export class CombatEngine {
         });
         if (!enemy.isAlive()) {
           events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
+          this.staggerStacks.delete(enemy);
+        } else {
+          this.registerHitForStagger(enemy, index, events);
         }
       }
     }
@@ -241,6 +265,20 @@ export class CombatEngine {
     this.blockStartedAt = this.clock;
     this.blockActiveUntil = this.clock + BLOCK_DURATION;
     return { ok: true, events: [{ kind: 'info', text: 'Postura de bloqueio!', actorIsPlayer: true }] };
+  }
+
+  /**
+   * Opens a much shorter i-frame window than block: no partial-mitigation
+   * safety net, but a clean dodge avoids the hit entirely and keeps the
+   * combo alive. Its own (shorter) cooldown means it can't replace blocking
+   * outright — it's a higher-risk, higher-reward alternative for good timing.
+   */
+  attemptDodge(): UseSkillResult {
+    if (this.outcome !== 'ongoing') return { ok: false, reason: 'dead' };
+    if (this.dodgeCooldownRemaining() > 0) return { ok: false, reason: 'cooldown' };
+    this.cooldowns[DODGE_KEY] = DODGE_COOLDOWN;
+    this.dodgeActiveUntil = this.clock + DODGE_DURATION;
+    return { ok: true, events: [{ kind: 'info', text: 'Esquiva!', actorIsPlayer: true }] };
   }
 
   /** Drinks/eats a consumable from the player's inventory (short shared cooldown so it can't be spammed). */
@@ -315,6 +353,19 @@ export class CombatEngine {
     events.push({ kind: 'telegraph', text: `${enemy.name} vai atacar!`, actorIsPlayer: false, actorIndex });
   }
 
+  /** Enough clean hits in a row on one enemy breaks its poise: cancels whatever it's winding up and delays its next move. */
+  private registerHitForStagger(enemy: Enemy, index: number, events: CombatEvent[]): void {
+    const stacks = (this.staggerStacks.get(enemy) ?? 0) + 1;
+    if (stacks < STAGGER_THRESHOLD) {
+      this.staggerStacks.set(enemy, stacks);
+      return;
+    }
+    this.staggerStacks.set(enemy, 0);
+    this.pendingAttacks.delete(enemy);
+    enemy.actionTimer += STAGGER_DELAY;
+    events.push({ kind: 'info', text: `${enemy.name} foi atordoado!`, actorIsPlayer: true, targetIndex: index });
+  }
+
   private resolveEnemyAttack(enemy: Enemy, skill: SkillDefinition | null, events: CombatEvent[]): void {
     if (!enemy.isAlive()) return; // died mid wind-up
 
@@ -333,7 +384,10 @@ export class CombatEngine {
     const isBlocked = this.isBlocking() && !isPerfectBlock;
     let dealt: number;
     let suffix = '';
-    if (isPerfectBlock) {
+    if (this.isDodging()) {
+      dealt = 0;
+      suffix = ' Esquivou!';
+    } else if (isPerfectBlock) {
       dealt = 0;
       suffix = ' Bloqueio perfeito!';
       enemy.actionTimer += PERFECT_BLOCK_STUN;

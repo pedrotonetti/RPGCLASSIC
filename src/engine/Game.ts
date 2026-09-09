@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
 import type { Screen } from './Screen';
 
 export class Game {
@@ -31,10 +33,18 @@ export class Game {
     // Placeholder scene/camera until the first screen mounts via goTo().
     this.renderPass = new RenderPass(new THREE.Scene(), new THREE.PerspectiveCamera());
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.4, 0.55, 0.86);
+    // Subtle vignette: darkens the far corners a little to draw the eye
+    // toward the center, another cheap trick real engines lean on to avoid
+    // a flat, uniformly-lit "cartoon" frame. Kept light — this isn't meant
+    // to be noticed, just felt.
+    const vignettePass = new ShaderPass(VignetteShader);
+    vignettePass.uniforms.offset.value = 0.9;
+    vignettePass.uniforms.darkness.value = 1.15;
     const outputPass = new OutputPass();
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(this.renderPass);
     this.composer.addPass(bloomPass);
+    this.composer.addPass(vignettePass);
     this.composer.addPass(outputPass);
 
     this.resize();

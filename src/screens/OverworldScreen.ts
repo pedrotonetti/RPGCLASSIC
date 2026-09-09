@@ -63,6 +63,8 @@ interface WildlifeSlot {
   moveT: number;
   moveDuration: number;
   waitTimer: number;
+  /** Per-instance speed jitter so a handful of the same asset don't all move in lockstep. */
+  speedScale: number;
 }
 
 // Grass tiles well clear of the village/road/pond, verified against the map
@@ -429,7 +431,8 @@ export class OverworldScreen implements Screen {
       return;
     }
     const actor = new GltfActor(model);
-    model.scene.scale.setScalar(FOX_SCALE);
+    const sizeJitter = 0.85 + Math.random() * 0.3;
+    model.scene.scale.setScalar(FOX_SCALE * sizeJitter);
     const home = tileCenterWorld(tx, ty);
     model.scene.position.copy(home);
     model.scene.rotation.y = Math.random() * Math.PI * 2;
@@ -445,6 +448,7 @@ export class OverworldScreen implements Screen {
       moveT: 1,
       moveDuration: 1,
       waitTimer: 1 + Math.random() * 3,
+      speedScale: 0.75 + Math.random() * 0.5,
     });
   }
 
@@ -468,7 +472,7 @@ export class OverworldScreen implements Screen {
         const dist = 0.6 + Math.random() * FOX_WANDER_RADIUS;
         fox.from.copy(fox.model.position);
         fox.to.set(fox.home.x + Math.cos(angle) * dist, fox.home.y, fox.home.z + Math.sin(angle) * dist);
-        fox.moveDuration = fox.from.distanceTo(fox.to) / FOX_MOVE_SPEED;
+        fox.moveDuration = fox.from.distanceTo(fox.to) / (FOX_MOVE_SPEED * fox.speedScale);
         fox.moveT = 0;
         fox.model.rotation.y = Math.atan2(fox.to.x - fox.from.x, fox.to.z - fox.from.z);
         fox.actor.play('Walk');

@@ -486,6 +486,9 @@ body {
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 96vw;
   gap: 8px;
 }
 .hotbar-slot {
@@ -514,6 +517,9 @@ body {
 }
 .hotbar-slot.block {
   border-color: #7fb2e0;
+}
+.hotbar-slot.dodge {
+  border-color: #e0c97f;
 }
 .hotbar-name {
   font-size: 13px;
