@@ -16,13 +16,16 @@ por NPCs na vila, e um ranking de poder entre jogadores.
 - **vite-plugin-pwa** — gera o manifest + service worker para o jogo poder ser
   instalado como app no celular/desktop (PWA), a partir do mesmo código web.
 
-Não há nenhum asset 3D externo (modelo, textura ou áudio): todo personagem
-humano — jogador ou NPC — é montado por código a partir de um "esqueleto" de
-primitivas (pernas, tronco, braços articulados, pescoço, cabeça com rosto,
-cabelo, pelos faciais, acessórios) parametrizado por uma `CharacterAppearance`.
-Isso mantém o repositório leve e evita qualquer questão de licença de asset;
-trocar por modelos `.glb` de verdade depois é possível carregando-os via
-`GLTFLoader` no lugar das funções em `src/render/characterModel.ts`.
+Todo personagem humano — jogador ou NPC — ainda é montado por código a partir
+de um "esqueleto" de primitivas (pernas, tronco, braços articulados, pescoço,
+cabeça com rosto, cabelo, pelos faciais, acessórios) parametrizado por uma
+`CharacterAppearance`, sem depender de nenhum asset externo.
+
+Para vida selvagem/ambientação já existe também um pipeline de assets 3D reais
+(`src/render/gltfModel.ts`, via `GLTFLoader` + `AnimationMixer` do Three.js),
+usado hoje para as raposas animadas que vagam pelo mapa — modelo com licença
+livre verificada, ver `public/models/CREDITS.md`. É o mesmo caminho para
+trocar os personagens/inimigos por modelos `.glb` de verdade no futuro.
 
 ## Como rodar
 

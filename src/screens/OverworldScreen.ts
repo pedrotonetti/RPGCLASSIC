@@ -7,6 +7,7 @@ import { NPC_DEFINITIONS, type NpcDefinition } from '../data/npcs';
 import { Player } from '../entities/Player';
 import { CharacterAnimator } from '../render/animation';
 import { buildHumanCharacter, buildMountModel, buildPlayerCharacter, getRig } from '../render/characterModel';
+import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
 import { buildOverworldMeshes, tileCenterWorld } from '../render/worldBuilder';
 import { ENCOUNTER_CHANCE_PER_STEP, pickEncounterEnemyIds } from '../systems/EncounterSystem';
 import { generateOverworldMap, MAP_HEIGHT, MAP_WIDTH } from '../systems/MapGenerator';
@@ -53,6 +54,30 @@ interface NpcSlot {
   labelEl: HTMLElement;
 }
 
+interface WildlifeSlot {
+  model: THREE.Group;
+  actor: GltfActor;
+  home: THREE.Vector3;
+  from: THREE.Vector3;
+  to: THREE.Vector3;
+  moveT: number;
+  moveDuration: number;
+  waitTimer: number;
+}
+
+// Grass tiles well clear of the village/road/pond, verified against the map
+// at spawn time so a future map change can't silently place one in water.
+const FOX_SPAWN_TILES: Array<{ x: number; y: number }> = [
+  { x: 14, y: 10 },
+  { x: 21, y: 6 },
+  { x: 11, y: 17 },
+  { x: 31, y: 9 },
+  { x: 19, y: 19 },
+];
+const FOX_SCALE = 0.42;
+const FOX_WANDER_RADIUS = 1.6;
+const FOX_MOVE_SPEED = 0.6; // world units per second
+
 function disposeGroup(group: THREE.Object3D): void {
   group.traverse((obj) => {
     if (obj instanceof THREE.Mesh) {
@@ -76,6 +101,7 @@ export class OverworldScreen implements Screen {
   private animator!: CharacterAnimator;
   private dirLight!: THREE.DirectionalLight;
   private npcSlots: NpcSlot[] = [];
+  private wildlife: WildlifeSlot[] = [];
   private time = 0;
 
   private facing: Dir = 'down';
@@ -151,6 +177,7 @@ export class OverworldScreen implements Screen {
     if (this.player.activeMountId) this.setMounted(this.player.activeMountId, true);
 
     this.buildNpcs();
+    this.spawnWildlife();
     this.positionCameraImmediate();
 
     this.buildHud();
@@ -196,6 +223,7 @@ export class OverworldScreen implements Screen {
     this.animator.update(dt);
     this.animateMount(dt);
     this.animateWater();
+    this.updateWildlife(dt);
     this.updateCamera(dt);
     this.updateNpcLabels();
   }
@@ -380,6 +408,71 @@ export class OverworldScreen implements Screen {
       const labelEl = el('div', { className: 'npc-label', text: def.name });
       this.game.uiRoot.append(labelEl);
       this.npcSlots.push({ def, model, labelEl });
+    }
+  }
+
+  // --- ambient wildlife (real glTF asset, see public/models/CREDITS.md) --
+
+  private spawnWildlife(): void {
+    for (const tile of FOX_SPAWN_TILES) {
+      if (this.tiles[tile.y]?.[tile.x] !== TileType.Grass) continue;
+      this.spawnFoxAt(tile.x, tile.y);
+    }
+  }
+
+  private async spawnFoxAt(tx: number, ty: number): Promise<void> {
+    let model;
+    try {
+      model = await loadSkinnedInstance('fox.glb');
+    } catch (err) {
+      console.error('Falha ao carregar fox.glb', err);
+      return;
+    }
+    const actor = new GltfActor(model);
+    model.scene.scale.setScalar(FOX_SCALE);
+    const home = tileCenterWorld(tx, ty);
+    model.scene.position.copy(home);
+    model.scene.rotation.y = Math.random() * Math.PI * 2;
+    this.scene.add(model.scene);
+    actor.play('Survey');
+
+    this.wildlife.push({
+      model: model.scene,
+      actor,
+      home,
+      from: home.clone(),
+      to: home.clone(),
+      moveT: 1,
+      moveDuration: 1,
+      waitTimer: 1 + Math.random() * 3,
+    });
+  }
+
+  private updateWildlife(dt: number): void {
+    for (const fox of this.wildlife) {
+      fox.actor.update(dt);
+
+      if (fox.moveT < 1) {
+        fox.moveT = Math.min(1, fox.moveT + dt / fox.moveDuration);
+        fox.model.position.lerpVectors(fox.from, fox.to, fox.moveT);
+        if (fox.moveT >= 1) {
+          fox.actor.play('Survey');
+          fox.waitTimer = 1.5 + Math.random() * 3.5;
+        }
+        continue;
+      }
+
+      fox.waitTimer -= dt;
+      if (fox.waitTimer <= 0) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 0.6 + Math.random() * FOX_WANDER_RADIUS;
+        fox.from.copy(fox.model.position);
+        fox.to.set(fox.home.x + Math.cos(angle) * dist, fox.home.y, fox.home.z + Math.sin(angle) * dist);
+        fox.moveDuration = fox.from.distanceTo(fox.to) / FOX_MOVE_SPEED;
+        fox.moveT = 0;
+        fox.model.rotation.y = Math.atan2(fox.to.x - fox.from.x, fox.to.z - fox.from.z);
+        fox.actor.play('Walk');
+      }
     }
   }
 
