@@ -9,6 +9,7 @@ import { getItemById } from '../data/items';
 import { buildEnemyModel, buildPlayerCharacter, getRig } from '../render/characterModel';
 import { CharacterAnimator, type ActionName } from '../render/animation';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from '../systems/CombatSystem';
+import { audio } from '../systems/AudioSystem';
 import { computeSkillLevelStats } from '../systems/skillMath';
 import { makeGrainTexture } from '../render/worldBuilder';
 import { generateOverworldMap } from '../systems/MapGenerator';
@@ -371,7 +372,10 @@ export class BattleScreen implements Screen {
       else if (result.reason === 'mana') this.showMessage('Mana insuficiente!');
       return;
     }
-    this.animator.play(this.actionForSkill(skillId));
+    const action = this.actionForSkill(skillId);
+    this.animator.play(action);
+    if (action === 'cast') audio.castSpell();
+    else audio.attackSwing();
     this.processEvents(result.events);
     this.refreshHotbarCooldowns();
     this.refreshStatusBars();
@@ -393,6 +397,7 @@ export class BattleScreen implements Screen {
       return;
     }
     this.animator.play('eat');
+    audio.itemUse();
     this.processEvents(result.events);
     this.refreshItemHotbarCounts();
     this.refreshStatusBars();
@@ -427,6 +432,7 @@ export class BattleScreen implements Screen {
       return;
     }
     this.animator.play('dodge');
+    audio.dodge();
     this.processEvents(result.events);
   }
 
@@ -442,7 +448,11 @@ export class BattleScreen implements Screen {
       if (event.kind === 'telegraph') {
         this.messageEl.classList.add('telegraph');
         setTimeout(() => this.messageEl.classList.remove('telegraph'), 440);
+        audio.telegraphWarning();
       }
+      if (event.kind === 'miss') audio.miss();
+      if (event.kind === 'heal' || event.kind === 'buff') audio.itemUse();
+      if (event.kind === 'stagger') audio.stagger();
 
       if (event.actorIndex !== undefined) this.triggerFlash(event.actorIndex);
 
@@ -450,10 +460,21 @@ export class BattleScreen implements Screen {
         if (event.targetHpAfter !== undefined) this.setEnemyHp(event.targetIndex, event.targetHpAfter);
         this.triggerFlash(event.targetIndex);
         this.popupForEvent(event, this.enemySlots[event.targetIndex].anchor);
-        if (event.kind === 'defeated') this.killEnemy(event.targetIndex);
+        if (event.kind === 'damage') audio.hitImpact(event.crit);
+        if (event.kind === 'defeated') {
+          this.killEnemy(event.targetIndex);
+          audio.enemyDefeated();
+        }
       } else if (event.targetIsPlayer) {
         this.playerFlashTime = FLASH_DURATION;
-        if (event.kind === 'damage') this.animator.play('hit');
+        if (event.kind === 'damage') {
+          this.animator.play('hit');
+          if (event.mitigation === 'block' || event.mitigation === 'perfectBlock') {
+            audio.block(event.mitigation === 'perfectBlock');
+          } else if (event.mitigation !== 'dodge') {
+            audio.hitImpact(event.crit);
+          }
+        }
         const anchor = this.projectToScreen(
           new THREE.Vector3(this.playerModel.position.x, this.playerModel.position.y + 1.5, this.playerModel.position.z),
         );
@@ -463,16 +484,20 @@ export class BattleScreen implements Screen {
       if (event.kind === 'victory') {
         this.ended = true;
         this.animator.play('victory');
+        audio.victory();
+        if ((event.levelsGained ?? 0) > 0) audio.levelUp();
         const questMsg = this.processQuestUpdates();
         if (questMsg) this.showMessage(questMsg);
         saveGame(this.player);
         setTimeout(() => this.game.goTo(new OverworldScreen(this.game, this.player)), questMsg ? 1900 : 1400);
       } else if (event.kind === 'fled') {
         this.ended = true;
+        audio.flee();
         saveGame(this.player);
         setTimeout(() => this.game.goTo(new OverworldScreen(this.game, this.player)), 1400);
       } else if (event.kind === 'defeat') {
         this.ended = true;
+        audio.defeat();
         this.handleDefeat();
       }
     }

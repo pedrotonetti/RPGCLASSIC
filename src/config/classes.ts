@@ -19,11 +19,11 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
     growth: { maxHp: 6, maxMp: 1, attack: 2, magicAttack: 0, defense: 2, magicDefense: 1, speed: 1, luck: 1 },
     basicAttack: makeBasicAttack('physical'),
     skills: [
-      makeSkill({ id: 'warrior_power_strike', name: 'Golpe Poderoso', description: 'Um ataque físico devastador em um inimigo.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.6 }),
-      makeSkill({ id: 'warrior_charge', name: 'Investida Brutal', description: 'Avança com força total contra o alvo.', kind: 'physical', target: 'enemy', unlockLevel: 5, baseCooldown: 8, baseCost: 14, basePower: 1.9 }),
-      makeSkill({ id: 'warrior_war_cry', name: 'Grito de Guerra', description: 'Eleva sua fúria, aumentando o dano dos próximos golpes.', kind: 'buff', target: 'self', unlockLevel: 10, baseCooldown: 16, baseCost: 18, basePower: 1.2, buffStat: 'attack' }),
-      makeSkill({ id: 'warrior_sweep', name: 'Fúria Implacável', description: 'Um golpe giratório que acerta todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 15, baseCooldown: 14, baseCost: 22, basePower: 1.3 }),
-      makeUltimate({ id: 'warrior_ultimate', name: 'Golpe do Titã', description: 'Concentra toda sua força em um golpe devastador.', kind: 'physical', target: 'enemy', unlockLevel: 20, baseCooldown: 25, baseCost: 40, basePower: 4.0 }),
+      makeSkill({ id: 'warrior_power_strike', name: 'Golpe Poderoso', description: 'Um ataque físico devastador em um inimigo.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 4, basePower: 1.6 }),
+      makeSkill({ id: 'warrior_charge', name: 'Investida Brutal', description: 'Avança com força total contra o alvo.', kind: 'physical', target: 'enemy', unlockLevel: 5, baseCooldown: 8, baseCost: 7, basePower: 1.9 }),
+      makeSkill({ id: 'warrior_war_cry', name: 'Grito de Guerra', description: 'Eleva sua fúria, aumentando o dano dos próximos golpes.', kind: 'buff', target: 'self', unlockLevel: 10, baseCooldown: 16, baseCost: 11, basePower: 1.2, buffStat: 'attack' }),
+      makeSkill({ id: 'warrior_sweep', name: 'Fúria Implacável', description: 'Um golpe giratório que acerta todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 15, baseCooldown: 14, baseCost: 15, basePower: 1.3 }),
+      makeUltimate({ id: 'warrior_ultimate', name: 'Golpe do Titã', description: 'Concentra toda sua força em um golpe devastador.', kind: 'physical', target: 'enemy', unlockLevel: 20, baseCooldown: 25, baseCost: 20, basePower: 4.0 }),
     ],
   },
   {

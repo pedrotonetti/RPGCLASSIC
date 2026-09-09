@@ -13,6 +13,7 @@ import { ENCOUNTER_CHANCE_PER_STEP, pickEncounterEnemyIds } from '../systems/Enc
 import { generateOverworldMap, MAP_HEIGHT, MAP_WIDTH } from '../systems/MapGenerator';
 import { ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
+import { audio } from '../systems/AudioSystem';
 import { el } from '../ui/dom';
 import { BattleScreen } from './BattleScreen';
 import { InventoryScreen } from './InventoryScreen';
@@ -349,6 +350,7 @@ export class OverworldScreen implements Screen {
       if (instant) this.animator.setMounted(true);
       else this.animator.play('mount', () => this.animator.setMounted(true));
     }
+    if (!instant) audio.mountToggle();
     this.refreshMountSection();
   }
 
@@ -388,6 +390,7 @@ export class OverworldScreen implements Screen {
   }
 
   private startEncounter(): void {
+    audio.encounterStart();
     saveGame(this.player);
     const enemyIds = pickEncounterEnemyIds(this.player.level);
     this.game.goTo(new BattleScreen(this.game, this.player, enemyIds));
@@ -514,7 +517,12 @@ export class OverworldScreen implements Screen {
     this.promptEl.hidden = true;
     this.renderDialogueLine();
     const questMsg = notifyTalkedTo(this.player, npc.id);
-    if (questMsg) saveGame(this.player);
+    if (questMsg) {
+      saveGame(this.player);
+      audio.questComplete();
+    } else {
+      audio.npcTalk();
+    }
   }
 
   private renderDialogueLine(): void {
@@ -652,7 +660,7 @@ export class OverworldScreen implements Screen {
     });
     const rankingBtn = el('div', {
       className: 'btn',
-      text: 'Ranking Global',
+      text: 'Ranking (estimado)',
       onClick: () => {
         saveGame(this.player);
         this.game.goTo(new RankingScreen(this.game, this.player));

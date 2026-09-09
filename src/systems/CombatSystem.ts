@@ -7,7 +7,7 @@ import { computeSkillLevelStats } from './skillMath';
 export type CombatOutcome = 'ongoing' | 'victory' | 'defeat' | 'fled';
 
 export interface CombatEvent {
-  kind: 'damage' | 'heal' | 'miss' | 'buff' | 'defeated' | 'victory' | 'defeat' | 'fled' | 'info' | 'telegraph';
+  kind: 'damage' | 'heal' | 'miss' | 'buff' | 'defeated' | 'victory' | 'defeat' | 'fled' | 'info' | 'telegraph' | 'stagger';
   text: string;
   actorIsPlayer: boolean;
   actorIndex?: number;
@@ -20,6 +20,8 @@ export interface CombatEvent {
   xpGained?: number;
   goldGained?: number;
   levelsGained?: number;
+  /** How an incoming hit on the player was mitigated, if at all — lets the UI cue the right sound/feedback without parsing text. */
+  mitigation?: 'block' | 'perfectBlock' | 'dodge';
 }
 
 export type UseSkillResult =
@@ -363,7 +365,7 @@ export class CombatEngine {
     this.staggerStacks.set(enemy, 0);
     this.pendingAttacks.delete(enemy);
     enemy.actionTimer += STAGGER_DELAY;
-    events.push({ kind: 'info', text: `${enemy.name} foi atordoado!`, actorIsPlayer: true, targetIndex: index });
+    events.push({ kind: 'stagger', text: `${enemy.name} foi atordoado!`, actorIsPlayer: true, targetIndex: index });
   }
 
   private resolveEnemyAttack(enemy: Enemy, skill: SkillDefinition | null, events: CombatEvent[]): void {
@@ -384,16 +386,20 @@ export class CombatEngine {
     const isBlocked = this.isBlocking() && !isPerfectBlock;
     let dealt: number;
     let suffix = '';
+    let mitigation: CombatEvent['mitigation'];
     if (this.isDodging()) {
       dealt = 0;
       suffix = ' Esquivou!';
+      mitigation = 'dodge';
     } else if (isPerfectBlock) {
       dealt = 0;
       suffix = ' Bloqueio perfeito!';
+      mitigation = 'perfectBlock';
       enemy.actionTimer += PERFECT_BLOCK_STUN;
     } else if (isBlocked) {
       dealt = this.player.takeDamage(roll.damage * (1 - BLOCK_DAMAGE_REDUCTION));
       suffix = ' (bloqueado)';
+      mitigation = 'block';
     } else {
       dealt = this.player.takeDamage(roll.damage);
       this.comboCount = 0;
@@ -408,6 +414,7 @@ export class CombatEngine {
       amount: dealt,
       crit: roll.crit,
       targetHpAfter: this.player.currentHp,
+      mitigation,
     });
 
     if (!this.player.isAlive()) {

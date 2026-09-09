@@ -53,14 +53,22 @@ export function makeSkill(core: SkillCore): SkillDefinition {
   };
 }
 
-/** The class ultimate: levels 1-100 automatically with character level, gentler per-level scaling. */
+/**
+ * The class ultimate: levels 1-100 automatically with character level.
+ *
+ * Cost is intentionally frozen at `baseCost` (no per-level scaling): an
+ * ultimate that gets stronger *and* more expensive as you level up fights
+ * the reward of leveling it, and for low-mana-growth classes (e.g. the
+ * Warrior, whose maxMp grows only +1/level) a scaling cost can outpace
+ * mana growth entirely and make the ultimate permanently uncastable.
+ */
 export function makeUltimate(core: SkillCore): SkillDefinition {
   return {
     ...core,
     isUltimate: true,
     maxLevel: ULTIMATE_MAX_LEVEL,
     powerPerLevel: Math.round(core.basePower * 0.02 * 100) / 100,
-    costPerLevel: Math.max(1, Math.round(core.baseCost * 0.01)),
+    costPerLevel: 0,
     cooldownPerLevel: Math.round(core.baseCooldown * 0.005 * 100) / 100,
     minCooldown: Math.round(core.baseCooldown * 0.6 * 10) / 10,
   };

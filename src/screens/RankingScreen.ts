@@ -64,10 +64,10 @@ export class RankingScreen implements Screen {
 
     const screen = el('div', { className: 'ranking-screen screen' }, [
       el('div', { className: 'top-bar' }, [
-        el('h1', { text: 'Ranking Global' }),
+        el('h1', { text: 'Ranking (estimativa local)' }),
         el('div', {
           className: 'subtitle',
-          text: `Você está no top ${percentile}% entre ${TOTAL_SIMULATED_PLAYERS.toLocaleString('pt-BR')} heróis simulados.`,
+          text: `Você está no top ${percentile}% entre ${TOTAL_SIMULATED_PLAYERS.toLocaleString('pt-BR')} heróis simulados neste dispositivo — ainda não é um ranking real entre jogadores (isso exige um servidor).`,
         }),
       ]),
       el('div', { className: 'ranking-panel panel' }, [

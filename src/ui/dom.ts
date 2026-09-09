@@ -1,3 +1,5 @@
+import { audio } from '../systems/AudioSystem';
+
 type Child = Node | string | null | undefined | false;
 
 interface ElOptions {
@@ -19,7 +21,13 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   const node = document.createElement(tag);
   if (options.className) node.className = options.className;
   if (options.text !== undefined) node.textContent = options.text;
-  if (options.onClick) node.addEventListener('click', options.onClick as EventListener);
+  if (options.onClick) {
+    const onClick = options.onClick;
+    node.addEventListener('click', (ev) => {
+      audio.uiClick();
+      onClick(ev as MouseEvent);
+    });
+  }
   if (options.onPointerDown) node.addEventListener('pointerdown', options.onPointerDown as EventListener);
   if (options.onPointerUp) node.addEventListener('pointerup', options.onPointerUp as EventListener);
   if (options.style) Object.assign(node.style, options.style);
