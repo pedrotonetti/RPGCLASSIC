@@ -26,6 +26,8 @@ export interface PlayerSaveData {
   completedQuestIds: string[];
   activeQuestId: string | null;
   questProgress: Record<string, number>;
+  unlockedMounts: string[];
+  activeMountId: string | null;
 }
 
 const MAX_BAG_SIZE = 40;
@@ -50,6 +52,8 @@ export class Player {
   completedQuestIds: string[];
   activeQuestId: string | null;
   questProgress: Record<string, number>;
+  unlockedMounts: string[];
+  activeMountId: string | null;
 
   private constructor(name: string, classId: string, data?: Partial<PlayerSaveData>) {
     this.name = name;
@@ -69,6 +73,9 @@ export class Player {
     this.completedQuestIds = data?.completedQuestIds ?? [];
     this.activeQuestId = data?.activeQuestId ?? null;
     this.questProgress = data?.questProgress ?? {};
+    // Both mounts are unlocked by default in this build (see data/mounts.ts).
+    this.unlockedMounts = data?.unlockedMounts ?? ['llama', 'condor'];
+    this.activeMountId = data?.activeMountId ?? null;
     this.currentHp = data?.currentHp ?? this.stats.maxHp;
     this.currentMp = data?.currentMp ?? this.stats.maxMp;
   }
@@ -233,6 +240,12 @@ export class Player {
     return true;
   }
 
+  setMount(mountId: string | null): boolean {
+    if (mountId !== null && !this.unlockedMounts.includes(mountId)) return false;
+    this.activeMountId = mountId;
+    return true;
+  }
+
   toSaveData(): PlayerSaveData {
     return {
       name: this.name,
@@ -253,6 +266,8 @@ export class Player {
       completedQuestIds: [...this.completedQuestIds],
       activeQuestId: this.activeQuestId,
       questProgress: { ...this.questProgress },
+      unlockedMounts: [...this.unlockedMounts],
+      activeMountId: this.activeMountId,
     };
   }
 }

@@ -35,71 +35,110 @@ const BODY_SCALE: Record<CharacterAppearance['bodyType'], { torso: number; limb:
 };
 
 /**
+ * Named joints exposed on every built character, so an `AnimationController`
+ * can pose the figure without knowing anything about how it was built.
+ * Everything here is a `THREE.Group` pivoted at the joint itself (shoulder,
+ * hip, neck), so rotating it swings the limb naturally from that point.
+ */
+export interface CharacterRig {
+  root: THREE.Group;
+  upperBody: THREE.Group;
+  head: THREE.Group;
+  armL: THREE.Group;
+  armR: THREE.Group;
+  legL: THREE.Group;
+  legR: THREE.Group;
+}
+
+export function getRig(character: THREE.Group): CharacterRig {
+  return character.userData.rig as CharacterRig;
+}
+
+/**
  * Builds a proportioned human figure — torso, jointed limbs, neck, a head
  * with face features, hair, and optional facial hair/accessories/markings —
  * all from primitives, driven entirely by a `CharacterAppearance`. This is
  * the single builder used for the player everywhere (creation preview,
  * overworld, battle); enemies use their own, more creature-specific shapes
  * further down this file.
+ *
+ * The whole figure is built as a small joint hierarchy (`CharacterRig`,
+ * stored at `root.userData.rig`) rather than one flat bag of meshes, so it
+ * can be posed procedurally by `render/animation.ts` — no bone skinning,
+ * just nested pivots, in the spirit of simple/legible low-poly rigs (the
+ * same trick classic blocky avatars and early 3D indie games use instead of
+ * full skeletal animation).
  */
 export function buildHumanCharacter(appearance: CharacterAppearance, accessory: ClassAccessory): THREE.Group {
-  const group = new THREE.Group();
+  const root = new THREE.Group();
+  const upperBody = new THREE.Group();
+  root.add(upperBody);
+
   const body = BODY_SCALE[appearance.bodyType];
   const isFem = appearance.gender === 'feminino';
 
-  const skinMat = mat(appearance.skinTone);
+  const skinMat = mat(appearance.skinTone, { roughness: 0.55 });
   const clothMat = mat(appearance.primaryColor, { roughness: 0.8 });
   const trimMat = mat(appearance.secondaryColor, { roughness: 0.55, metalness: 0.25 });
   const shoeMat = mat(0x2a2016, { roughness: 0.9 });
 
-  // Legs + feet.
+  // Legs: each is a group pivoted at the hip joint, leg + foot hanging below it.
   const legRadius = 0.1 * body.limb;
   const legHeight = 0.78;
-  const legGeo = new THREE.CapsuleGeometry(legRadius, legHeight, 4, 8);
-  const hipWidth = isFem ? 0.16 : 0.13;
-  const legL = mesh(legGeo, clothMat);
-  const legR = mesh(legGeo, clothMat);
-  legL.position.set(-hipWidth, legHeight / 2 + 0.06, 0);
-  legR.position.set(hipWidth, legHeight / 2 + 0.06, 0);
-  group.add(legL, legR);
-
+  const legGeo = new THREE.CapsuleGeometry(legRadius, legHeight, 6, 12);
   const footGeo = new THREE.BoxGeometry(0.13, 0.09, 0.26);
-  const footL = mesh(footGeo, shoeMat);
-  const footR = mesh(footGeo, shoeMat);
-  footL.position.set(-hipWidth, 0.045, 0.05);
-  footR.position.set(hipWidth, 0.045, 0.05);
-  group.add(footL, footR);
-
-  // Hips + torso.
+  const hipWidth = isFem ? 0.16 : 0.13;
   const hipY = legHeight + 0.06;
+
+  const legGroups: THREE.Group[] = [];
+  for (const side of [-1, 1] as const) {
+    const legGroup = new THREE.Group();
+    legGroup.position.set(hipWidth * side, hipY, 0);
+
+    const leg = mesh(legGeo, clothMat);
+    leg.position.set(0, -legHeight / 2, 0);
+    legGroup.add(leg);
+
+    const foot = mesh(footGeo, shoeMat);
+    foot.position.set(0, 0.045 - hipY, 0.05);
+    legGroup.add(foot);
+
+    root.add(legGroup);
+    legGroups.push(legGroup);
+  }
+  const [legL, legR] = legGroups;
+
+  // Hips + torso (added to upperBody, which sits at the world origin — the
+  // whole upper body can be nudged/leaned as one unit for animation).
   const waistWidth = (isFem ? 0.19 : 0.21) * body.torso;
-  const hips = mesh(new THREE.CapsuleGeometry(waistWidth, 0.06, 4, 8), clothMat);
+  const hips = mesh(new THREE.CapsuleGeometry(waistWidth, 0.06, 6, 12), clothMat);
   hips.position.set(0, hipY, 0);
   hips.scale.set(1, 0.7, 0.85);
-  group.add(hips);
+  upperBody.add(hips);
 
   const torsoHeight = 0.5;
   const shoulderWidth = (isFem ? 0.24 : 0.28) * body.shoulder;
   const torsoRadius = (isFem ? 0.2 : 0.24) * body.torso;
-  const torso = mesh(new THREE.CapsuleGeometry(torsoRadius, torsoHeight, 4, 10), clothMat);
+  const torso = mesh(new THREE.CapsuleGeometry(torsoRadius, torsoHeight, 6, 14), clothMat);
   const torsoY = hipY + 0.12 + torsoHeight / 2;
   torso.position.set(0, torsoY, 0);
   // Taper: broader at the shoulders, narrower at the waist (a believable torso silhouette).
   torso.scale.set(shoulderWidth / torsoRadius, 1, 0.8);
-  group.add(torso);
+  upperBody.add(torso);
 
   const belt = mesh(new THREE.CylinderGeometry(waistWidth * 1.05, waistWidth * 1.05, 0.07, 16), trimMat);
   belt.position.set(0, hipY + 0.1, 0);
-  group.add(belt);
+  upperBody.add(belt);
 
-  // Arms (upper arm + forearm + hand), angled slightly outward.
+  // Arms (upper arm + forearm + hand), each a group pivoted at the shoulder.
   const shoulderY = torsoY + torsoHeight / 2 - 0.03;
   const armRadius = 0.07 * body.limb;
-  const upperArmGeo = new THREE.CapsuleGeometry(armRadius, 0.26, 4, 8);
-  const forearmGeo = new THREE.CapsuleGeometry(armRadius * 0.9, 0.24, 4, 8);
-  const handGeo = new THREE.SphereGeometry(armRadius * 1.05, 8, 8);
+  const upperArmGeo = new THREE.CapsuleGeometry(armRadius, 0.26, 6, 10);
+  const forearmGeo = new THREE.CapsuleGeometry(armRadius * 0.9, 0.24, 6, 10);
+  const handGeo = new THREE.SphereGeometry(armRadius * 1.05, 10, 8);
 
-  for (const side of [-1, 1]) {
+  const armGroups: THREE.Group[] = [];
+  for (const side of [-1, 1] as const) {
     const armGroup = new THREE.Group();
     const shoulderX = shoulderWidth * 1.05 * side;
     armGroup.position.set(shoulderX, shoulderY, 0);
@@ -118,34 +157,39 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
     hand.position.set(0, -0.5, 0.05);
     armGroup.add(hand);
 
-    group.add(armGroup);
-    if (side === 1) group.userData.rightArm = armGroup;
-    else group.userData.leftArm = armGroup;
+    upperBody.add(armGroup);
+    armGroups.push(armGroup);
   }
+  const [armL, armR] = armGroups;
 
   // Neck + head.
   const neckY = torsoY + torsoHeight / 2 + 0.04;
   const neck = mesh(new THREE.CylinderGeometry(0.075, 0.085, 0.1, 10), skinMat);
   neck.position.set(0, neckY, 0);
-  group.add(neck);
+  upperBody.add(neck);
 
   const headY = neckY + 0.15;
   const headRadius = 0.155;
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, headY, 0);
+  upperBody.add(headGroup);
+
   const headGeo = shapedHeadGeometry(appearance.faceShape, headRadius);
   const head = mesh(headGeo, skinMat);
-  head.position.set(0, headY, 0);
-  group.add(head);
-  group.userData.head = head;
+  headGroup.add(head);
 
-  addFace(group, appearance, headY, headRadius);
-  addHair(group, appearance, headY, headRadius);
-  addFacialHair(group, appearance, headY, headRadius);
-  addHeadAccessory(group, appearance, headY, headRadius, clothMat, trimMat);
-  addMarkings(group, appearance, headY, headRadius);
-  addClassAccessory(group, accessory, appearance.primaryColor, appearance.secondaryColor, headY, shoulderWidth);
+  addFace(headGroup, appearance, 0, headRadius);
+  addHair(headGroup, appearance, 0, headRadius);
+  addFacialHair(headGroup, appearance, 0, headRadius);
+  addHeadAccessory(headGroup, appearance, 0, headRadius, clothMat, trimMat);
+  addMarkings(headGroup, appearance, 0, headRadius, armR);
+  addClassAccessory(upperBody, accessory, appearance.primaryColor, appearance.secondaryColor, headY, shoulderWidth, armL, armR, shoulderY);
 
-  group.userData.legs = [legL, legR];
-  return group;
+  root.scale.setScalar(appearance.heightScale);
+
+  const rig: CharacterRig = { root, upperBody, head: headGroup, armL, armR, legL, legR };
+  root.userData.rig = rig;
+  return root;
 }
 
 function shapedHeadGeometry(shape: CharacterAppearance['faceShape'], r: number): THREE.BufferGeometry {
@@ -175,13 +219,36 @@ function shapedHeadGeometry(shape: CharacterAppearance['faceShape'], r: number):
 }
 
 function addFace(group: THREE.Group, appearance: CharacterAppearance, headY: number, r: number): void {
-  const eyeMat = mat(appearance.eyeColor, { roughness: 0.3 });
-  const eyeGeo = new THREE.SphereGeometry(r * 0.13, 8, 8);
-  const eyeL = mesh(eyeGeo, eyeMat, false);
-  const eyeR = mesh(eyeGeo, eyeMat, false);
-  eyeL.position.set(-r * 0.42, headY + r * 0.05, r * 0.88);
-  eyeR.position.set(r * 0.42, headY + r * 0.05, r * 0.88);
-  group.add(eyeL, eyeR);
+  // Layered eyes (sclera + iris + pupil) read as far more human than a single flat-colored sphere.
+  const scleraMat = mat(0xf5ede0, { roughness: 0.25 });
+  const irisMat = mat(appearance.eyeColor, { roughness: 0.25 });
+  const pupilMat = mat(0x14100c, { roughness: 0.3 });
+  const scleraGeo = new THREE.SphereGeometry(r * 0.135, 10, 10);
+  const irisGeo = new THREE.SphereGeometry(r * 0.078, 8, 8);
+  const pupilGeo = new THREE.SphereGeometry(r * 0.034, 6, 6);
+  for (const side of [-1, 1] as const) {
+    const eyeX = r * 0.42 * side;
+    const eyeY = headY + r * 0.05;
+    const sclera = mesh(scleraGeo, scleraMat, false);
+    sclera.position.set(eyeX, eyeY, r * 0.86);
+    group.add(sclera);
+    const iris = mesh(irisGeo, irisMat, false);
+    iris.position.set(eyeX, eyeY, r * 0.93);
+    group.add(iris);
+    const pupil = mesh(pupilGeo, pupilMat, false);
+    pupil.position.set(eyeX, eyeY, r * 0.965);
+    group.add(pupil);
+  }
+
+  // Ears — small flattened lobes on each side of the head.
+  const earGeo = new THREE.SphereGeometry(r * 0.16, 8, 8);
+  const earMat = mat(appearance.skinTone, { roughness: 0.55 });
+  for (const side of [-1, 1] as const) {
+    const ear = mesh(earGeo, earMat, false);
+    ear.position.set(r * 0.98 * side, headY - r * 0.02, 0);
+    ear.scale.set(0.55, 1, 0.7);
+    group.add(ear);
+  }
 
   const browMat = mat(appearance.hairColor, { roughness: 0.9 });
   const browThickness = appearance.eyebrowStyle === 'grossa' ? 0.05 : 0.03;
@@ -200,14 +267,15 @@ function addFace(group: THREE.Group, appearance: CharacterAppearance, headY: num
   nose.rotation.x = Math.PI / 2;
   group.add(nose);
 
-  const mouth = mesh(new THREE.BoxGeometry(r * 0.32, r * 0.05, r * 0.06), mat(0x7a3a3a), false);
-  mouth.position.set(0, headY - r * 0.42, r * 0.92);
+  const mouth = mesh(new THREE.CapsuleGeometry(r * 0.025, r * 0.26, 4, 8), mat(0x7a4040, { roughness: 0.5 }), false);
+  mouth.rotation.z = Math.PI / 2;
+  mouth.position.set(0, headY - r * 0.42, r * 0.94);
   group.add(mouth);
 }
 
 function addHair(group: THREE.Group, appearance: CharacterAppearance, headY: number, r: number): void {
   if (appearance.hairStyle === 'careca') return;
-  const hairMat = mat(appearance.hairColor, { roughness: 0.85 });
+  const hairMat = mat(appearance.hairColor, { roughness: 0.45 });
 
   switch (appearance.hairStyle) {
     case 'curto': {
@@ -352,6 +420,7 @@ function addMarkings(
   appearance: CharacterAppearance,
   headY: number,
   r: number,
+  armR: THREE.Group,
 ): void {
   if (appearance.scarStyle !== 'nenhuma') {
     const scarMat = mat(0x6b3a3a, { roughness: 0.6 });
@@ -372,12 +441,9 @@ function addMarkings(
     const inkMat = mat(0x2a4a6b, { roughness: 0.5 });
     if (appearance.tattooStyle === 'braco') {
       const ring = mesh(new THREE.TorusGeometry(0.075, 0.012, 6, 16), inkMat, false);
-      const rightArm = group.userData.rightArm as THREE.Group | undefined;
-      if (rightArm) {
-        ring.position.set(0, -0.28, 0.02);
-        ring.rotation.x = Math.PI / 2;
-        rightArm.add(ring);
-      }
+      ring.position.set(0, -0.28, 0.02);
+      ring.rotation.x = Math.PI / 2;
+      armR.add(ring);
     } else {
       const mark = mesh(new THREE.BoxGeometry(r * 0.18, r * 0.18, r * 0.02), inkMat, false);
       mark.position.set(-r * 0.55, headY - r * 0.1, r * 0.75);
@@ -386,46 +452,55 @@ function addMarkings(
   }
 }
 
+/**
+ * Attaches class weapon/prop meshes. Anything actually held in a hand is
+ * parented to that hand's arm-pivot group (in local, hand-relative
+ * coordinates) so it swings naturally with attack/block/idle animations;
+ * back/chest-mounted props (quiver, halo, wizard hat) stay on `upperBody`.
+ */
 function addClassAccessory(
-  group: THREE.Group,
+  upperBody: THREE.Group,
   accessory: ClassAccessory,
   primary: number,
   secondary: number,
   headY: number,
   shoulderWidth: number,
+  armL: THREE.Group,
+  armR: THREE.Group,
+  shoulderY: number,
 ): void {
-  const x = shoulderWidth + 0.18;
   switch (accessory) {
     case 'sword': {
-      const blade = mesh(new THREE.BoxGeometry(0.06, 0.62, 0.06), mat(0xcfd6dc, { metalness: 0.6, roughness: 0.3 }));
-      blade.position.set(x, 0.75, 0.05);
-      blade.rotation.z = 0.1;
-      const guard = mesh(new THREE.BoxGeometry(0.2, 0.05, 0.05), mat(0x8a8a8a, { metalness: 0.5 }));
-      guard.position.set(x, 0.46, 0.05);
       const hilt = mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.16, 8), mat(0x6b4423));
-      hilt.position.set(x, 0.36, 0.05);
-      group.add(blade, guard, hilt);
+      hilt.position.set(0, -0.55, 0.05);
+      const guard = mesh(new THREE.BoxGeometry(0.2, 0.05, 0.05), mat(0x8a8a8a, { metalness: 0.5 }));
+      guard.position.set(0, -0.63, 0.05);
+      const blade = mesh(new THREE.BoxGeometry(0.06, 0.62, 0.06), mat(0xcfd6dc, { metalness: 0.6, roughness: 0.3 }));
+      blade.position.set(0, -0.96, 0.05);
+      armR.add(hilt, guard, blade);
       break;
     }
     case 'staff': {
       const pole = mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.1, 8), mat(0x6b4423));
-      pole.position.set(x, 0.7, 0.05);
+      pole.position.set(0, -0.85, 0.05);
       const orb = mesh(new THREE.SphereGeometry(0.09, 10, 8), mat(secondary, { emissive: secondary, emissiveIntensity: 0.7, roughness: 0.2 }));
-      orb.position.set(x, 1.3, 0.05);
+      orb.position.set(0, -1.4, 0.05);
+      armR.add(pole, orb);
       const hat = mesh(new THREE.ConeGeometry(0.24, 0.4, 12), mat(primary));
       hat.position.set(0, headY + 0.28, 0);
-      group.add(pole, orb, hat);
+      upperBody.add(hat);
       break;
     }
     case 'bow': {
+      const x = shoulderWidth + 0.18;
       const bow = mesh(new THREE.TorusGeometry(0.32, 0.02, 6, 16, Math.PI * 1.15), mat(0x6b4423));
-      bow.position.set(x, 0.85, 0.1);
+      bow.position.set(x, shoulderY - 0.1, 0.1);
       bow.rotation.y = Math.PI / 2;
       bow.rotation.z = Math.PI * 0.075;
       const quiver = mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.4, 8), mat(0x5a4430));
-      quiver.position.set(-shoulderWidth - 0.05, 1.0, -0.15);
+      quiver.position.set(-shoulderWidth - 0.05, shoulderY + 0.15, -0.15);
       quiver.rotation.z = 0.3;
-      group.add(bow, quiver);
+      upperBody.add(bow, quiver);
       break;
     }
     case 'cross': {
@@ -436,42 +511,46 @@ function addClassAccessory(
       const halo = mesh(new THREE.TorusGeometry(0.16, 0.015, 6, 20), mat(0xf2c14e, { emissive: 0xf2c14e, emissiveIntensity: 0.4 }));
       halo.position.set(0, headY + 0.24, 0);
       halo.rotation.x = Math.PI / 2;
-      group.add(vertical, horizontal, halo);
+      upperBody.add(vertical, horizontal, halo);
       break;
     }
     case 'shield': {
       const shield = mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.05, 12), mat(secondary, { metalness: 0.4 }));
-      shield.position.set(-x, 0.85, 0.1);
+      shield.position.set(0, -0.45, 0.1);
       shield.rotation.z = Math.PI / 2;
-      const hammer = mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.6, 8), mat(0x6b4423));
-      hammer.position.set(x, 0.7, 0.05);
-      const head = mesh(new THREE.BoxGeometry(0.2, 0.14, 0.14), mat(0x8a8a8a, { metalness: 0.5 }));
-      head.position.set(x, 1.0, 0.05);
-      group.add(shield, hammer, head);
+      armL.add(shield);
+
+      const hammerHandle = mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.6, 8), mat(0x6b4423));
+      hammerHandle.position.set(0, -0.75, 0.05);
+      const hammerHead = mesh(new THREE.BoxGeometry(0.2, 0.14, 0.14), mat(0x8a8a8a, { metalness: 0.5 }));
+      hammerHead.position.set(0, -1.05, 0.05);
+      armR.add(hammerHandle, hammerHead);
       break;
     }
     case 'dagger': {
-      const blade = mesh(new THREE.BoxGeometry(0.04, 0.32, 0.04), mat(0xcfd6dc, { metalness: 0.6 }));
-      blade.position.set(x, 0.55, 0.08);
       const hilt = mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.1, 8), mat(0x2a2a2a));
-      hilt.position.set(x, 0.4, 0.08);
-      group.add(blade, hilt);
+      hilt.position.set(0, -0.55, 0.08);
+      const blade = mesh(new THREE.BoxGeometry(0.04, 0.32, 0.04), mat(0xcfd6dc, { metalness: 0.6 }));
+      blade.position.set(0, -0.75, 0.08);
+      armR.add(hilt, blade);
       break;
     }
     case 'grimoire': {
       const book = mesh(new THREE.BoxGeometry(0.2, 0.26, 0.05), mat(secondary));
-      book.position.set(x, 0.75, 0.1);
+      book.position.set(0, -0.35, 0.15);
+      book.rotation.x = -0.5;
       const glow = mesh(new THREE.SphereGeometry(0.05, 8, 8), mat(0x6bff8e, { emissive: 0x2fae4e, emissiveIntensity: 0.8 }), false);
-      glow.position.set(x, 0.75, 0.14);
-      group.add(book, glow);
+      glow.position.set(0, -0.3, 0.2);
+      armL.add(book, glow);
       break;
     }
     case 'fists': {
       const wrapL = mesh(new THREE.TorusGeometry(0.09, 0.025, 6, 12), mat(secondary));
+      wrapL.position.set(0, -0.5, 0.05);
+      armL.add(wrapL);
       const wrapR = mesh(new THREE.TorusGeometry(0.09, 0.025, 6, 12), mat(secondary));
-      wrapL.position.set(-x + 0.05, 0.42, 0.05);
-      wrapR.position.set(x - 0.05, 0.42, 0.05);
-      group.add(wrapL, wrapR);
+      wrapR.position.set(0, -0.5, 0.05);
+      armR.add(wrapR);
       break;
     }
     case 'none':
@@ -545,7 +624,7 @@ function buildQuadruped(color: number): THREE.Group {
   bodyMesh.position.set(0, 0.34, 0);
   group.add(bodyMesh);
 
-  const legGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.3, 6);
+  const legGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.3, 8);
   const legPositions: Array<[number, number]> = [
     [-0.28, 0.15], [0.28, 0.15], [-0.28, -0.15], [0.28, -0.15],
   ];
@@ -559,14 +638,14 @@ function buildQuadruped(color: number): THREE.Group {
   head.position.set(0.34, 0.42, 0);
   group.add(head);
 
-  const earGeo = new THREE.ConeGeometry(0.05, 0.12, 6);
+  const earGeo = new THREE.ConeGeometry(0.05, 0.12, 8);
   const earL = mesh(earGeo, bodyMat);
   const earR = mesh(earGeo, bodyMat);
   earL.position.set(0.34, 0.56, 0.08);
   earR.position.set(0.34, 0.56, -0.08);
   group.add(earL, earR);
 
-  const tail = mesh(new THREE.ConeGeometry(0.06, 0.35, 6), bodyMat);
+  const tail = mesh(new THREE.ConeGeometry(0.06, 0.35, 8), bodyMat);
   tail.position.set(-0.42, 0.4, 0);
   tail.rotation.z = -Math.PI / 2.4;
   group.add(tail);
@@ -584,7 +663,7 @@ function buildSpider(color: number): THREE.Group {
   head.position.set(0.28, 0.3, 0);
   group.add(abdomen, head);
 
-  const legGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.42, 5);
+  const legGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.42, 6);
   for (let i = 0; i < 4; i++) {
     const side = i < 2 ? -1 : 1;
     const offset = (i % 2) * 0.18 - 0.05;
@@ -653,7 +732,7 @@ function buildDragon(color: number): THREE.Group {
   body.position.set(0, 0.55, 0);
   group.add(body);
 
-  const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.4, 6);
+  const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.4, 8);
   const legPositions: Array<[number, number]> = [
     [-0.4, 0.2], [0.4, 0.2], [-0.4, -0.2], [0.4, -0.2],
   ];
@@ -701,6 +780,109 @@ function addBeadyEyes(group: THREE.Group, x: number, y: number, z: number, size:
   eyeL.position.set(-x * 0.25, y, z);
   eyeR.position.set(x * 0.25, y, z);
   group.add(eyeL, eyeR);
+}
+
+// --- mounts ------------------------------------------------------------
+
+/** A friendly long-necked pack animal — the ground mount. */
+function buildLlama(color: number): THREE.Group {
+  const group = new THREE.Group();
+  const bodyMat = mat(color, { roughness: 0.85 });
+
+  const body = mesh(new THREE.CapsuleGeometry(0.24, 0.5, 4, 8), bodyMat);
+  body.rotation.z = Math.PI / 2;
+  body.position.set(0, 0.5, 0);
+  group.add(body);
+
+  const legGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.42, 8);
+  const legPositions: Array<[number, number]> = [
+    [-0.28, 0.16], [0.28, 0.16], [-0.28, -0.16], [0.28, -0.16],
+  ];
+  for (const [x, z] of legPositions) {
+    const leg = mesh(legGeo, bodyMat);
+    leg.position.set(x, 0.21, z);
+    group.add(leg);
+  }
+
+  const neck = mesh(new THREE.CylinderGeometry(0.1, 0.15, 0.55, 8), bodyMat);
+  neck.position.set(0.32, 0.95, 0);
+  neck.rotation.z = -0.5;
+  group.add(neck);
+
+  const head = mesh(new THREE.BoxGeometry(0.16, 0.2, 0.22), bodyMat);
+  head.position.set(0.52, 1.25, 0);
+  group.add(head);
+
+  const earGeo = new THREE.ConeGeometry(0.04, 0.14, 6);
+  const earL = mesh(earGeo, bodyMat);
+  const earR = mesh(earGeo, bodyMat);
+  earL.position.set(0.52, 1.4, 0.06);
+  earR.position.set(0.52, 1.4, -0.06);
+  group.add(earL, earR);
+
+  addBeadyEyes(group, 1.28, 0.6, 0.12, 0.025, 0x1a1423);
+
+  const tail = mesh(new THREE.ConeGeometry(0.06, 0.2, 6), bodyMat);
+  tail.position.set(-0.42, 0.75, 0);
+  tail.rotation.z = -Math.PI / 2.6;
+  group.add(tail);
+
+  return group;
+}
+
+/** A great bird mount, wings spread wide — the flying mount. */
+function buildCondor(color: number): THREE.Group {
+  const group = new THREE.Group();
+  const bodyMat = mat(color, { roughness: 0.7 });
+
+  const body = mesh(new THREE.CapsuleGeometry(0.2, 0.4, 4, 8), bodyMat);
+  body.rotation.z = Math.PI / 2;
+  body.position.set(0, 0, 0);
+  group.add(body);
+
+  const wingGeo = new THREE.BoxGeometry(0.85, 0.04, 0.32);
+  const wingMat = mat(color, { roughness: 0.6 });
+  const wingL = mesh(wingGeo, wingMat);
+  const wingR = mesh(wingGeo, wingMat);
+  wingL.position.set(0, 0.05, 0.45);
+  wingR.position.set(0, 0.05, -0.45);
+  wingL.rotation.x = -0.25;
+  wingR.rotation.x = 0.25;
+  group.add(wingL, wingR);
+  group.userData.wings = [wingL, wingR];
+
+  const neck = mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.3, 8), bodyMat);
+  neck.position.set(0.28, 0.14, 0);
+  neck.rotation.z = -0.7;
+  group.add(neck);
+
+  const head = mesh(new THREE.SphereGeometry(0.12, 10, 8), mat(0xe8e0d0, { roughness: 0.7 }));
+  head.position.set(0.44, 0.3, 0);
+  group.add(head);
+
+  const beak = mesh(new THREE.ConeGeometry(0.045, 0.16, 8), mat(0xd97a2e));
+  beak.position.set(0.58, 0.28, 0);
+  beak.rotation.z = -Math.PI / 2;
+  group.add(beak);
+
+  addBeadyEyes(group, 0.42, 0.34, 0.09, 0.02, 0xffcf4e);
+
+  const tail = mesh(new THREE.BoxGeometry(0.34, 0.03, 0.18), bodyMat);
+  tail.position.set(-0.36, -0.02, 0);
+  group.add(tail);
+
+  return group;
+}
+
+export function buildMountModel(mountId: string, color: number): THREE.Group {
+  switch (mountId) {
+    case 'llama':
+      return buildLlama(color);
+    case 'condor':
+      return buildCondor(color);
+    default:
+      return buildLlama(color);
+  }
 }
 
 export function buildEnemyModel(enemyId: string, color: number): THREE.Group {

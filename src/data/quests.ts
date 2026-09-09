@@ -23,14 +23,16 @@ export interface QuestDefinition {
 }
 
 /**
- * The main story chain — Pedravale, threatened by the Shadow Blight
- * spreading from nearby ruins. Completing one quest unlocks the next.
+ * Capítulo 1 de Ipêra — "O Vozeiro de Pedravale". A ameaça (a Sede) e a
+ * verdade sobre o passado de Ipêra são apresentadas aos poucos; ver
+ * LORE.md para a bíblia completa, incluindo a reviravolta e os ganchos
+ * para os próximos capítulos. Completar uma missão libera a próxima.
  */
 export const QUEST_CHAIN: QuestDefinition[] = [
   {
     id: 'q1_awaken',
-    title: 'Ecos das Sombras',
-    description: 'O Ancião Tobias quer falar com você sobre a ameaça que paira sobre Pedravale.',
+    title: 'A Voz nas Raízes',
+    description: 'O Ancião Tobias precisa falar com você sobre o que aconteceu ontem à noite.',
     giverNpcId: 'tobias',
     objective: { kind: 'talkTo', targetId: 'tobias', amount: 1 },
     rewardXp: 20,
@@ -39,8 +41,8 @@ export const QUEST_CHAIN: QuestDefinition[] = [
   },
   {
     id: 'q2_first_steps',
-    title: 'Primeiros Passos',
-    description: 'Prove seu valor derrotando criaturas no campo aberto.',
+    title: 'Ouvir as Raízes',
+    description: 'Enfrente as criaturas corrompidas pela Sede que rondam o campo aberto.',
     giverNpcId: 'tobias',
     objective: { kind: 'defeat', amount: 3 },
     rewardXp: 40,
@@ -49,8 +51,8 @@ export const QUEST_CHAIN: QuestDefinition[] = [
   },
   {
     id: 'q3_new_blood',
-    title: 'Sangue Novo',
-    description: 'Continue treinando até alcançar o nível 5.',
+    title: 'Sangue de Vozeiro',
+    description: 'Seu dom ainda é fraco. Continue treinando até alcançar o nível 5.',
     giverNpcId: 'tobias',
     objective: { kind: 'reachLevel', amount: 5 },
     rewardXp: 60,
@@ -60,8 +62,8 @@ export const QUEST_CHAIN: QuestDefinition[] = [
   },
   {
     id: 'q4_goblin_hunt',
-    title: 'Caçador de Goblins',
-    description: 'Goblins corrompidos têm atacado viajantes. Derrote-os.',
+    title: 'Rastros da Sede',
+    description: 'Goblins corrompidos pela Sede têm atacado viajantes nas trilhas. Detenha-os.',
     giverNpcId: 'bram',
     objective: { kind: 'defeat', targetId: 'goblin', amount: 5 },
     rewardXp: 100,
@@ -70,8 +72,8 @@ export const QUEST_CHAIN: QuestDefinition[] = [
   },
   {
     id: 'q5_the_calling',
-    title: 'O Chamado da Ruína',
-    description: 'A corrupção cresce. Torne-se forte o suficiente — alcance o nível 10.',
+    title: 'O Peso do Dom',
+    description: 'A Sede se espalha mais rápido do que Tobias esperava. Torne-se forte o suficiente — alcance o nível 10.',
     giverNpcId: 'tobias',
     objective: { kind: 'reachLevel', amount: 10 },
     rewardXp: 150,
@@ -81,8 +83,8 @@ export const QUEST_CHAIN: QuestDefinition[] = [
   },
   {
     id: 'q6_dragon',
-    title: 'O Dragão Desperta',
-    description: 'Um jovem dragão corrompido emergiu das ruínas. Enfrente-o.',
+    title: 'O Guardião Corrompido',
+    description: 'Um antigo guardião das ruínas, corrompido pela Sede há gerações, despertou. Enfrente-o — e talvez, ao ouvi-lo morrer, entenda algo que Tobias nunca lhe contou.',
     giverNpcId: 'tobias',
     objective: { kind: 'defeat', targetId: 'young_dragon', amount: 1 },
     rewardXp: 400,

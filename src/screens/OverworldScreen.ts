@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { isWalkable, TileType, triggersEncounter } from '../config/tiles';
+import { getMountById } from '../data/mounts';
 import { NPC_DEFINITIONS, type NpcDefinition } from '../data/npcs';
 import { Player } from '../entities/Player';
-import { buildHumanCharacter, buildPlayerCharacter } from '../render/characterModel';
+import { CharacterAnimator } from '../render/animation';
+import { buildHumanCharacter, buildMountModel, buildPlayerCharacter, getRig } from '../render/characterModel';
 import { buildOverworldMeshes, tileCenterWorld } from '../render/worldBuilder';
 import { ENCOUNTER_CHANCE_PER_STEP, pickEncounterEnemyIds } from '../systems/EncounterSystem';
 import { generateOverworldMap, MAP_HEIGHT, MAP_WIDTH } from '../systems/MapGenerator';
@@ -33,11 +35,17 @@ const DIR_FORWARD: Record<Dir, THREE.Vector3> = {
   right: new THREE.Vector3(1, 0, 0),
 };
 
-const MOVE_DURATION = 0.16;
+const BASE_MOVE_DURATION = 0.16;
 const CAM_DISTANCE = 4.4;
 const CAM_HEIGHT = 3.1;
 const LOOK_HEIGHT = 1.1;
 const INTERACT_RANGE = 1;
+// The player model's local origin is at its feet, but its hip pivot (where a
+// straddling rider's weight actually rests) is ~0.84 above that. So the
+// offset that lands the hip on the mount's back sits well below zero, not
+// above it — this is the position of the character's ROOT, not the seat.
+const MOUNT_SEAT_OFFSET = new THREE.Vector3(0, -0.08, -0.05);
+const FLYING_HOVER_HEIGHT = 0.9;
 
 interface NpcSlot {
   def: NpcDefinition;
@@ -45,21 +53,36 @@ interface NpcSlot {
   labelEl: HTMLElement;
 }
 
+function disposeGroup(group: THREE.Object3D): void {
+  group.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) {
+      obj.geometry.dispose();
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const m of mats) m.dispose();
+    }
+  });
+}
+
 export class OverworldScreen implements Screen {
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
 
   private tiles: TileType[][] = [];
+  private waterMaterial: THREE.MeshStandardMaterial | null = null;
   private playerModel!: THREE.Group;
+  private mountModel: THREE.Group | null = null;
+  /** Whichever object currently moves through the world — the rider alone, or the mount carrying them. */
+  private avatar!: THREE.Object3D;
+  private animator!: CharacterAnimator;
   private dirLight!: THREE.DirectionalLight;
   private npcSlots: NpcSlot[] = [];
+  private time = 0;
 
   private facing: Dir = 'down';
   private isMoving = false;
   private moveT = 0;
   private moveFrom = new THREE.Vector3();
   private moveTo = new THREE.Vector3();
-  private walkTime = 0;
   private pendingEncounterTile: TileType | null = null;
 
   private heldKeys = new Set<string>();
@@ -80,6 +103,7 @@ export class OverworldScreen implements Screen {
   private dialogueLineEl!: HTMLElement;
   private pauseOverlay!: HTMLElement;
   private questTrackerEl!: HTMLElement;
+  private mountSectionEl!: HTMLElement;
 
   constructor(
     private game: Game,
@@ -96,11 +120,13 @@ export class OverworldScreen implements Screen {
 
     const { tiles } = generateOverworldMap();
     this.tiles = tiles;
-    const { group } = buildOverworldMeshes(tiles);
+    const { group, waterMaterial } = buildOverworldMeshes(tiles);
+    this.waterMaterial = waterMaterial;
     this.scene.add(group);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.65);
-    this.scene.add(ambient);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+    const hemi = new THREE.HemisphereLight(0x8ec9e8, 0x4c8a3f, 0.55);
+    this.scene.add(ambient, hemi);
 
     this.dirLight = new THREE.DirectionalLight(0xfff4e0, 1.0);
     this.dirLight.castShadow = true;
@@ -116,9 +142,13 @@ export class OverworldScreen implements Screen {
     this.scene.add(this.dirLight.target);
 
     this.playerModel = buildPlayerCharacter(this.player);
+    this.animator = new CharacterAnimator(getRig(this.playerModel));
+    this.avatar = this.playerModel;
     this.scene.add(this.playerModel);
-    this.snapPlayerModelToTile(this.player.mapX, this.player.mapY);
+    tileCenterWorld(this.player.mapX, this.player.mapY, this.avatar.position);
     this.applyFacingRotation();
+
+    if (this.player.activeMountId) this.setMounted(this.player.activeMountId, true);
 
     this.buildNpcs();
     this.positionCameraImmediate();
@@ -145,15 +175,14 @@ export class OverworldScreen implements Screen {
   }
 
   update(dt: number): void {
+    this.time += dt;
+
     if (!this.paused && !this.dialogueNpc) {
       if (this.isMoving) {
-        this.moveT = Math.min(1, this.moveT + dt / MOVE_DURATION);
-        this.playerModel.position.lerpVectors(this.moveFrom, this.moveTo, this.moveT);
-        this.walkTime += dt;
-        this.playerModel.position.y = Math.abs(Math.sin(this.walkTime * 13)) * 0.06;
+        this.moveT = Math.min(1, this.moveT + dt / this.currentMoveDuration());
+        this.avatar.position.lerpVectors(this.moveFrom, this.moveTo, this.moveT);
         if (this.moveT >= 1) {
           this.isMoving = false;
-          this.playerModel.position.y = 0;
           this.onArrivedAtTile();
         }
       } else {
@@ -163,8 +192,30 @@ export class OverworldScreen implements Screen {
       this.updateInteraction();
     }
 
+    this.animator.setMoving(this.isMoving);
+    this.animator.update(dt);
+    this.animateMount(dt);
+    this.animateWater();
     this.updateCamera(dt);
     this.updateNpcLabels();
+  }
+
+  private animateWater(): void {
+    if (!this.waterMaterial) return;
+    const shimmer = Math.sin(this.time * 1.4) * 0.06;
+    this.waterMaterial.opacity = 0.82 + shimmer;
+    this.waterMaterial.emissiveIntensity = 0.15 + Math.max(0, shimmer);
+  }
+
+  private animateMount(dt: number): void {
+    if (!this.mountModel) return;
+    const wings = this.mountModel.userData.wings as THREE.Object3D[] | undefined;
+    if (wings) {
+      const flap = Math.sin(this.time * 9) * 0.35;
+      wings[0].rotation.z = -0.25 + flap;
+      wings[1].rotation.z = 0.25 - flap;
+    }
+    void dt;
   }
 
   // --- input -----------------------------------------------------------
@@ -187,6 +238,17 @@ export class OverworldScreen implements Screen {
     if (e.key === 'e' || e.key === 'E') {
       if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
     }
+    if ((e.key === 'm' || e.key === 'M') && !this.isMoving) {
+      this.cycleMount();
+    }
+  }
+
+  private cycleMount(): void {
+    const mounts = this.player.unlockedMounts;
+    if (mounts.length === 0) return;
+    const currentIndex = this.player.activeMountId ? mounts.indexOf(this.player.activeMountId) : -1;
+    const nextIndex = currentIndex + 1;
+    this.setMounted(nextIndex >= mounts.length ? null : mounts[nextIndex]);
   }
 
   private onKeyUp(e: KeyboardEvent): void {
@@ -202,6 +264,64 @@ export class OverworldScreen implements Screen {
     return this.touchDir;
   }
 
+  // --- mounts --------------------------------------------------------
+
+  private isFlyingMounted(): boolean {
+    return this.player.activeMountId !== null && getMountById(this.player.activeMountId).kind === 'voadora';
+  }
+
+  private currentMoveDuration(): number {
+    const mount = this.player.activeMountId ? getMountById(this.player.activeMountId) : null;
+    return BASE_MOVE_DURATION / (mount?.speedMultiplier ?? 1);
+  }
+
+  private setMounted(mountId: string | null, instant = false): void {
+    if (mountId !== null && !this.player.unlockedMounts.includes(mountId)) return;
+
+    if (mountId === null) {
+      if (!this.mountModel) return;
+      const worldPos = new THREE.Vector3();
+      this.mountModel.getWorldPosition(worldPos);
+      this.mountModel.remove(this.playerModel);
+      this.scene.remove(this.mountModel);
+      disposeGroup(this.mountModel);
+      this.mountModel = null;
+      this.playerModel.position.copy(worldPos);
+      this.playerModel.position.y = 0;
+      this.scene.add(this.playerModel);
+      this.avatar = this.playerModel;
+      this.player.setMount(null);
+      if (instant) this.animator.setMounted(false);
+      else {
+        this.animator.setMounted(false);
+        this.animator.play('dismount');
+      }
+    } else {
+      const def = getMountById(mountId);
+      if (this.mountModel) this.setMounted(null, true);
+
+      const worldPos = new THREE.Vector3();
+      this.avatar.getWorldPosition(worldPos);
+      const mountGroup = buildMountModel(mountId, def.color);
+      mountGroup.position.copy(worldPos);
+      if (def.kind === 'voadora') mountGroup.position.y = FLYING_HOVER_HEIGHT;
+      mountGroup.rotation.y = this.avatar.rotation.y;
+
+      this.scene.remove(this.playerModel);
+      this.playerModel.position.copy(MOUNT_SEAT_OFFSET);
+      this.playerModel.rotation.y = 0;
+      mountGroup.add(this.playerModel);
+
+      this.scene.add(mountGroup);
+      this.mountModel = mountGroup;
+      this.avatar = mountGroup;
+      this.player.setMount(mountId);
+      if (instant) this.animator.setMounted(true);
+      else this.animator.play('mount', () => this.animator.setMounted(true));
+    }
+    this.refreshMountSection();
+  }
+
   // --- movement ----------------------------------------------------------
 
   private tryMove(dir: Dir): void {
@@ -214,13 +334,15 @@ export class OverworldScreen implements Screen {
     if (nx < 0 || ny < 0 || nx >= MAP_WIDTH || ny >= MAP_HEIGHT) return;
 
     const destTile = this.tiles[ny][nx];
-    if (!isWalkable(destTile)) return;
+    const canCross = isWalkable(destTile) || (this.isFlyingMounted() && destTile === TileType.Water);
+    if (!canCross) return;
     if (this.npcSlots.some((s) => s.def.mapX === nx && s.def.mapY === ny)) return;
 
     this.player.mapX = nx;
     this.player.mapY = ny;
-    this.moveFrom.copy(this.playerModel.position);
+    this.moveFrom.copy(this.avatar.position);
     tileCenterWorld(nx, ny, this.moveTo);
+    if (this.isFlyingMounted()) this.moveTo.y = FLYING_HOVER_HEIGHT;
     this.moveT = 0;
     this.isMoving = true;
     this.pendingEncounterTile = destTile;
@@ -229,6 +351,7 @@ export class OverworldScreen implements Screen {
   private onArrivedAtTile(): void {
     const tile = this.pendingEncounterTile;
     this.pendingEncounterTile = null;
+    if (this.isFlyingMounted()) return; // soaring above danger
     if (tile !== null && triggersEncounter(tile) && Math.random() < ENCOUNTER_CHANCE_PER_STEP) {
       this.startEncounter();
     }
@@ -240,13 +363,9 @@ export class OverworldScreen implements Screen {
     this.game.goTo(new BattleScreen(this.game, this.player, enemyIds));
   }
 
-  private snapPlayerModelToTile(x: number, y: number): void {
-    tileCenterWorld(x, y, this.playerModel.position);
-  }
-
   private applyFacingRotation(): void {
     const f = DIR_FORWARD[this.facing];
-    this.playerModel.rotation.y = Math.atan2(f.x, f.z);
+    this.avatar.rotation.y = Math.atan2(f.x, f.z);
   }
 
   // --- NPCs & dialogue --------------------------------------------------
@@ -328,14 +447,14 @@ export class OverworldScreen implements Screen {
   private desiredCameraPosition(target = new THREE.Vector3()): THREE.Vector3 {
     const forward = DIR_FORWARD[this.facing];
     return target
-      .copy(this.playerModel.position)
+      .copy(this.avatar.position)
       .addScaledVector(forward, -CAM_DISTANCE)
       .add(new THREE.Vector3(0, CAM_HEIGHT, 0));
   }
 
   private positionCameraImmediate(): void {
     this.desiredCameraPosition(this.camera.position);
-    this.camLookAt.copy(this.playerModel.position).add(new THREE.Vector3(0, LOOK_HEIGHT, 0));
+    this.camLookAt.copy(this.avatar.position).add(new THREE.Vector3(0, LOOK_HEIGHT, 0));
     this.camera.lookAt(this.camLookAt);
   }
 
@@ -344,12 +463,12 @@ export class OverworldScreen implements Screen {
     const followLerp = 1 - Math.exp(-dt * 6);
     this.camera.position.lerp(desired, followLerp);
 
-    const desiredLookAt = new THREE.Vector3().copy(this.playerModel.position).add(new THREE.Vector3(0, LOOK_HEIGHT, 0));
+    const desiredLookAt = new THREE.Vector3().copy(this.avatar.position).add(new THREE.Vector3(0, LOOK_HEIGHT, 0));
     this.camLookAt.lerp(desiredLookAt, followLerp);
     this.camera.lookAt(this.camLookAt);
 
-    this.dirLight.position.copy(this.playerModel.position).add(new THREE.Vector3(6, 10, 4));
-    this.dirLight.target.position.copy(this.playerModel.position);
+    this.dirLight.position.copy(this.avatar.position).add(new THREE.Vector3(6, 10, 4));
+    this.dirLight.target.position.copy(this.avatar.position);
   }
 
   // --- HUD -------------------------------------------------------------
@@ -370,7 +489,7 @@ export class OverworldScreen implements Screen {
       ],
     );
 
-    const hint = el('div', { className: 'hud-hint', text: 'ESC: menu' });
+    const hint = el('div', { className: 'hud-hint', text: 'ESC: menu · M: montaria' });
     this.promptEl = el('div', { className: 'interact-prompt', text: '' });
     this.promptEl.hidden = true;
 
@@ -451,12 +570,39 @@ export class OverworldScreen implements Screen {
       },
     });
 
+    this.mountSectionEl = el('div', { className: 'stack' });
+
     this.pauseOverlay = el('div', { className: 'panel pause-overlay' }, [
       el('h2', { text: 'Pausado' }),
-      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn, exitBtn]),
+      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn]),
+      el('div', { className: 'pause-divider' }),
+      this.mountSectionEl,
+      el('div', { className: 'pause-divider' }),
+      el('div', { className: 'stack' }, [exitBtn]),
     ]);
     this.pauseOverlay.hidden = true;
     this.game.uiRoot.append(this.pauseOverlay);
+    this.refreshMountSection();
+  }
+
+  private refreshMountSection(): void {
+    if (!this.mountSectionEl) return;
+    const buttons: HTMLElement[] = [];
+    for (const mountId of this.player.unlockedMounts) {
+      const def = getMountById(mountId);
+      const active = this.player.activeMountId === mountId;
+      buttons.push(
+        el('div', {
+          className: `btn ${active ? 'primary' : ''}`,
+          text: active ? `Montado: ${def.name}` : `Montar ${def.name} (${def.kind})`,
+          onClick: () => this.setMounted(active ? null : mountId),
+        }),
+      );
+    }
+    if (this.player.activeMountId) {
+      buttons.push(el('div', { className: 'btn', text: 'Desmontar', onClick: () => this.setMounted(null) }));
+    }
+    this.mountSectionEl.replaceChildren(...buttons);
   }
 
   private togglePause(): void {

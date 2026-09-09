@@ -5,9 +5,12 @@ import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
-import { buildEnemyModel, buildPlayerCharacter } from '../render/characterModel';
-import { CombatEngine, type CombatEvent } from '../systems/CombatSystem';
+import { getItemById } from '../data/items';
+import { buildEnemyModel, buildPlayerCharacter, getRig } from '../render/characterModel';
+import { CharacterAnimator, type ActionName } from '../render/animation';
+import { CombatEngine, ITEM_COOLDOWN, type CombatEvent } from '../systems/CombatSystem';
 import { computeSkillLevelStats } from '../systems/skillMath';
+import { makeGrainTexture } from '../render/worldBuilder';
 import { generateOverworldMap } from '../systems/MapGenerator';
 import { notifyEnemyDefeated, notifyLevelChanged } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
@@ -34,6 +37,13 @@ interface HotbarSlot {
   costEl: HTMLElement;
 }
 
+interface ItemHotbarSlot {
+  itemId: string;
+  el: HTMLElement;
+  fillEl: HTMLElement;
+  countEl: HTMLElement;
+}
+
 const FLASH_DURATION = 0.16;
 const PLAYER_POS = new THREE.Vector3(-2.3, 0, 0.6);
 const CAMERA_POS = new THREE.Vector3(0, 2.7, 7.2);
@@ -44,6 +54,7 @@ export class BattleScreen implements Screen {
   camera: THREE.PerspectiveCamera;
 
   private playerModel!: THREE.Group;
+  private animator!: CharacterAnimator;
   private playerFlashTime = 0;
   private enemySlots: EnemySlot[] = [];
   private engine!: CombatEngine;
@@ -55,6 +66,7 @@ export class BattleScreen implements Screen {
   private messageEl!: HTMLElement;
   private fleeFillEl!: HTMLElement;
   private hotbar: HotbarSlot[] = [];
+  private itemHotbar: ItemHotbarSlot[] = [];
 
   private pendingTargetPick: ((index: number) => void) | null = null;
 
@@ -72,15 +84,18 @@ export class BattleScreen implements Screen {
     this.scene.background = new THREE.Color(0x241933);
     this.scene.fog = new THREE.Fog(0x241933, 9, 22);
 
+    const arenaTex = makeGrainTexture(0x352a44, 16);
+    arenaTex.repeat.set(6, 6);
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(7, 40),
-      new THREE.MeshStandardMaterial({ color: 0x352a44, roughness: 0.9 }),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, map: arenaTex, roughness: 0.9 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+    const hemi = new THREE.HemisphereLight(0x6a5a8e, 0x241933, 0.5);
     const dirLight = new THREE.DirectionalLight(0xfff0e0, 1.0);
     dirLight.position.set(3, 6, 4);
     dirLight.castShadow = true;
@@ -90,7 +105,7 @@ export class BattleScreen implements Screen {
     shadowCam.right = 7;
     shadowCam.top = 7;
     shadowCam.bottom = -7;
-    this.scene.add(ambient, dirLight);
+    this.scene.add(ambient, hemi, dirLight);
 
     this.camera.position.copy(CAMERA_POS);
     this.camera.lookAt(CAMERA_LOOKAT);
@@ -99,12 +114,14 @@ export class BattleScreen implements Screen {
     this.playerModel.position.copy(PLAYER_POS);
     this.playerModel.rotation.y = Math.PI * 0.68;
     this.scene.add(this.playerModel);
+    this.animator = new CharacterAnimator(getRig(this.playerModel));
 
     this.buildEnemies();
     this.engine = new CombatEngine(this.player, this.enemySlots.map((s) => s.enemy));
 
     this.buildStatusPanel();
     this.buildHotbar();
+    this.buildItemBar();
 
     window.addEventListener('keydown', this.keydownHandler);
   }
@@ -130,6 +147,7 @@ export class BattleScreen implements Screen {
         slot.model.scale.setScalar(1 + 0.15 * (slot.flashTime / FLASH_DURATION));
       }
     }
+    this.animator.update(dt);
 
     if (this.ended) return;
     const events = this.engine.tick(dt);
@@ -247,6 +265,28 @@ export class BattleScreen implements Screen {
     this.game.uiRoot.append(bar);
   }
 
+  private buildItemBar(): void {
+    const itemIds = Object.keys(this.player.inventory).filter((id) => (this.player.inventory[id] ?? 0) > 0);
+    if (itemIds.length === 0) return;
+
+    const slotEls: HTMLElement[] = [];
+    itemIds.forEach((itemId) => {
+      const item = getItemById(itemId);
+      const fillEl = el('div', { className: 'cd-fill' });
+      const countEl = el('div', { className: 'hotbar-cost', text: `x${this.player.inventory[itemId] ?? 0}` });
+      const slotEl = el(
+        'div',
+        { className: 'hotbar-slot item', onClick: () => this.onItemClicked(itemId) },
+        [el('div', { className: 'hotbar-name', text: item.name }), countEl, fillEl],
+      );
+      slotEls.push(slotEl);
+      this.itemHotbar.push({ itemId, el: slotEl, fillEl, countEl });
+    });
+
+    const bar = el('div', { className: 'item-hotbar' }, slotEls);
+    this.game.uiRoot.append(bar);
+  }
+
   private onKeyDown(e: KeyboardEvent): void {
     if (e.key === 'Escape' && this.pendingTargetPick) {
       this.pendingTargetPick = null;
@@ -298,8 +338,30 @@ export class BattleScreen implements Screen {
       else if (result.reason === 'mana') this.showMessage('Mana insuficiente!');
       return;
     }
+    this.animator.play(this.actionForSkill(skillId));
     this.processEvents(result.events);
     this.refreshHotbarCooldowns();
+    this.refreshStatusBars();
+  }
+
+  private actionForSkill(skillId: string): ActionName {
+    const skill = this.hotbar.find((h) => h.skill.id === skillId)?.skill;
+    if (!skill) return 'attack';
+    if (skill.kind === 'magical' || skill.kind === 'heal') return 'cast';
+    if (skill.kind === 'buff') return 'defend';
+    return 'attack';
+  }
+
+  private onItemClicked(itemId: string): void {
+    if (this.ended) return;
+    const result = this.engine.useItem(itemId);
+    if (!result.ok) {
+      if (result.reason === 'cooldown') this.showMessage('Aguarde para usar este item novamente...');
+      return;
+    }
+    this.animator.play('eat');
+    this.processEvents(result.events);
+    this.refreshItemHotbarCounts();
     this.refreshStatusBars();
   }
 
@@ -332,6 +394,7 @@ export class BattleScreen implements Screen {
         if (event.kind === 'defeated') this.killEnemy(event.targetIndex);
       } else if (event.targetIsPlayer) {
         this.playerFlashTime = FLASH_DURATION;
+        if (event.kind === 'damage') this.animator.play('hit');
         const anchor = this.projectToScreen(
           new THREE.Vector3(this.playerModel.position.x, this.playerModel.position.y + 1.5, this.playerModel.position.z),
         );
@@ -340,6 +403,7 @@ export class BattleScreen implements Screen {
 
       if (event.kind === 'victory') {
         this.ended = true;
+        this.animator.play('victory');
         const questMsg = this.processQuestUpdates();
         if (questMsg) this.showMessage(questMsg);
         saveGame(this.player);
@@ -442,8 +506,21 @@ export class BattleScreen implements Screen {
       slot.el.classList.toggle('on-cooldown', remaining > 0.05);
       slot.el.classList.toggle('no-mana', this.player.currentMp < slot.cost && remaining <= 0.05);
     }
+    for (const slot of this.itemHotbar) {
+      const remaining = this.engine.cooldownRemaining(`item_${slot.itemId}`);
+      const fraction = Math.min(1, remaining / ITEM_COOLDOWN);
+      slot.fillEl.style.height = `${fraction * 100}%`;
+    }
     const fleeRemaining = this.engine.fleeCooldownRemaining();
     this.fleeFillEl.style.height = `${Math.min(1, fleeRemaining / 4) * 100}%`;
+  }
+
+  private refreshItemHotbarCounts(): void {
+    for (const slot of this.itemHotbar) {
+      const count = this.player.inventory[slot.itemId] ?? 0;
+      slot.countEl.textContent = `x${count}`;
+      slot.el.classList.toggle('depleted', count <= 0);
+    }
   }
 }
 

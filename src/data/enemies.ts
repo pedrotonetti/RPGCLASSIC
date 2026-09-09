@@ -137,7 +137,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'young_dragon',
-    name: 'Dragão Jovem',
+    name: 'Guardião-Dragão Corrompido',
     color: 0xc73a3a,
     isBoss: true,
     stats: { maxHp: 160, maxMp: 40, attack: 18, magicAttack: 16, defense: 10, magicDefense: 10, speed: 7, luck: 6 },

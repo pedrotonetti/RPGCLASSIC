@@ -379,6 +379,10 @@ body {
   margin: 0 0 14px;
   color: var(--accent);
 }
+.pause-divider {
+  border-top: 1px solid var(--panel-border);
+  margin: 12px 0;
+}
 
 /* --- Battle screen ------------------------------------------------- */
 .battle-status {
@@ -522,6 +526,26 @@ body {
 .hotbar-slot.no-mana {
   border-color: var(--mp);
   opacity: 0.6;
+}
+.item-hotbar {
+  position: absolute;
+  right: 12px;
+  bottom: 112px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+}
+.item-hotbar .hotbar-slot.item {
+  width: 60px;
+  height: 60px;
+  border-color: #4caf50;
+}
+.item-hotbar .hotbar-slot.item .hotbar-name {
+  font-size: 11px;
+}
+.hotbar-slot.depleted {
+  opacity: 0.35;
+  pointer-events: none;
 }
 .floating-text {
   position: absolute;

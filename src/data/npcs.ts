@@ -48,10 +48,11 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       headAccessory: 'nenhum',
     }),
     dialogue: [
-      'Ah, um novo herói em Pedravale... Já era hora.',
-      'Uma sombra antiga desperta nas ruínas a leste. Nós a chamamos de Praga Sombria.',
-      'Ela corrompe bestas e homens, tornando-os inimigos de tudo que é vivo.',
-      'Prove seu valor lá fora, e talvez juntos possamos deter o que está por vir.',
+      'Você ouviu, não ouviu? Quando as criaturas atacaram ontem à noite... você as ouviu antes de vê-las.',
+      'Isso não é normal. Ninguém em Pedravale devia ser capaz disso. Ninguém... desde a guerra.',
+      'As Raízes estão inquietas. A Florescência deveria vir em breve, mas as Ipê-árvores não florescem — estão sendo drenadas por algo que chamamos de Sede.',
+      'Você é um Vozeiro. Consegue ouvir os ancestrais diretamente. É um dom que se acreditava extinto.',
+      'Vá até os ipezais além da vila e ouça por si mesmo o que as Raízes têm a dizer. Eu... preciso pensar em como te contar o resto.',
     ],
   },
   {
@@ -70,6 +71,7 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     }),
     dialogue: [
       'O metal não mente. Só o fogo revela do que algo é feito.',
+      'Ando forjando à luz de vela — as Ipê-árvores perto da forja não brotam uma flor sequer este ano.',
       'Se encontrar minérios raros por aí, me avise — sempre há algo novo para forjar.',
     ],
   },
@@ -89,7 +91,7 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     }),
     dialogue: [
       'Fique nas trilhas conhecidas. O campo aberto anda mais perigoso a cada dia.',
-      'Já vi coisas saindo daquelas ruínas que não deveriam existir.',
+      'As criaturas que vêm da Sede não são bichos comuns — juraria que reconheço rostos nelas. Não conto isso a qualquer um.',
     ],
   },
   {
@@ -108,7 +110,29 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     }),
     dialogue: [
       'Poções de vida e mana, sempre à mão para quem parte em aventura.',
-      'Volte sempre que precisar se recuperar, herói.',
+      'Rezo pela Florescência todo ano. Este ano, pela primeira vez, tenho medo de que ela não venha.',
+    ],
+  },
+  {
+    id: 'zaya',
+    name: 'Zaya',
+    role: 'Batedora Viajante',
+    mapX: 4,
+    mapY: 7,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'trancado',
+      hairColor: 0x1c1712,
+      eyeColor: 0x4a9a5a,
+      primaryColor: 0x3fae5b,
+      secondaryColor: 0x6b4423,
+      bodyType: 'atletico',
+      tattooStyle: 'braco',
+    }),
+    dialogue: [
+      'Você deve ser o Vozeiro de quem todos falam. Eu sou Zaya — vim de um vilarejo três serras a leste.',
+      'Andei seguindo o rastro da Sede até aqui. Prometo te ajudar no que precisar lá fora.',
+      '(Zaya sorri, mas por um instante seus olhos pesam, como quem carrega um recado que ainda não entregou.)',
     ],
   },
 ];

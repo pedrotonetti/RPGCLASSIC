@@ -57,6 +57,7 @@ function resolveHeal(atk: Stats, power: number): number {
 
 const FLEE_KEY = '__flee';
 const FLEE_COOLDOWN = 4;
+export const ITEM_COOLDOWN = 3;
 const BUFF_BASE_DURATION = 8;
 const BUFF_DURATION_PER_LEVEL = 0.5;
 const LOOT_DROP_CHANCE = 0.4;
@@ -187,6 +188,32 @@ export class CombatEngine {
       return { ok: true, events: [{ kind: 'fled', text: 'Você fugiu da batalha!', actorIsPlayer: true }] };
     }
     return { ok: true, events: [{ kind: 'info', text: 'Você tentou fugir, mas não conseguiu!', actorIsPlayer: true }] };
+  }
+
+  /** Drinks/eats a consumable from the player's inventory (short shared cooldown so it can't be spammed). */
+  useItem(itemId: string): UseSkillResult {
+    if (this.outcome !== 'ongoing') return { ok: false, reason: 'dead' };
+    const cooldownKey = `item_${itemId}`;
+    if (this.cooldownRemaining(cooldownKey) > 0) return { ok: false, reason: 'cooldown' };
+
+    const result = this.player.useItem(itemId);
+    if (!result) return { ok: false, reason: 'unknown' };
+    this.cooldowns[cooldownKey] = ITEM_COOLDOWN;
+
+    const amount = result.hpRestored + result.mpRestored;
+    return {
+      ok: true,
+      events: [
+        {
+          kind: 'heal',
+          text: 'Você consumiu um item.',
+          actorIsPlayer: true,
+          targetIsPlayer: true,
+          amount,
+          targetHpAfter: this.player.currentHp,
+        },
+      ],
+    };
   }
 
   /** Advances the battle by `dt` seconds: cooldowns, mana regen, buffs, enemy AI. */
