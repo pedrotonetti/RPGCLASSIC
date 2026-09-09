@@ -193,14 +193,20 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
   }
   const [armL, armR] = armGroups;
 
-  // Neck + head.
-  const neckY = torsoY + torsoHeight / 2 + 0.04;
-  const neck = mesh(new THREE.CylinderGeometry(0.075, 0.085, 0.1, 10), skinMat);
+  // Neck + head. `CapsuleGeometry`'s "height" param is only the cylindrical
+  // midsection — the capsule's actual top is a further `torsoRadius` above
+  // that (the rounded cap). The old neckY ignored the cap entirely and
+  // measured from the midsection top, which buried the neck (and the head
+  // sitting on it) inside the torso's rounded shoulder mass.
+  const torsoTopY = torsoY + torsoHeight / 2 + torsoRadius;
+  const neckHeight = 0.14;
+  const neckY = torsoTopY - 0.03 + neckHeight / 2; // slight overlap into the torso top for a seamless join
+  const neck = mesh(new THREE.CylinderGeometry(0.075, 0.09, neckHeight, 10), skinMat);
   neck.position.set(0, neckY, 0);
   upperBody.add(neck);
 
-  const headY = neckY + 0.15;
   const headRadius = 0.155;
+  const headY = neckY + neckHeight / 2 - 0.03 + headRadius; // same small-overlap join, neck into head
   const headGroup = new THREE.Group();
   headGroup.position.set(0, headY, 0);
   upperBody.add(headGroup);
