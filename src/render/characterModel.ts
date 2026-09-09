@@ -131,30 +131,38 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
   upperBody.add(belt);
 
   // Arms (upper arm + forearm + hand), each a group pivoted at the shoulder.
+  // Pivoted well clear of the torso's own width (plus a shoulder-cap sphere
+  // bridging the joint) so the arm never intersects the torso mesh, and
+  // long enough that the hand hangs past the hip into open space beside the
+  // thigh — a too-short arm previously left the hand overlapping the torso.
   const shoulderY = torsoY + torsoHeight / 2 - 0.03;
-  const armRadius = 0.07 * body.limb;
-  const upperArmGeo = new THREE.CapsuleGeometry(armRadius, 0.26, 6, 10);
-  const forearmGeo = new THREE.CapsuleGeometry(armRadius * 0.9, 0.24, 6, 10);
+  const armRadius = 0.065 * body.limb;
+  const upperArmGeo = new THREE.CapsuleGeometry(armRadius, 0.28, 6, 10);
+  const forearmGeo = new THREE.CapsuleGeometry(armRadius * 0.9, 0.3, 6, 10);
   const handGeo = new THREE.SphereGeometry(armRadius * 1.05, 10, 8);
+  const shoulderCapGeo = new THREE.SphereGeometry(armRadius * 1.15, 10, 8);
 
   const armGroups: THREE.Group[] = [];
   for (const side of [-1, 1] as const) {
     const armGroup = new THREE.Group();
-    const shoulderX = shoulderWidth * 1.05 * side;
+    const shoulderX = shoulderWidth * 1.35 * side;
     armGroup.position.set(shoulderX, shoulderY, 0);
-    armGroup.rotation.z = -0.12 * side;
+    armGroup.rotation.z = -0.06 * side;
+
+    const shoulderCap = mesh(shoulderCapGeo, clothMat);
+    armGroup.add(shoulderCap);
 
     const upperArm = mesh(upperArmGeo, clothMat);
-    upperArm.position.set(0, -0.14, 0);
+    upperArm.position.set(0, -0.16, 0);
     armGroup.add(upperArm);
 
     const forearm = mesh(forearmGeo, skinMat);
-    forearm.position.set(0, -0.36, 0.02);
+    forearm.position.set(0, -0.48, 0.02);
     forearm.rotation.x = 0.15;
     armGroup.add(forearm);
 
     const hand = mesh(handGeo, skinMat);
-    hand.position.set(0, -0.5, 0.05);
+    hand.position.set(0, -0.72, 0.05);
     armGroup.add(hand);
 
     upperBody.add(armGroup);
@@ -441,7 +449,7 @@ function addMarkings(
     const inkMat = mat(0x2a4a6b, { roughness: 0.5 });
     if (appearance.tattooStyle === 'braco') {
       const ring = mesh(new THREE.TorusGeometry(0.075, 0.012, 6, 16), inkMat, false);
-      ring.position.set(0, -0.28, 0.02);
+      ring.position.set(0, -0.5, 0.02);
       ring.rotation.x = Math.PI / 2;
       armR.add(ring);
     } else {
@@ -472,19 +480,19 @@ function addClassAccessory(
   switch (accessory) {
     case 'sword': {
       const hilt = mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.16, 8), mat(0x6b4423));
-      hilt.position.set(0, -0.55, 0.05);
+      hilt.position.set(0, -0.77, 0.05);
       const guard = mesh(new THREE.BoxGeometry(0.2, 0.05, 0.05), mat(0x8a8a8a, { metalness: 0.5 }));
-      guard.position.set(0, -0.63, 0.05);
+      guard.position.set(0, -0.85, 0.05);
       const blade = mesh(new THREE.BoxGeometry(0.06, 0.62, 0.06), mat(0xcfd6dc, { metalness: 0.6, roughness: 0.3 }));
-      blade.position.set(0, -0.96, 0.05);
+      blade.position.set(0, -1.18, 0.05);
       armR.add(hilt, guard, blade);
       break;
     }
     case 'staff': {
       const pole = mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.1, 8), mat(0x6b4423));
-      pole.position.set(0, -0.85, 0.05);
+      pole.position.set(0, -1.07, 0.05);
       const orb = mesh(new THREE.SphereGeometry(0.09, 10, 8), mat(secondary, { emissive: secondary, emissiveIntensity: 0.7, roughness: 0.2 }));
-      orb.position.set(0, -1.4, 0.05);
+      orb.position.set(0, -1.62, 0.05);
       armR.add(pole, orb);
       const hat = mesh(new THREE.ConeGeometry(0.24, 0.4, 12), mat(primary));
       hat.position.set(0, headY + 0.28, 0);
@@ -516,40 +524,40 @@ function addClassAccessory(
     }
     case 'shield': {
       const shield = mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.05, 12), mat(secondary, { metalness: 0.4 }));
-      shield.position.set(0, -0.45, 0.1);
+      shield.position.set(0, -0.67, 0.1);
       shield.rotation.z = Math.PI / 2;
       armL.add(shield);
 
       const hammerHandle = mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.6, 8), mat(0x6b4423));
-      hammerHandle.position.set(0, -0.75, 0.05);
+      hammerHandle.position.set(0, -0.97, 0.05);
       const hammerHead = mesh(new THREE.BoxGeometry(0.2, 0.14, 0.14), mat(0x8a8a8a, { metalness: 0.5 }));
-      hammerHead.position.set(0, -1.05, 0.05);
+      hammerHead.position.set(0, -1.27, 0.05);
       armR.add(hammerHandle, hammerHead);
       break;
     }
     case 'dagger': {
       const hilt = mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.1, 8), mat(0x2a2a2a));
-      hilt.position.set(0, -0.55, 0.08);
+      hilt.position.set(0, -0.77, 0.08);
       const blade = mesh(new THREE.BoxGeometry(0.04, 0.32, 0.04), mat(0xcfd6dc, { metalness: 0.6 }));
-      blade.position.set(0, -0.75, 0.08);
+      blade.position.set(0, -0.97, 0.08);
       armR.add(hilt, blade);
       break;
     }
     case 'grimoire': {
       const book = mesh(new THREE.BoxGeometry(0.2, 0.26, 0.05), mat(secondary));
-      book.position.set(0, -0.35, 0.15);
+      book.position.set(0, -0.57, 0.15);
       book.rotation.x = -0.5;
       const glow = mesh(new THREE.SphereGeometry(0.05, 8, 8), mat(0x6bff8e, { emissive: 0x2fae4e, emissiveIntensity: 0.8 }), false);
-      glow.position.set(0, -0.3, 0.2);
+      glow.position.set(0, -0.52, 0.2);
       armL.add(book, glow);
       break;
     }
     case 'fists': {
       const wrapL = mesh(new THREE.TorusGeometry(0.09, 0.025, 6, 12), mat(secondary));
-      wrapL.position.set(0, -0.5, 0.05);
+      wrapL.position.set(0, -0.72, 0.05);
       armL.add(wrapL);
       const wrapR = mesh(new THREE.TorusGeometry(0.09, 0.025, 6, 12), mat(secondary));
-      wrapR.position.set(0, -0.5, 0.05);
+      wrapR.position.set(0, -0.72, 0.05);
       armR.add(wrapR);
       break;
     }

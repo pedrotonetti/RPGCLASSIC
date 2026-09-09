@@ -31,7 +31,9 @@ export class CharacterSelectScreen implements Screen {
       new THREE.CylinderGeometry(0.9, 1.05, 0.25, 24),
       new THREE.MeshStandardMaterial({ color: 0x3a2f4d, roughness: 0.8 }),
     );
-    pedestal.position.y = -0.02;
+    // Top surface at y=0 — was -0.02 (top at +0.105), which buried the
+    // character's feet (at y≈0.045) inside the pedestal.
+    pedestal.position.y = -0.125;
     pedestal.receiveShadow = true;
     this.scene.add(pedestal);
 
