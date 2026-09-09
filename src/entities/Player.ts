@@ -41,7 +41,7 @@ export class Player {
   currentHp: number;
   currentMp: number;
   inventory: Record<string, number>;
-  /** Overworld tile position, persisted across saves. */
+  /** Continuous overworld world-space position (units, not tile indices) — free movement, not grid-snapped. */
   mapX: number;
   mapY: number;
   appearance: CharacterAppearance;
@@ -62,8 +62,11 @@ export class Player {
     this.xp = data?.xp ?? 0;
     this.gold = data?.gold ?? 30;
     this.inventory = data?.inventory ?? { potion_hp: 3, potion_mp: 2 };
-    this.mapX = data?.mapX ?? 6;
-    this.mapY = data?.mapY ?? 6;
+    // World-space center of the starting tile (5,5) at TILE_SIZE=2 — kept as
+    // a literal instead of importing MapGenerator/gameConfig here, matching
+    // this file's existing style of not depending on world-layout modules.
+    this.mapX = data?.mapX ?? 11;
+    this.mapY = data?.mapY ?? 11;
     const classDef = getClassById(classId);
     this.appearance = data?.appearance ?? defaultAppearance(classDef.color, classDef.accentColor);
     this.equipment = data?.equipment ?? {};

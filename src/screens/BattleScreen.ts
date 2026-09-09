@@ -11,7 +11,7 @@ import { CharacterAnimator, type ActionName } from '../render/animation';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from '../systems/CombatSystem';
 import { audio } from '../systems/AudioSystem';
 import { computeSkillLevelStats } from '../systems/skillMath';
-import { makeGrainTexture } from '../render/worldBuilder';
+import { makeGrainTexture, tileCenterWorld } from '../render/worldBuilder';
 import { generateOverworldMap } from '../systems/MapGenerator';
 import { notifyEnemyDefeated, notifyLevelChanged } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
@@ -516,8 +516,9 @@ export class BattleScreen implements Screen {
 
   private handleDefeat(): void {
     const { playerStart } = generateOverworldMap();
-    this.player.mapX = playerStart.x;
-    this.player.mapY = playerStart.y;
+    const respawnPos = tileCenterWorld(playerStart.x, playerStart.y);
+    this.player.mapX = respawnPos.x;
+    this.player.mapY = respawnPos.z;
     this.player.currentHp = Math.max(1, Math.floor(this.player.stats.maxHp * 0.5));
     this.player.currentMp = this.player.stats.maxMp;
     this.player.gold = Math.floor(this.player.gold * 0.5);

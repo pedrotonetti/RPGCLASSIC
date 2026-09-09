@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
+import { TILE_SIZE } from '../config/gameConfig';
 import { isWalkable, TileType, triggersEncounter } from '../config/tiles';
 import { getMountById } from '../data/mounts';
 import { NPC_DEFINITIONS, type NpcDefinition } from '../data/npcs';
@@ -23,25 +24,23 @@ import { SkillTreeScreen } from './SkillTreeScreen';
 
 type Dir = 'up' | 'down' | 'left' | 'right';
 
-const DIR_TILE: Record<Dir, { dx: number; dy: number }> = {
-  up: { dx: 0, dy: -1 },
-  down: { dx: 0, dy: 1 },
-  left: { dx: -1, dy: 0 },
-  right: { dx: 1, dy: 0 },
+/** Axis contribution of each held direction — combined into one input vector so opposite/diagonal keys blend naturally instead of snapping to a single facing. */
+const DIR_AXIS: Record<Dir, { x: number; z: number }> = {
+  up: { x: 0, z: -1 },
+  down: { x: 0, z: 1 },
+  left: { x: -1, z: 0 },
+  right: { x: 1, z: 0 },
 };
 
-const DIR_FORWARD: Record<Dir, THREE.Vector3> = {
-  up: new THREE.Vector3(0, 0, -1),
-  down: new THREE.Vector3(0, 0, 1),
-  left: new THREE.Vector3(-1, 0, 0),
-  right: new THREE.Vector3(1, 0, 0),
-};
-
-const BASE_MOVE_DURATION = 0.16;
+const PLAYER_SPEED = 3.6; // world units/second, free-roam walking pace (not grid-snapped)
+const PLAYER_RADIUS = 0.34; // collision circle, roughly the character's own girth
+const TURN_SPEED = 12; // how fast the avatar's facing catches up to its movement direction
+const ENCOUNTER_CHECK_DISTANCE = TILE_SIZE; // roll an encounter every this many units walked on grass
 const CAM_DISTANCE = 4.4;
 const CAM_HEIGHT = 3.1;
 const LOOK_HEIGHT = 1.1;
-const INTERACT_RANGE = 1;
+const INTERACT_RANGE = TILE_SIZE * 1.3;
+const NPC_COLLISION_RADIUS = 0.4;
 // The player model's local origin is at its feet, but its hip pivot (where a
 // straddling rider's weight actually rests) is ~0.84 above that. So the
 // offset that lands the hip on the mount's back sits well below zero, not
@@ -107,12 +106,8 @@ export class OverworldScreen implements Screen {
   private wildlife: WildlifeSlot[] = [];
   private time = 0;
 
-  private facing: Dir = 'down';
   private isMoving = false;
-  private moveT = 0;
-  private moveFrom = new THREE.Vector3();
-  private moveTo = new THREE.Vector3();
-  private pendingEncounterTile: TileType | null = null;
+  private grassDistanceAccum = 0;
 
   private heldKeys = new Set<string>();
   private touchDir: Dir | null = null;
@@ -174,8 +169,7 @@ export class OverworldScreen implements Screen {
     this.animator = new CharacterAnimator(getRig(this.playerModel));
     this.avatar = this.playerModel;
     this.scene.add(this.playerModel);
-    tileCenterWorld(this.player.mapX, this.player.mapY, this.avatar.position);
-    this.applyFacingRotation();
+    this.avatar.position.set(this.player.mapX, 0, this.player.mapY);
 
     if (this.player.activeMountId) this.setMounted(this.player.activeMountId, true);
 
@@ -208,17 +202,7 @@ export class OverworldScreen implements Screen {
     this.time += dt;
 
     if (!this.paused && !this.dialogueNpc) {
-      if (this.isMoving) {
-        this.moveT = Math.min(1, this.moveT + dt / this.currentMoveDuration());
-        this.avatar.position.lerpVectors(this.moveFrom, this.moveTo, this.moveT);
-        if (this.moveT >= 1) {
-          this.isMoving = false;
-          this.onArrivedAtTile();
-        }
-      } else {
-        const dir = this.heldDirection();
-        if (dir) this.tryMove(dir);
-      }
+      this.updateMovement(dt);
       this.updateInteraction();
     }
 
@@ -269,7 +253,7 @@ export class OverworldScreen implements Screen {
     if (e.key === 'e' || e.key === 'E') {
       if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
     }
-    if ((e.key === 'm' || e.key === 'M') && !this.isMoving) {
+    if (e.key === 'm' || e.key === 'M') {
       this.cycleMount();
     }
   }
@@ -286,24 +270,33 @@ export class OverworldScreen implements Screen {
     this.heldKeys.delete(e.key.toLowerCase());
   }
 
-  private heldDirection(): Dir | null {
+  /** Combines every held direction (keyboard supports diagonals; the touch D-pad contributes one axis at a time) into a single, normalized input vector. */
+  private computeInputAxis(): { x: number; z: number } {
     const k = this.heldKeys;
-    if (k.has('arrowup') || k.has('w')) return 'up';
-    if (k.has('arrowdown') || k.has('s')) return 'down';
-    if (k.has('arrowleft') || k.has('a')) return 'left';
-    if (k.has('arrowright') || k.has('d')) return 'right';
-    return this.touchDir;
+    const active: Dir[] = [];
+    if (k.has('arrowup') || k.has('w')) active.push('up');
+    if (k.has('arrowdown') || k.has('s')) active.push('down');
+    if (k.has('arrowleft') || k.has('a')) active.push('left');
+    if (k.has('arrowright') || k.has('d')) active.push('right');
+    if (this.touchDir) active.push(this.touchDir);
+
+    const axis = { x: 0, z: 0 };
+    for (const dir of active) {
+      axis.x += DIR_AXIS[dir].x;
+      axis.z += DIR_AXIS[dir].z;
+    }
+    const len = Math.hypot(axis.x, axis.z);
+    if (len > 0) {
+      axis.x /= len;
+      axis.z /= len;
+    }
+    return axis;
   }
 
   // --- mounts --------------------------------------------------------
 
   private isFlyingMounted(): boolean {
     return this.player.activeMountId !== null && getMountById(this.player.activeMountId).kind === 'voadora';
-  }
-
-  private currentMoveDuration(): number {
-    const mount = this.player.activeMountId ? getMountById(this.player.activeMountId) : null;
-    return BASE_MOVE_DURATION / (mount?.speedMultiplier ?? 1);
   }
 
   private setMounted(mountId: string | null, instant = false): void {
@@ -354,39 +347,88 @@ export class OverworldScreen implements Screen {
     this.refreshMountSection();
   }
 
-  // --- movement ----------------------------------------------------------
+  // --- movement (continuous, free-roam — no grid snapping) ---------------
 
-  private tryMove(dir: Dir): void {
-    this.facing = dir;
-    this.applyFacingRotation();
-
-    const { dx, dy } = DIR_TILE[dir];
-    const nx = this.player.mapX + dx;
-    const ny = this.player.mapY + dy;
-    if (nx < 0 || ny < 0 || nx >= MAP_WIDTH || ny >= MAP_HEIGHT) return;
-
-    const destTile = this.tiles[ny][nx];
-    const canCross = isWalkable(destTile) || (this.isFlyingMounted() && destTile === TileType.Water);
-    if (!canCross) return;
-    if (this.npcSlots.some((s) => s.def.mapX === nx && s.def.mapY === ny)) return;
-
-    this.player.mapX = nx;
-    this.player.mapY = ny;
-    this.moveFrom.copy(this.avatar.position);
-    tileCenterWorld(nx, ny, this.moveTo);
-    if (this.isFlyingMounted()) this.moveTo.y = FLYING_HOVER_HEIGHT;
-    this.moveT = 0;
-    this.isMoving = true;
-    this.pendingEncounterTile = destTile;
+  /** Which tile a world-space point falls in, or null if outside the map. */
+  private tileAt(x: number, z: number): TileType | null {
+    const tx = Math.floor(x / TILE_SIZE);
+    const ty = Math.floor(z / TILE_SIZE);
+    if (tx < 0 || ty < 0 || tx >= MAP_WIDTH || ty >= MAP_HEIGHT) return null;
+    return this.tiles[ty][tx];
   }
 
-  private onArrivedAtTile(): void {
-    const tile = this.pendingEncounterTile;
-    this.pendingEncounterTile = null;
-    if (this.isFlyingMounted()) return; // soaring above danger
-    if (tile !== null && triggersEncounter(tile) && Math.random() < ENCOUNTER_CHANCE_PER_STEP) {
-      this.startEncounter();
+  /** Whether a collision circle of radius `r` centered at (x,z) is clear of solid tiles and NPCs. */
+  private canOccupy(x: number, z: number, r: number, flying: boolean): boolean {
+    const offsets: Array<[number, number]> = [
+      [-r, -r], [r, -r], [-r, r], [r, r], [0, 0],
+    ];
+    for (const [ox, oz] of offsets) {
+      const tile = this.tileAt(x + ox, z + oz);
+      if (tile === null) return false;
+      const passable = isWalkable(tile) || (flying && tile === TileType.Water);
+      if (!passable) return false;
     }
+    for (const npc of this.npcSlots) {
+      const npcPos = npc.model.position;
+      const dx = x - npcPos.x;
+      const dz = z - npcPos.z;
+      if (Math.hypot(dx, dz) < r + NPC_COLLISION_RADIUS) return false;
+    }
+    return true;
+  }
+
+  private updateMovement(dt: number): void {
+    const axis = this.computeInputAxis();
+    this.isMoving = axis.x !== 0 || axis.z !== 0;
+
+    if (this.isMoving) {
+      const mount = this.player.activeMountId ? getMountById(this.player.activeMountId) : null;
+      const speed = PLAYER_SPEED * (mount?.speedMultiplier ?? 1);
+      const flying = this.isFlyingMounted();
+      const pos = this.avatar.position;
+      const stepX = axis.x * speed * dt;
+      const stepZ = axis.z * speed * dt;
+
+      // Axis-separated collision so sliding along a wall/tree edge works
+      // instead of a diagonal move getting fully blocked by one obstacle.
+      let movedX = 0;
+      let movedZ = 0;
+      if (stepX !== 0 && this.canOccupy(pos.x + stepX, pos.z, PLAYER_RADIUS, flying)) {
+        pos.x += stepX;
+        movedX = stepX;
+      }
+      if (stepZ !== 0 && this.canOccupy(pos.x, pos.z + stepZ, PLAYER_RADIUS, flying)) {
+        pos.z += stepZ;
+        movedZ = stepZ;
+      }
+
+      const targetYaw = Math.atan2(axis.x, axis.z);
+      this.avatar.rotation.y = this.turnToward(this.avatar.rotation.y, targetYaw, TURN_SPEED * dt);
+
+      this.player.mapX = pos.x;
+      this.player.mapY = pos.z;
+
+      const movedDist = Math.hypot(movedX, movedZ);
+      if (movedDist > 0 && !flying) {
+        const tile = this.tileAt(pos.x, pos.z);
+        if (tile !== null && triggersEncounter(tile)) {
+          this.grassDistanceAccum += movedDist;
+          if (this.grassDistanceAccum >= ENCOUNTER_CHECK_DISTANCE) {
+            this.grassDistanceAccum = 0;
+            if (Math.random() < ENCOUNTER_CHANCE_PER_STEP) this.startEncounter();
+          }
+        }
+      }
+    }
+  }
+
+  /** Rotates `current` toward `target` by at most `maxDelta` radians, the short way around the circle. */
+  private turnToward(current: number, target: number, maxDelta: number): number {
+    let delta = target - current;
+    delta = ((delta + Math.PI) % (Math.PI * 2)) - Math.PI;
+    if (delta > Math.PI) delta -= Math.PI * 2;
+    if (Math.abs(delta) <= maxDelta) return target;
+    return current + Math.sign(delta) * maxDelta;
   }
 
   private startEncounter(): void {
@@ -394,11 +436,6 @@ export class OverworldScreen implements Screen {
     saveGame(this.player);
     const enemyIds = pickEncounterEnemyIds(this.player.level);
     this.game.goTo(new BattleScreen(this.game, this.player, enemyIds));
-  }
-
-  private applyFacingRotation(): void {
-    const f = DIR_FORWARD[this.facing];
-    this.avatar.rotation.y = Math.atan2(f.x, f.z);
   }
 
   // --- NPCs & dialogue --------------------------------------------------
@@ -498,9 +535,7 @@ export class OverworldScreen implements Screen {
   }
 
   private updateInteraction(): void {
-    const found = this.npcSlots.find(
-      (s) => Math.abs(s.def.mapX - this.player.mapX) <= INTERACT_RANGE && Math.abs(s.def.mapY - this.player.mapY) <= INTERACT_RANGE,
-    );
+    const found = this.npcSlots.find((s) => s.model.position.distanceTo(this.avatar.position) <= INTERACT_RANGE);
     this.nearbyNpc = found?.def ?? null;
     if (this.nearbyNpc) {
       this.promptEl.hidden = false;
@@ -550,7 +585,8 @@ export class OverworldScreen implements Screen {
   // --- camera --------------------------------------------------------
 
   private desiredCameraPosition(target = new THREE.Vector3()): THREE.Vector3 {
-    const forward = DIR_FORWARD[this.facing];
+    const yaw = this.avatar.rotation.y;
+    const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
     return target
       .copy(this.avatar.position)
       .addScaledVector(forward, -CAM_DISTANCE)
