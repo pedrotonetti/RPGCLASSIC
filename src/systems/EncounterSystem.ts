@@ -1,8 +1,5 @@
 import { ENEMY_DEFINITIONS } from '../data/enemies';
 
-/** Chance per step taken on an encounter tile that a battle triggers. */
-export const ENCOUNTER_CHANCE_PER_STEP = 0.08;
-
 function pickWeighted<T>(items: T[], weights: number[]): T {
   const total = weights.reduce((a, b) => a + b, 0);
   let roll = Math.random() * total;

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { TILE_SIZE } from '../config/gameConfig';
-import { isWalkable, TileType, triggersEncounter } from '../config/tiles';
+import { isWalkable, TileType } from '../config/tiles';
 import { getMountById } from '../data/mounts';
 import { NPC_DEFINITIONS, type NpcDefinition } from '../data/npcs';
 import { Player } from '../entities/Player';
@@ -10,13 +10,12 @@ import { CharacterAnimator } from '../render/animation';
 import { buildHumanCharacter, buildMountModel, buildPlayerCharacter, getRig } from '../render/characterModel';
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
 import { buildOverworldMeshes, tileCenterWorld } from '../render/worldBuilder';
-import { ENCOUNTER_CHANCE_PER_STEP, pickEncounterEnemyIds } from '../systems/EncounterSystem';
 import { generateOverworldMap, MAP_HEIGHT, MAP_WIDTH } from '../systems/MapGenerator';
+import { OverworldCombat } from '../systems/OverworldCombat';
 import { ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
 import { el } from '../ui/dom';
-import { BattleScreen } from './BattleScreen';
 import { InventoryScreen } from './InventoryScreen';
 import { MainMenuScreen } from './MainMenuScreen';
 import { RankingScreen } from './RankingScreen';
@@ -35,7 +34,6 @@ const DIR_AXIS: Record<Dir, { x: number; z: number }> = {
 const PLAYER_SPEED = 3.6; // world units/second, free-roam walking pace (not grid-snapped)
 const PLAYER_RADIUS = 0.34; // collision circle, roughly the character's own girth
 const TURN_SPEED = 12; // how fast the avatar's facing catches up to its movement direction
-const ENCOUNTER_CHECK_DISTANCE = TILE_SIZE; // roll an encounter every this many units walked on grass
 const CAM_DISTANCE = 4.4;
 const CAM_HEIGHT = 3.1;
 const LOOK_HEIGHT = 1.1;
@@ -104,10 +102,10 @@ export class OverworldScreen implements Screen {
   private dirLight!: THREE.DirectionalLight;
   private npcSlots: NpcSlot[] = [];
   private wildlife: WildlifeSlot[] = [];
+  private combat!: OverworldCombat;
   private time = 0;
 
   private isMoving = false;
-  private grassDistanceAccum = 0;
 
   private heldKeys = new Set<string>();
   private touchDir: Dir | null = null;
@@ -122,6 +120,9 @@ export class OverworldScreen implements Screen {
   private nearbyNpc: NpcDefinition | null = null;
 
   private promptEl!: HTMLElement;
+  private hpEl!: HTMLElement;
+  private mpEl!: HTMLElement;
+  private goldEl!: HTMLElement;
   private dialogueOverlay!: HTMLElement;
   private dialogueNameEl!: HTMLElement;
   private dialogueLineEl!: HTMLElement;
@@ -142,7 +143,7 @@ export class OverworldScreen implements Screen {
     this.scene.background = new THREE.Color(0x8ec9e8);
     this.scene.fog = new THREE.Fog(0x8ec9e8, 16, 46);
 
-    const { tiles } = generateOverworldMap();
+    const { tiles, playerStart } = generateOverworldMap();
     this.tiles = tiles;
     const { group, waterMaterial } = buildOverworldMeshes(tiles);
     this.waterMaterial = waterMaterial;
@@ -177,6 +178,9 @@ export class OverworldScreen implements Screen {
     this.spawnWildlife();
     this.positionCameraImmediate();
 
+    this.combat = new OverworldCombat(this.game, this.player, this.scene, this.animator, () => this.handleDefeat(playerStart));
+    this.combat.spawnMonsters(tiles, playerStart);
+
     this.buildHud();
     this.buildDpad();
     this.buildDialogueOverlay();
@@ -204,6 +208,7 @@ export class OverworldScreen implements Screen {
     if (!this.paused && !this.dialogueNpc) {
       this.updateMovement(dt);
       this.updateInteraction();
+      this.combat.update(dt, this.avatar.position, this.camera);
     }
 
     this.animator.setMoving(this.isMoving);
@@ -213,6 +218,7 @@ export class OverworldScreen implements Screen {
     this.updateWildlife(dt);
     this.updateCamera(dt);
     this.updateNpcLabels();
+    this.refreshHud();
   }
 
   private animateWater(): void {
@@ -249,6 +255,11 @@ export class OverworldScreen implements Screen {
       return;
     }
     if (this.paused) return;
+
+    if (this.combat.inCombat && this.combat.handleKeyDown(e)) {
+      e.preventDefault();
+      return;
+    }
 
     if (e.key === 'e' || e.key === 'E') {
       if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
@@ -391,15 +402,11 @@ export class OverworldScreen implements Screen {
 
       // Axis-separated collision so sliding along a wall/tree edge works
       // instead of a diagonal move getting fully blocked by one obstacle.
-      let movedX = 0;
-      let movedZ = 0;
       if (stepX !== 0 && this.canOccupy(pos.x + stepX, pos.z, PLAYER_RADIUS, flying)) {
         pos.x += stepX;
-        movedX = stepX;
       }
       if (stepZ !== 0 && this.canOccupy(pos.x, pos.z + stepZ, PLAYER_RADIUS, flying)) {
         pos.z += stepZ;
-        movedZ = stepZ;
       }
 
       const targetYaw = Math.atan2(axis.x, axis.z);
@@ -407,18 +414,6 @@ export class OverworldScreen implements Screen {
 
       this.player.mapX = pos.x;
       this.player.mapY = pos.z;
-
-      const movedDist = Math.hypot(movedX, movedZ);
-      if (movedDist > 0 && !flying) {
-        const tile = this.tileAt(pos.x, pos.z);
-        if (tile !== null && triggersEncounter(tile)) {
-          this.grassDistanceAccum += movedDist;
-          if (this.grassDistanceAccum >= ENCOUNTER_CHECK_DISTANCE) {
-            this.grassDistanceAccum = 0;
-            if (Math.random() < ENCOUNTER_CHANCE_PER_STEP) this.startEncounter();
-          }
-        }
-      }
     }
   }
 
@@ -431,11 +426,16 @@ export class OverworldScreen implements Screen {
     return current + Math.sign(delta) * maxDelta;
   }
 
-  private startEncounter(): void {
-    audio.encounterStart();
+  /** Teleports the player back to the village and applies the usual defeat penalty — the in-place equivalent of BattleScreen's old handleDefeat. */
+  private handleDefeat(playerStart: { x: number; y: number }): void {
+    const respawnPos = tileCenterWorld(playerStart.x, playerStart.y);
+    this.player.mapX = respawnPos.x;
+    this.player.mapY = respawnPos.z;
+    this.avatar.position.set(respawnPos.x, this.avatar.position.y, respawnPos.z);
+    this.player.currentHp = Math.max(1, Math.floor(this.player.stats.maxHp * 0.5));
+    this.player.currentMp = this.player.stats.maxMp;
+    this.player.gold = Math.floor(this.player.gold * 0.5);
     saveGame(this.player);
-    const enemyIds = pickEncounterEnemyIds(this.player.level);
-    this.game.goTo(new BattleScreen(this.game, this.player, enemyIds));
   }
 
   // --- NPCs & dialogue --------------------------------------------------
@@ -615,26 +615,32 @@ export class OverworldScreen implements Screen {
   // --- HUD -------------------------------------------------------------
 
   private buildHud(): void {
-    const stats = this.player.stats;
-
     this.questTrackerEl = el('div', { className: 'quest-tracker', text: questTrackerText(this.player) });
 
-    const panel = el(
-      'div',
-      { className: 'panel hud-panel' },
-      [
-        el('div', { className: 'name-line', text: `${this.player.name} — ${this.player.classDef.name} Nv.${this.player.level}` }),
-        el('div', { className: 'hud-hp', text: `HP ${this.player.currentHp}/${stats.maxHp}` }),
-        el('div', { className: 'hud-mp', text: `MP ${this.player.currentMp}/${stats.maxMp}` }),
-        el('div', { text: `Ouro: ${this.player.gold}` }),
-      ],
-    );
+    this.hpEl = el('div', { className: 'hud-hp' });
+    this.mpEl = el('div', { className: 'hud-mp' });
+    this.goldEl = el('div', {});
+    const panel = el('div', { className: 'panel hud-panel' }, [
+      el('div', { className: 'name-line', text: `${this.player.name} — ${this.player.classDef.name} Nv.${this.player.level}` }),
+      this.hpEl,
+      this.mpEl,
+      this.goldEl,
+    ]);
+    this.refreshHud();
 
     const hint = el('div', { className: 'hud-hint', text: 'ESC: menu · M: montaria' });
     this.promptEl = el('div', { className: 'interact-prompt', text: '' });
     this.promptEl.hidden = true;
 
     this.game.uiRoot.append(panel, hint, this.questTrackerEl, this.promptEl);
+  }
+
+  /** Keeps the always-visible HP/MP/gold readout live now that combat happens in-place instead of in a separate screen with its own status bar. */
+  private refreshHud(): void {
+    const stats = this.player.stats;
+    this.hpEl.textContent = `HP ${this.player.currentHp}/${stats.maxHp}`;
+    this.mpEl.textContent = `MP ${this.player.currentMp}/${stats.maxMp}`;
+    this.goldEl.textContent = `Ouro: ${this.player.gold}`;
   }
 
   private refreshQuestTracker(): void {

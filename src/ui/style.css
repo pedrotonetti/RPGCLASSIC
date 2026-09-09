@@ -384,15 +384,7 @@ body {
   margin: 12px 0;
 }
 
-/* --- Battle screen ------------------------------------------------- */
-.battle-status {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  padding: 6px 10px;
-  font-size: 18px;
-  line-height: 1.25;
-}
+/* --- Combat (now overlaid directly on the overworld, no separate arena screen) --- */
 .enemy-label {
   position: absolute;
   transform: translate(-50%, -100%);
@@ -429,33 +421,16 @@ body {
   width: 100px;
 }
 
-.stat-bar-bg {
-  width: 160px;
-  height: 10px;
-  background: #1a1423;
-  border: 1px solid #000;
-  border-radius: 3px;
-  overflow: hidden;
-  margin-top: 4px;
-}
-.stat-bar-fg {
-  height: 100%;
-  transition: width 0.2s ease-out;
-}
-.stat-bar-fg.hp {
-  background: var(--hp);
-}
-.stat-bar-fg.mp {
-  background: var(--mp);
-}
-
+/* Feedback for the current fight lives top-center — the bottom strip is
+   already busy with the movement d-pad and the combat hotbar now that both
+   are on screen together. */
 .battle-message-bar {
   position: absolute;
-  bottom: 108px;
+  top: 8px;
   left: 50%;
   transform: translateX(-50%);
   padding: 6px 16px;
-  font-size: 18px;
+  font-size: 17px;
   max-width: 90vw;
   text-align: center;
   white-space: nowrap;
@@ -470,7 +445,7 @@ body {
 
 .combo-badge {
   position: absolute;
-  top: 96px;
+  top: 52px;
   left: 50%;
   transform: translateX(-50%);
   font-size: 22px;
@@ -482,7 +457,7 @@ body {
 
 .hotbar {
   position: absolute;
-  bottom: 12px;
+  bottom: 150px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -511,9 +486,6 @@ body {
 }
 .hotbar-slot.ultimate {
   border-color: var(--accent);
-}
-.hotbar-slot.flee {
-  border-color: var(--hp);
 }
 .hotbar-slot.block {
   border-color: #7fb2e0;
@@ -556,7 +528,7 @@ body {
 .item-hotbar {
   position: absolute;
   right: 12px;
-  bottom: 112px;
+  bottom: 150px;
   display: flex;
   flex-direction: column-reverse;
   gap: 8px;
@@ -581,6 +553,35 @@ body {
   text-shadow: 2px 2px 0 #000;
   pointer-events: none;
   transition: transform 0.7s ease-out, opacity 0.7s ease-out;
+}
+
+/* Narrow phones: the hotbar now shares the bottom strip with the movement
+   d-pad, so shrink slots to keep the whole bar to one or two short rows
+   instead of stacking tall enough to crowd the rest of the HUD. */
+@media (max-width: 560px) {
+  .hotbar-slot {
+    width: 58px;
+    height: 58px;
+    padding: 2px;
+  }
+  .hotbar-name {
+    font-size: 11px;
+  }
+  .hotbar-level,
+  .hotbar-cost {
+    font-size: 9px;
+  }
+  .hotbar {
+    bottom: 140px;
+    gap: 6px;
+  }
+  .item-hotbar {
+    bottom: 140px;
+  }
+  .item-hotbar .hotbar-slot.item {
+    width: 48px;
+    height: 48px;
+  }
 }
 
 /* --- Character creation -------------------------------------------- */
