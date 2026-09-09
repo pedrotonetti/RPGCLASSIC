@@ -1,7 +1,7 @@
 {
   "name": "rpgclassic",
   "version": "0.1.0",
-  "description": "RPG Classic - um RPG 2D web/app feito com Phaser 3, TypeScript e Vite, com sistema de classes extensível.",
+  "description": "RPG Classic - um RPG 3D web/app feito com Three.js, TypeScript e Vite, com sistema de classes extensível.",
   "type": "module",
   "private": true,
   "scripts": {
@@ -16,7 +16,8 @@
   },
   "keywords": [
     "rpg",
-    "phaser",
+    "three.js",
+    "3d",
     "game",
     "typescript"
   ],
@@ -26,12 +27,13 @@
     "url": "https://github.com/pedrotonetti/RPGCLASSIC/issues"
   },
   "homepage": "https://github.com/pedrotonetti/RPGCLASSIC#readme",
-  "dependencies": {
-    "phaser": "^3.90.0"
-  },
   "devDependencies": {
+    "@types/three": "^0.185.4",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vite-plugin-pwa": "^1.3.0"
+  },
+  "dependencies": {
+    "three": "^0.186.0"
   }
 }
