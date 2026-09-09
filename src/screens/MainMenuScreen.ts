@@ -3,7 +3,7 @@ import { CLASS_DEFINITIONS } from '../config/classes';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { buildClassPreview } from '../render/characterModel';
-import { hasSave, loadGame } from '../systems/SaveSystem';
+import { clearSave, hasSave, loadGame } from '../systems/SaveSystem';
 import { el } from '../ui/dom';
 import { CharacterSelectScreen } from './CharacterSelectScreen';
 import { OverworldScreen } from './OverworldScreen';
@@ -70,7 +70,15 @@ export class MainMenuScreen implements Screen {
           text: 'Continuar',
           onClick: () => {
             const player = loadGame();
-            if (player) this.game.goTo(new OverworldScreen(this.game, player));
+            if (player) {
+              this.game.goTo(new OverworldScreen(this.game, player));
+            } else {
+              // Corrupted/unreadable save: don't leave the button silently
+              // doing nothing — clear it and let the player start fresh.
+              clearSave();
+              alert('Não foi possível carregar o jogo salvo (dados corrompidos). Iniciando um novo jogo.');
+              this.game.goTo(new CharacterSelectScreen(this.game));
+            }
           },
         }),
       );
