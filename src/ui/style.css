@@ -461,6 +461,23 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: border-color 0.1s, background 0.1s;
+}
+.battle-message-bar.telegraph {
+  border-color: #ff5555;
+  background: rgba(120, 20, 20, 0.85);
+}
+
+.combo-badge {
+  position: absolute;
+  top: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 22px;
+  font-weight: bold;
+  color: #ffcf4e;
+  text-shadow: 2px 2px 0 #000;
+  pointer-events: none;
 }
 
 .hotbar {
@@ -494,6 +511,9 @@ body {
 }
 .hotbar-slot.flee {
   border-color: var(--hp);
+}
+.hotbar-slot.block {
+  border-color: #7fb2e0;
 }
 .hotbar-name {
   font-size: 13px;

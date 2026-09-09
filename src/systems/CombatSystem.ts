@@ -7,7 +7,7 @@ import { computeSkillLevelStats } from './skillMath';
 export type CombatOutcome = 'ongoing' | 'victory' | 'defeat' | 'fled';
 
 export interface CombatEvent {
-  kind: 'damage' | 'heal' | 'miss' | 'buff' | 'defeated' | 'victory' | 'defeat' | 'fled' | 'info';
+  kind: 'damage' | 'heal' | 'miss' | 'buff' | 'defeated' | 'victory' | 'defeat' | 'fled' | 'info' | 'telegraph';
   text: string;
   actorIsPlayer: boolean;
   actorIndex?: number;
@@ -62,6 +62,19 @@ const BUFF_BASE_DURATION = 8;
 const BUFF_DURATION_PER_LEVEL = 0.5;
 const LOOT_DROP_CHANCE = 0.4;
 
+// --- action-combat depth: telegraphed enemy attacks, a timed block/parry
+// window, and a combo counter that rewards consecutive clean hits ---------
+const BLOCK_KEY = '__block';
+const BLOCK_DURATION = 0.5;
+const PERFECT_BLOCK_WINDOW = 0.15;
+const BLOCK_DAMAGE_REDUCTION = 0.65;
+export const BLOCK_COOLDOWN = 1.6;
+const PERFECT_BLOCK_STUN = 0.8;
+const TELEGRAPH_DURATION = 0.45;
+const COMBO_WINDOW = 3.0;
+const COMBO_DAMAGE_PER_HIT = 0.05;
+const COMBO_MAX_STACKS = 6;
+
 /**
  * Real-time action-combat engine: skills are triggered on demand (subject to
  * their own cooldown/mana), enemies act autonomously on their own timers,
@@ -73,10 +86,28 @@ export class CombatEngine {
   private cooldowns: Record<string, number> = {};
   private buffs: ActiveBuff[] = [];
 
+  private blockActiveUntil = -Infinity;
+  private blockStartedAt = -Infinity;
+  private comboCount = 0;
+  private lastComboHitAt = -Infinity;
+  private pendingAttacks = new Map<Enemy, { resolveAt: number; skill: SkillDefinition | null }>();
+
   constructor(
     public player: Player,
     public enemies: Enemy[],
   ) {}
+
+  get comboHits(): number {
+    return this.comboCount;
+  }
+
+  isBlocking(): boolean {
+    return this.clock <= this.blockActiveUntil;
+  }
+
+  blockCooldownRemaining(): number {
+    return this.cooldownRemaining(BLOCK_KEY);
+  }
 
   private aliveEnemies(): Enemy[] {
     return this.enemies.filter((e) => e.isAlive());
@@ -155,10 +186,17 @@ export class CombatEngine {
           events.push({ kind: 'miss', text: `Você errou ${enemy.name}.`, actorIsPlayer: true, targetIndex: index });
           continue;
         }
-        const dealt = enemy.takeDamage(roll.damage);
+
+        if (this.clock - this.lastComboHitAt > COMBO_WINDOW) this.comboCount = 0;
+        this.comboCount = Math.min(COMBO_MAX_STACKS, this.comboCount + 1);
+        this.lastComboHitAt = this.clock;
+        const comboMult = 1 + this.comboCount * COMBO_DAMAGE_PER_HIT;
+
+        const dealt = enemy.takeDamage(roll.damage * comboMult);
+        const comboText = this.comboCount > 1 ? ` (Combo x${this.comboCount})` : '';
         events.push({
           kind: 'damage',
-          text: `Você usou ${skill.name} em ${enemy.name}${roll.crit ? ' (Crítico!)' : ''}`,
+          text: `Você usou ${skill.name} em ${enemy.name}${roll.crit ? ' (Crítico!)' : ''}${comboText}`,
           actorIsPlayer: true,
           targetIndex: index,
           amount: dealt,
@@ -188,6 +226,21 @@ export class CombatEngine {
       return { ok: true, events: [{ kind: 'fled', text: 'Você fugiu da batalha!', actorIsPlayer: true }] };
     }
     return { ok: true, events: [{ kind: 'info', text: 'Você tentou fugir, mas não conseguiu!', actorIsPlayer: true }] };
+  }
+
+  /**
+   * Opens a short block window: damage taken while it's active is cut down,
+   * and — timed right at the very start of the window, against a telegraphed
+   * attack — negated entirely as a "perfect block" that also staggers the
+   * attacker. Has its own short cooldown so it can't just be held forever.
+   */
+  attemptBlock(): UseSkillResult {
+    if (this.outcome !== 'ongoing') return { ok: false, reason: 'dead' };
+    if (this.blockCooldownRemaining() > 0) return { ok: false, reason: 'cooldown' };
+    this.cooldowns[BLOCK_KEY] = BLOCK_COOLDOWN;
+    this.blockStartedAt = this.clock;
+    this.blockActiveUntil = this.clock + BLOCK_DURATION;
+    return { ok: true, events: [{ kind: 'info', text: 'Postura de bloqueio!', actorIsPlayer: true }] };
   }
 
   /** Drinks/eats a consumable from the player's inventory (short shared cooldown so it can't be spammed). */
@@ -228,25 +281,45 @@ export class CombatEngine {
     this.player.regenMp(dt);
 
     const events: CombatEvent[] = [];
-    for (const enemy of this.aliveEnemies()) {
-      enemy.actionTimer -= dt;
-      if (enemy.actionTimer > 0) continue;
-      enemy.actionTimer = enemy.def.actionInterval * (0.85 + Math.random() * 0.3);
-      this.runEnemyAction(enemy, events);
+
+    // Resolve any enemy attacks whose telegraph window has elapsed first.
+    for (const [enemy, pending] of [...this.pendingAttacks]) {
+      if (this.clock < pending.resolveAt) continue;
+      this.pendingAttacks.delete(enemy);
+      this.resolveEnemyAttack(enemy, pending.skill, events);
       if (this.outcome !== 'ongoing') break;
+    }
+
+    if (this.outcome === 'ongoing') {
+      for (const enemy of this.aliveEnemies()) {
+        if (this.pendingAttacks.has(enemy)) continue; // already winding up
+        enemy.actionTimer -= dt;
+        if (enemy.actionTimer > 0) continue;
+        enemy.actionTimer = enemy.def.actionInterval * (0.85 + Math.random() * 0.3);
+        this.beginEnemyAction(enemy, events);
+      }
     }
 
     if (this.outcome === 'ongoing') this.checkVictory(events);
     return events;
   }
 
-  private runEnemyAction(enemy: Enemy, events: CombatEvent[]): void {
+  /** Picks the enemy's next move and opens a short, telegraphed wind-up before it actually lands — the player's real window to block. */
+  private beginEnemyAction(enemy: Enemy, events: CombatEvent[]): void {
     const usable = enemy.skills.filter((s) => enemy.currentMp >= computeSkillLevelStats(s, 1).cost);
     const skill = usable.length > 0 && Math.random() < 0.55 ? usable[Math.floor(Math.random() * usable.length)] : null;
+    if (skill) enemy.currentMp -= computeSkillLevelStats(skill, 1).cost;
+
+    this.pendingAttacks.set(enemy, { resolveAt: this.clock + TELEGRAPH_DURATION, skill });
+    const actorIndex = this.enemies.indexOf(enemy);
+    events.push({ kind: 'telegraph', text: `${enemy.name} vai atacar!`, actorIsPlayer: false, actorIndex });
+  }
+
+  private resolveEnemyAttack(enemy: Enemy, skill: SkillDefinition | null, events: CombatEvent[]): void {
+    if (!enemy.isAlive()) return; // died mid wind-up
+
     const activeSkill = skill ?? BASIC_ENEMY_ATTACK;
     const levelStats = computeSkillLevelStats(activeSkill, 1);
-    if (skill) enemy.currentMp -= levelStats.cost;
-
     const kind = activeSkill.kind === 'magical' ? 'magical' : 'physical';
     const roll = resolveAttack(enemy.stats, this.effectiveStats(), levelStats.power, kind);
     const actorIndex = this.enemies.indexOf(enemy);
@@ -255,10 +328,26 @@ export class CombatEngine {
       events.push({ kind: 'miss', text: `${enemy.name} errou o ataque.`, actorIsPlayer: false, actorIndex, targetIsPlayer: true });
       return;
     }
-    const dealt = this.player.takeDamage(roll.damage);
+
+    const isPerfectBlock = this.isBlocking() && this.clock - this.blockStartedAt <= PERFECT_BLOCK_WINDOW;
+    const isBlocked = this.isBlocking() && !isPerfectBlock;
+    let dealt: number;
+    let suffix = '';
+    if (isPerfectBlock) {
+      dealt = 0;
+      suffix = ' Bloqueio perfeito!';
+      enemy.actionTimer += PERFECT_BLOCK_STUN;
+    } else if (isBlocked) {
+      dealt = this.player.takeDamage(roll.damage * (1 - BLOCK_DAMAGE_REDUCTION));
+      suffix = ' (bloqueado)';
+    } else {
+      dealt = this.player.takeDamage(roll.damage);
+      this.comboCount = 0;
+    }
+
     events.push({
       kind: 'damage',
-      text: `${enemy.name} usou ${skill?.name ?? 'um ataque'} em você${roll.crit ? ' (Crítico!)' : ''}`,
+      text: `${enemy.name} usou ${skill?.name ?? 'um ataque'} em você${roll.crit ? ' (Crítico!)' : ''}${suffix}`,
       actorIsPlayer: false,
       actorIndex,
       targetIsPlayer: true,

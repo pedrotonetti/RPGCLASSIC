@@ -8,7 +8,7 @@ import { Player } from '../entities/Player';
 import { getItemById } from '../data/items';
 import { buildEnemyModel, buildPlayerCharacter, getRig } from '../render/characterModel';
 import { CharacterAnimator, type ActionName } from '../render/animation';
-import { CombatEngine, ITEM_COOLDOWN, type CombatEvent } from '../systems/CombatSystem';
+import { BLOCK_COOLDOWN, CombatEngine, ITEM_COOLDOWN, type CombatEvent } from '../systems/CombatSystem';
 import { computeSkillLevelStats } from '../systems/skillMath';
 import { makeGrainTexture } from '../render/worldBuilder';
 import { generateOverworldMap } from '../systems/MapGenerator';
@@ -65,6 +65,8 @@ export class BattleScreen implements Screen {
   private mpFillEl!: HTMLElement;
   private messageEl!: HTMLElement;
   private fleeFillEl!: HTMLElement;
+  private blockFillEl!: HTMLElement;
+  private comboEl!: HTMLElement;
   private hotbar: HotbarSlot[] = [];
   private itemHotbar: ItemHotbarSlot[] = [];
 
@@ -154,6 +156,7 @@ export class BattleScreen implements Screen {
     this.processEvents(events);
     this.refreshHotbarCooldowns();
     this.refreshStatusBars();
+    this.refreshCombo();
   }
 
   // --- setup -----------------------------------------------------------
@@ -225,6 +228,10 @@ export class BattleScreen implements Screen {
 
     this.messageEl = el('div', { className: 'panel battle-message-bar' });
     this.game.uiRoot.append(this.messageEl);
+
+    this.comboEl = el('div', { className: 'combo-badge' });
+    this.comboEl.hidden = true;
+    this.game.uiRoot.append(this.comboEl);
   }
 
   private buildHotbar(): void {
@@ -237,6 +244,14 @@ export class BattleScreen implements Screen {
       'div',
       { className: 'hotbar-slot flee', onClick: () => this.onFleeClicked() },
       [el('div', { className: 'hotbar-name', text: 'Fugir' }), fleeFillEl],
+    );
+
+    const blockFillEl = el('div', { className: 'cd-fill' });
+    this.blockFillEl = blockFillEl;
+    const blockBtn = el(
+      'div',
+      { className: 'hotbar-slot block', onClick: () => this.onBlockClicked() },
+      [el('div', { className: 'hotbar-name', text: 'Bloquear' }), el('div', { className: 'hotbar-level', text: 'Espaço' }), blockFillEl],
     );
 
     const slotEls: HTMLElement[] = [];
@@ -261,7 +276,7 @@ export class BattleScreen implements Screen {
       this.hotbar.push({ skill, level, totalCooldown: stats.cooldown, cost: stats.cost, el: slotEl, fillEl, costEl });
     });
 
-    const bar = el('div', { className: 'hotbar' }, [...slotEls, fleeBtn]);
+    const bar = el('div', { className: 'hotbar' }, [...slotEls, blockBtn, fleeBtn]);
     this.game.uiRoot.append(bar);
   }
 
@@ -291,6 +306,11 @@ export class BattleScreen implements Screen {
     if (e.key === 'Escape' && this.pendingTargetPick) {
       this.pendingTargetPick = null;
       this.showMessage('Alvo cancelado.');
+      return;
+    }
+    if (e.key === ' ') {
+      e.preventDefault();
+      this.onBlockClicked();
       return;
     }
     const num = Number(e.key);
@@ -375,6 +395,17 @@ export class BattleScreen implements Screen {
     this.processEvents(result.events);
   }
 
+  private onBlockClicked(): void {
+    if (this.ended) return;
+    const result = this.engine.attemptBlock();
+    if (!result.ok) {
+      if (result.reason === 'cooldown') this.showMessage('Bloqueio ainda em recarga...');
+      return;
+    }
+    this.animator.play('defend');
+    this.processEvents(result.events);
+  }
+
   // --- event processing --------------------------------------------------
 
   private showMessage(text: string): void {
@@ -384,6 +415,10 @@ export class BattleScreen implements Screen {
   private processEvents(events: CombatEvent[]): void {
     for (const event of events) {
       if (event.text) this.showMessage(event.text);
+      if (event.kind === 'telegraph') {
+        this.messageEl.classList.add('telegraph');
+        setTimeout(() => this.messageEl.classList.remove('telegraph'), 440);
+      }
 
       if (event.actorIndex !== undefined) this.triggerFlash(event.actorIndex);
 
@@ -513,6 +548,18 @@ export class BattleScreen implements Screen {
     }
     const fleeRemaining = this.engine.fleeCooldownRemaining();
     this.fleeFillEl.style.height = `${Math.min(1, fleeRemaining / 4) * 100}%`;
+    const blockRemaining = this.engine.blockCooldownRemaining();
+    this.blockFillEl.style.height = `${Math.min(1, blockRemaining / BLOCK_COOLDOWN) * 100}%`;
+  }
+
+  private refreshCombo(): void {
+    const hits = this.engine.comboHits;
+    if (hits > 1) {
+      this.comboEl.textContent = `Combo x${hits}`;
+      this.comboEl.hidden = false;
+    } else {
+      this.comboEl.hidden = true;
+    }
   }
 
   private refreshItemHotbarCounts(): void {
