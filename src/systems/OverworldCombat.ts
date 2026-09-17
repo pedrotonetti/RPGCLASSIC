@@ -539,6 +539,11 @@ export class OverworldCombat {
     this.messageHideAt = this.clock + durationMs / 1000;
   }
 
+  /** Same on-screen banner combat uses for level-ups/quest completions — for non-combat callers like dialogue. */
+  showBanner(text: string, durationMs = 2200): void {
+    this.showMessage(text, durationMs);
+  }
+
   private monsterForEnemy(enemy: Enemy): WorldMonster | undefined {
     return this.engagedMonsters.find((m) => m.enemy === enemy);
   }

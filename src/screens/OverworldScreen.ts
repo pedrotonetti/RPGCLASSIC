@@ -624,6 +624,7 @@ export class OverworldScreen implements Screen {
     if (questMsg) {
       saveGame(this.player);
       audio.questComplete();
+      this.combat.showBanner(questMsg);
     } else {
       audio.npcTalk();
     }
