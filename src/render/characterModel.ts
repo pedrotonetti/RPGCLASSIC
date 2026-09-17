@@ -3,6 +3,7 @@ import { getClassById } from '../config/classes';
 import { defaultAppearance, type CharacterAppearance } from '../config/customization';
 import type { Player } from '../entities/Player';
 import { ENEMY_DEFINITIONS } from '../data/enemies';
+import { getGemById } from '../data/gems';
 
 export type ClassAccessory = 'sword' | 'staff' | 'bow' | 'cross' | 'shield' | 'dagger' | 'grimoire' | 'fists' | 'none';
 
@@ -71,7 +72,7 @@ export function getRig(character: THREE.Group): CharacterRig {
  * same trick classic blocky avatars and early 3D indie games use instead of
  * full skeletal animation).
  */
-export function buildHumanCharacter(appearance: CharacterAppearance, accessory: ClassAccessory): THREE.Group {
+export function buildHumanCharacter(appearance: CharacterAppearance, accessory: ClassAccessory, gemGlowColor?: number): THREE.Group {
   const root = new THREE.Group();
   const upperBody = new THREE.Group();
   root.add(upperBody);
@@ -220,7 +221,7 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
   addFacialHair(headGroup, appearance, 0, headRadius);
   addHeadAccessory(headGroup, appearance, 0, headRadius, clothMat, trimMat);
   addMarkings(headGroup, appearance, 0, headRadius, armR);
-  addClassAccessory(upperBody, accessory, appearance.primaryColor, appearance.secondaryColor, headY, shoulderWidth, armL, armR, shoulderY);
+  addClassAccessory(upperBody, accessory, appearance.primaryColor, appearance.secondaryColor, headY, shoulderWidth, armL, armR, shoulderY, gemGlowColor);
 
   root.scale.setScalar(appearance.heightScale);
 
@@ -495,6 +496,13 @@ function addMarkings(
  * coordinates) so it swings naturally with attack/block/idle animations;
  * back/chest-mounted props (quiver, halo, wizard hat) stay on `upperBody`.
  */
+/** A small emissive stone standing in for a socketed gem — relies on the game's existing bloom pass for the actual "glow", the same trick already used by the staff orb/grimoire glow/cleric halo below. */
+function addGemStone(parent: THREE.Group, position: [number, number, number], color: number): void {
+  const gem = mesh(new THREE.OctahedronGeometry(0.045, 0), mat(color, { emissive: color, emissiveIntensity: 1.1, roughness: 0.2 }));
+  gem.position.set(...position);
+  parent.add(gem);
+}
+
 function addClassAccessory(
   upperBody: THREE.Group,
   accessory: ClassAccessory,
@@ -505,6 +513,7 @@ function addClassAccessory(
   armL: THREE.Group,
   armR: THREE.Group,
   shoulderY: number,
+  gemGlowColor?: number,
 ): void {
   switch (accessory) {
     case 'sword': {
@@ -515,12 +524,14 @@ function addClassAccessory(
       const blade = mesh(new THREE.BoxGeometry(0.06, 0.62, 0.06), mat(0xcfd6dc, { metalness: 0.6, roughness: 0.3 }));
       blade.position.set(0, -1.18, 0.05);
       armR.add(hilt, guard, blade);
+      if (gemGlowColor !== undefined) addGemStone(armR, [0, -0.85, 0.085], gemGlowColor);
       break;
     }
     case 'staff': {
       const pole = mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.1, 8), mat(0x6b4423));
       pole.position.set(0, -1.07, 0.05);
-      const orb = mesh(new THREE.SphereGeometry(0.09, 10, 8), mat(secondary, { emissive: secondary, emissiveIntensity: 0.7, roughness: 0.2 }));
+      const orbColor = gemGlowColor ?? secondary;
+      const orb = mesh(new THREE.SphereGeometry(0.09, 10, 8), mat(orbColor, { emissive: orbColor, emissiveIntensity: gemGlowColor !== undefined ? 1.1 : 0.7, roughness: 0.2 }));
       orb.position.set(0, -1.62, 0.05);
       armR.add(pole, orb);
       const hat = mesh(new THREE.ConeGeometry(0.24, 0.4, 12), mat(primary));
@@ -538,6 +549,7 @@ function addClassAccessory(
       quiver.position.set(-shoulderWidth - 0.05, shoulderY + 0.15, -0.15);
       quiver.rotation.z = 0.3;
       upperBody.add(bow, quiver);
+      if (gemGlowColor !== undefined) addGemStone(upperBody, [x, shoulderY - 0.1, 0.1], gemGlowColor);
       break;
     }
     case 'cross': {
@@ -549,6 +561,7 @@ function addClassAccessory(
       halo.position.set(0, headY + 0.24, 0);
       halo.rotation.x = Math.PI / 2;
       upperBody.add(vertical, horizontal, halo);
+      if (gemGlowColor !== undefined) addGemStone(upperBody, [0, 1.03, 0.27], gemGlowColor);
       break;
     }
     case 'shield': {
@@ -562,6 +575,7 @@ function addClassAccessory(
       const hammerHead = mesh(new THREE.BoxGeometry(0.2, 0.14, 0.14), mat(0x8a8a8a, { metalness: 0.5 }));
       hammerHead.position.set(0, -1.27, 0.05);
       armR.add(hammerHandle, hammerHead);
+      if (gemGlowColor !== undefined) addGemStone(armR, [0, -1.27, 0.13], gemGlowColor);
       break;
     }
     case 'dagger': {
@@ -570,13 +584,15 @@ function addClassAccessory(
       const blade = mesh(new THREE.BoxGeometry(0.04, 0.32, 0.04), mat(0xcfd6dc, { metalness: 0.6 }));
       blade.position.set(0, -0.97, 0.08);
       armR.add(hilt, blade);
+      if (gemGlowColor !== undefined) addGemStone(armR, [0, -0.77, 0.1], gemGlowColor);
       break;
     }
     case 'grimoire': {
       const book = mesh(new THREE.BoxGeometry(0.2, 0.26, 0.05), mat(secondary));
       book.position.set(0, -0.57, 0.15);
       book.rotation.x = -0.5;
-      const glow = mesh(new THREE.SphereGeometry(0.05, 8, 8), mat(0x6bff8e, { emissive: 0x2fae4e, emissiveIntensity: 0.8 }), false);
+      const glowColor = gemGlowColor ?? 0x2fae4e;
+      const glow = mesh(new THREE.SphereGeometry(0.05, 8, 8), mat(gemGlowColor ?? 0x6bff8e, { emissive: glowColor, emissiveIntensity: 0.8 }), false);
       glow.position.set(0, -0.52, 0.2);
       armL.add(book, glow);
       break;
@@ -588,6 +604,7 @@ function addClassAccessory(
       const wrapR = mesh(new THREE.TorusGeometry(0.09, 0.025, 6, 12), mat(secondary));
       wrapR.position.set(0, -0.72, 0.05);
       armR.add(wrapR);
+      if (gemGlowColor !== undefined) addGemStone(armR, [0, -0.72, 0.08], gemGlowColor);
       break;
     }
     case 'none':
@@ -604,7 +621,9 @@ export function buildClassPreview(classId: string): THREE.Group {
 }
 
 export function buildPlayerCharacter(player: Player): THREE.Group {
-  return buildHumanCharacter(player.appearance, CLASS_ACCESSORY[player.classId] ?? 'none');
+  const weaponGemId = player.equipment.arma?.socketedGemId;
+  const gemGlowColor = weaponGemId ? getGemById(weaponGemId).color : undefined;
+  return buildHumanCharacter(player.appearance, CLASS_ACCESSORY[player.classId] ?? 'none', gemGlowColor);
 }
 
 // --- enemy creature builders ----------------------------------------------

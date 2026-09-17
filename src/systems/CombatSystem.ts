@@ -1,4 +1,5 @@
 import { generateLoot } from '../data/equipment';
+import { MATERIAL_DEFINITIONS, MATERIAL_DROP_CHANCE } from '../data/materials';
 import type { EquipmentInstance, SkillDefinition, Stats } from '../config/types';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
@@ -20,6 +21,8 @@ export interface CombatEvent {
   xpGained?: number;
   goldGained?: number;
   levelsGained?: number;
+  /** Crafting materials gained on victory, keyed by material id. */
+  materialsGained?: Record<string, number>;
   /** How an incoming hit on the player was mitigated, if at all — lets the UI cue the right sound/feedback without parsing text. */
   mitigation?: 'block' | 'perfectBlock' | 'dodge';
 }
@@ -433,23 +436,31 @@ export class CombatEngine {
     const xpGained = this.enemies.reduce((s, e) => s + e.def.xpReward, 0);
     const goldGained = this.enemies.reduce((s, e) => s + e.def.goldReward, 0);
     const loot: EquipmentInstance[] = [];
+    const materialsGained: Record<string, number> = {};
     for (let i = 0; i < this.enemies.length; i++) {
       if (Math.random() < LOOT_DROP_CHANCE) {
         const item = generateLoot(this.player.level, this.player.stats.luck);
         if (this.player.addLoot(item)) loot.push(item);
       }
+      if (Math.random() < MATERIAL_DROP_CHANCE) {
+        const material = MATERIAL_DEFINITIONS[Math.floor(Math.random() * MATERIAL_DEFINITIONS.length)];
+        materialsGained[material.id] = (materialsGained[material.id] ?? 0) + 1;
+        this.player.addItem(material.id, 1);
+      }
     }
     const levelsGained = this.player.gainXp(xpGained);
     this.player.gold += goldGained;
     this.outcome = 'victory';
+    const materialsText = Object.keys(materialsGained).length > 0 ? ', materiais encontrados' : '';
     events.push({
       kind: 'victory',
-      text: `Vitória! +${xpGained} XP, +${goldGained} ouro${loot.length > 0 ? `, ${loot.length} item(ns) encontrado(s)` : ''}.`,
+      text: `Vitória! +${xpGained} XP, +${goldGained} ouro${loot.length > 0 ? `, ${loot.length} item(ns) encontrado(s)` : ''}${materialsText}.`,
       actorIsPlayer: true,
       xpGained,
       goldGained,
       levelsGained,
       loot,
+      materialsGained,
     });
   }
 }

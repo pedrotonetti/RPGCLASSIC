@@ -6,6 +6,7 @@ import { isWalkable, TileType } from '../config/tiles';
 import { createStarterItem, getEquipmentTemplate } from '../data/equipment';
 import { getGemById } from '../data/gems';
 import { getItemById } from '../data/items';
+import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
 import { NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
 import { arriveWorldPosition, getZoneById, type ZoneDefinition, type ZoneExit } from '../data/zones';
@@ -385,6 +386,32 @@ export class OverworldScreen implements Screen {
     this.refreshMountSection();
   }
 
+  /** Rebuilds the visible player model in place — used right after socketing a gem so its weapon glow shows immediately instead of waiting for the next zone load. */
+  private rebuildPlayerVisual(): void {
+    const mounted = this.mountModel !== null;
+    const oldModel = this.playerModel;
+    const newModel = buildPlayerCharacter(this.player);
+
+    if (mounted) {
+      this.mountModel!.remove(oldModel);
+      newModel.position.copy(MOUNT_SEAT_OFFSET);
+      newModel.rotation.y = 0;
+      this.mountModel!.add(newModel);
+    } else {
+      const pos = oldModel.position.clone();
+      const rotY = oldModel.rotation.y;
+      this.scene.remove(oldModel);
+      newModel.position.copy(pos);
+      newModel.rotation.y = rotY;
+      this.scene.add(newModel);
+      this.avatar = newModel;
+    }
+    disposeGroup(oldModel);
+    this.playerModel = newModel;
+    this.animator = new CharacterAnimator(getRig(newModel));
+    this.animator.setMounted(mounted);
+  }
+
   // --- movement (continuous, free-roam — no grid snapping) ---------------
 
   /** Which tile a world-space point falls in, or null if outside the current zone's map. */
@@ -669,14 +696,36 @@ export class OverworldScreen implements Screen {
     for (const templateId of vendor.equipmentTemplateIds ?? []) {
       const template = getEquipmentTemplate(templateId);
       const price = 60 + this.player.level * 8;
+      const craftGold = Math.round(price * 0.5);
+      const craftQty = 3;
       buyRows.push(
-        this.shopRow(template.name, template.description, price, () => {
-          if (this.player.gold < price) return;
-          this.player.gold -= price;
-          this.player.addLoot(createStarterItem(templateId, 'verde', Math.max(1, this.player.level)));
-          saveGame(this.player);
-          this.renderShop();
-        }),
+        this.shopRow(
+          template.name,
+          template.description,
+          price,
+          () => {
+            if (this.player.gold < price) return;
+            this.player.gold -= price;
+            this.player.addLoot(createStarterItem(templateId, 'verde', Math.max(1, this.player.level)));
+            saveGame(this.player);
+            this.renderShop();
+          },
+          undefined,
+          {
+            materialId: vendor.craftMaterialId,
+            materialQty: craftQty,
+            goldCost: craftGold,
+            onCraft: () => {
+              if ((this.player.inventory[vendor.craftMaterialId] ?? 0) < craftQty || this.player.gold < craftGold) return;
+              this.player.inventory[vendor.craftMaterialId] -= craftQty;
+              if (this.player.inventory[vendor.craftMaterialId] <= 0) delete this.player.inventory[vendor.craftMaterialId];
+              this.player.gold -= craftGold;
+              this.player.addLoot(createStarterItem(templateId, 'azul', Math.max(1, this.player.level)));
+              saveGame(this.player);
+              this.renderShop();
+            },
+          },
+        ),
       );
     }
     for (const gemId of vendor.gemIds ?? []) {
@@ -727,23 +776,47 @@ export class OverworldScreen implements Screen {
     this.shopBodyEl.replaceChildren(...sections);
   }
 
-  private shopRow(name: string, description: string, price: number, onBuy: () => void, swatchColor?: number): HTMLElement {
+  private shopRow(
+    name: string,
+    description: string,
+    price: number,
+    onBuy: () => void,
+    swatchColor?: number,
+    craft?: { materialId: string; materialQty: number; goldCost: number; onCraft: () => void },
+  ): HTMLElement {
     const canAfford = this.player.gold >= price;
     const nameChildren: Array<HTMLElement | string> = [];
     if (swatchColor !== undefined) {
       nameChildren.push(el('span', { className: 'swatch gem-swatch', style: { background: `#${swatchColor.toString(16).padStart(6, '0')}` } }));
     }
     nameChildren.push(name);
-    return el('div', { className: 'shop-row' }, [
-      el('div', { className: 'shop-row-info' }, [
-        el('div', { className: 'item-name' }, nameChildren),
-        el('div', { className: 'item-rarity', text: description }),
-      ]),
+
+    const buttons: HTMLElement[] = [
       el('div', {
         className: `btn small ${canAfford ? '' : 'disabled'}`,
         text: `Comprar (${price}g)`,
         onClick: canAfford ? onBuy : undefined,
       }),
+    ];
+    if (craft) {
+      const material = getMaterialById(craft.materialId);
+      const owned = this.player.inventory[craft.materialId] ?? 0;
+      const canCraft = owned >= craft.materialQty && this.player.gold >= craft.goldCost;
+      buttons.push(
+        el('div', {
+          className: `btn small ${canCraft ? '' : 'disabled'}`,
+          text: `Fabricar → Raro (${craft.materialQty}x ${material.name}, ${craft.goldCost}g)`,
+          onClick: canCraft ? craft.onCraft : undefined,
+        }),
+      );
+    }
+
+    return el('div', { className: 'shop-row' }, [
+      el('div', { className: 'shop-row-info' }, [
+        el('div', { className: 'item-name' }, nameChildren),
+        el('div', { className: 'item-rarity', text: description }),
+      ]),
+      el('div', { className: 'row shop-row-actions' }, buttons),
     ]);
   }
 
@@ -773,6 +846,7 @@ export class OverworldScreen implements Screen {
             if (this.player.inventory[gemId] <= 0) delete this.player.inventory[gemId];
             instance.socketedGemId = gemId;
             saveGame(this.player);
+            if (slot === 'arma') this.rebuildPlayerVisual();
             this.renderShop();
           },
         });

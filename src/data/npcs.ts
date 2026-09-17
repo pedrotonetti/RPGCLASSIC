@@ -12,6 +12,8 @@ export interface VendorInfo {
   equipmentTemplateIds?: string[];
   /** Gem ids for sale (jeweler). */
   gemIds?: string[];
+  /** Material this vendor's crafting recipes consume, alongside gold — see materials dropped by monsters. */
+  craftMaterialId: string;
 }
 
 export interface NpcDefinition {
@@ -112,7 +114,7 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Ando forjando à luz de vela — as Ipê-árvores perto da forja não brotam uma flor sequer este ano.',
       'Se encontrar minérios raros por aí, me avise — sempre há algo novo para forjar.',
     ],
-    vendor: { kind: 'ferreiro', equipmentTemplateIds: WEAPON_ARMOR_TEMPLATE_IDS },
+    vendor: { kind: 'ferreiro', equipmentTemplateIds: WEAPON_ARMOR_TEMPLATE_IDS, craftMaterialId: 'mat_iron_ore' },
   },
   {
     id: 'bram',
@@ -153,7 +155,7 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Poções de vida e mana, sempre à mão para quem parte em aventura.',
       'Rezo pela Florescência todo ano. Este ano, pela primeira vez, tenho medo de que ela não venha.',
     ],
-    vendor: { kind: 'boticario', itemIds: ['potion_hp', 'potion_mp'] },
+    vendor: { kind: 'boticario', itemIds: ['potion_hp', 'potion_mp'], craftMaterialId: 'mat_herb' },
   },
   {
     id: 'zaya',
@@ -197,7 +199,7 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Anéis, amuletos, braceletes — o que a sorte não dá, um bom artesanato empresta.',
       'Cada peça que faço carrega um pouco de quem a encomendou. É um trabalho pessoal, esse.',
     ],
-    vendor: { kind: 'artesao', equipmentTemplateIds: ACCESSORY_TEMPLATE_IDS },
+    vendor: { kind: 'artesao', equipmentTemplateIds: ACCESSORY_TEMPLATE_IDS, craftMaterialId: 'mat_leather' },
   },
   {
     id: 'joalheiro_nemo',
@@ -217,7 +219,7 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Gemas lapidadas à mão, cada uma pronta para engastar em arma ou armadura.',
       'Uma gema bem engastada não só fortalece — ela brilha. Combate é teatro, e teatro precisa de luz.',
     ],
-    vendor: { kind: 'joalheiro', gemIds: GEM_IDS },
+    vendor: { kind: 'joalheiro', gemIds: GEM_IDS, craftMaterialId: 'mat_arcane_shard' },
   },
 ];
 

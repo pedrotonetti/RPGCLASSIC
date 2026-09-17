@@ -958,6 +958,10 @@ body {
   flex: 1;
   min-width: 160px;
 }
+.shop-row-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 .gem-swatch {
   display: inline-block;
   width: 12px;
