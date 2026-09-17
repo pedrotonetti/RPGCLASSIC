@@ -683,14 +683,37 @@ export class OverworldScreen implements Screen {
     const buyRows: HTMLElement[] = [];
     for (const itemId of vendor.itemIds ?? []) {
       const item = getItemById(itemId);
+      const craftGold = Math.round(item.price * 0.5);
+      const craftQty = 2;
       buyRows.push(
-        this.shopRow(item.name, item.description, item.price, () => {
-          if (this.player.gold < item.price) return;
-          this.player.gold -= item.price;
-          this.player.addItem(itemId, 1);
-          saveGame(this.player);
-          this.renderShop();
-        }),
+        this.shopRow(
+          item.name,
+          item.description,
+          item.price,
+          () => {
+            if (this.player.gold < item.price) return;
+            this.player.gold -= item.price;
+            this.player.addItem(itemId, 1);
+            saveGame(this.player);
+            this.renderShop();
+          },
+          undefined,
+          {
+            materialId: vendor.craftMaterialId,
+            materialQty: craftQty,
+            goldCost: craftGold,
+            resultLabel: 'x2',
+            onCraft: () => {
+              if ((this.player.inventory[vendor.craftMaterialId] ?? 0) < craftQty || this.player.gold < craftGold) return;
+              this.player.inventory[vendor.craftMaterialId] -= craftQty;
+              if (this.player.inventory[vendor.craftMaterialId] <= 0) delete this.player.inventory[vendor.craftMaterialId];
+              this.player.gold -= craftGold;
+              this.player.addItem(itemId, 2);
+              saveGame(this.player);
+              this.renderShop();
+            },
+          },
+        ),
       );
     }
     for (const templateId of vendor.equipmentTemplateIds ?? []) {
@@ -704,7 +727,7 @@ export class OverworldScreen implements Screen {
           template.description,
           price,
           () => {
-            if (this.player.gold < price) return;
+            if (this.player.gold < price || this.player.bagFull) return;
             this.player.gold -= price;
             this.player.addLoot(createStarterItem(templateId, 'verde', Math.max(1, this.player.level)));
             saveGame(this.player);
@@ -715,8 +738,9 @@ export class OverworldScreen implements Screen {
             materialId: vendor.craftMaterialId,
             materialQty: craftQty,
             goldCost: craftGold,
+            resultLabel: 'Raro',
             onCraft: () => {
-              if ((this.player.inventory[vendor.craftMaterialId] ?? 0) < craftQty || this.player.gold < craftGold) return;
+              if ((this.player.inventory[vendor.craftMaterialId] ?? 0) < craftQty || this.player.gold < craftGold || this.player.bagFull) return;
               this.player.inventory[vendor.craftMaterialId] -= craftQty;
               if (this.player.inventory[vendor.craftMaterialId] <= 0) delete this.player.inventory[vendor.craftMaterialId];
               this.player.gold -= craftGold;
@@ -725,19 +749,43 @@ export class OverworldScreen implements Screen {
               this.renderShop();
             },
           },
+          true,
         ),
       );
     }
     for (const gemId of vendor.gemIds ?? []) {
       const gem = getGemById(gemId);
+      const craftGold = Math.round(gem.price * 0.5);
+      const craftQty = 2;
       buyRows.push(
-        this.shopRow(gem.name, gem.description, gem.price, () => {
-          if (this.player.gold < gem.price) return;
-          this.player.gold -= gem.price;
-          this.player.addItem(gemId, 1);
-          saveGame(this.player);
-          this.renderShop();
-        }, gem.color),
+        this.shopRow(
+          gem.name,
+          gem.description,
+          gem.price,
+          () => {
+            if (this.player.gold < gem.price) return;
+            this.player.gold -= gem.price;
+            this.player.addItem(gemId, 1);
+            saveGame(this.player);
+            this.renderShop();
+          },
+          gem.color,
+          {
+            materialId: vendor.craftMaterialId,
+            materialQty: craftQty,
+            goldCost: craftGold,
+            resultLabel: 'x2',
+            onCraft: () => {
+              if ((this.player.inventory[vendor.craftMaterialId] ?? 0) < craftQty || this.player.gold < craftGold) return;
+              this.player.inventory[vendor.craftMaterialId] -= craftQty;
+              if (this.player.inventory[vendor.craftMaterialId] <= 0) delete this.player.inventory[vendor.craftMaterialId];
+              this.player.gold -= craftGold;
+              this.player.addItem(gemId, 2);
+              saveGame(this.player);
+              this.renderShop();
+            },
+          },
+        ),
       );
     }
     sections.push(el('div', { className: 'shop-section' }, [el('h3', { text: 'Comprar' }), ...buyRows]));
@@ -782,9 +830,11 @@ export class OverworldScreen implements Screen {
     price: number,
     onBuy: () => void,
     swatchColor?: number,
-    craft?: { materialId: string; materialQty: number; goldCost: number; onCraft: () => void },
+    craft?: { materialId: string; materialQty: number; goldCost: number; resultLabel: string; onCraft: () => void },
+    requiresBagSpace = false,
   ): HTMLElement {
-    const canAfford = this.player.gold >= price;
+    const bagBlocked = requiresBagSpace && this.player.bagFull;
+    const canAfford = this.player.gold >= price && !bagBlocked;
     const nameChildren: Array<HTMLElement | string> = [];
     if (swatchColor !== undefined) {
       nameChildren.push(el('span', { className: 'swatch gem-swatch', style: { background: `#${swatchColor.toString(16).padStart(6, '0')}` } }));
@@ -794,18 +844,18 @@ export class OverworldScreen implements Screen {
     const buttons: HTMLElement[] = [
       el('div', {
         className: `btn small ${canAfford ? '' : 'disabled'}`,
-        text: `Comprar (${price}g)`,
+        text: bagBlocked ? 'Mochila cheia' : `Comprar (${price}g)`,
         onClick: canAfford ? onBuy : undefined,
       }),
     ];
     if (craft) {
       const material = getMaterialById(craft.materialId);
       const owned = this.player.inventory[craft.materialId] ?? 0;
-      const canCraft = owned >= craft.materialQty && this.player.gold >= craft.goldCost;
+      const canCraft = owned >= craft.materialQty && this.player.gold >= craft.goldCost && !bagBlocked;
       buttons.push(
         el('div', {
           className: `btn small ${canCraft ? '' : 'disabled'}`,
-          text: `Fabricar → Raro (${craft.materialQty}x ${material.name}, ${craft.goldCost}g)`,
+          text: bagBlocked ? 'Mochila cheia' : `Fabricar → ${craft.resultLabel} (${owned}/${craft.materialQty}x ${material.name}, ${craft.goldCost}g)`,
           onClick: canCraft ? craft.onCraft : undefined,
         }),
       );

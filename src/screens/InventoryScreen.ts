@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import type { EquipmentInstance, EquipmentSlot } from '../config/types';
 import { RARITY_LABEL, rarityToHex } from '../config/rarity';
 import { computeEquipmentBonus, getEquipmentTemplate } from '../data/equipment';
+import { getGemById } from '../data/gems';
+import { getItemById } from '../data/items';
+import { getMaterialById } from '../data/materials';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { Player } from '../entities/Player';
@@ -10,6 +13,19 @@ import { computePowerScore } from '../systems/PowerScore';
 import { saveGame } from '../systems/SaveSystem';
 import { el } from '../ui/dom';
 import { OverworldScreen } from './OverworldScreen';
+
+/** Resolves a player.inventory key (potion, gem, or material id) to a display name and optional swatch color. */
+function inventoryEntryInfo(id: string): { name: string; color?: number } {
+  if (id.startsWith('gem_')) {
+    const gem = getGemById(id);
+    return { name: gem.name, color: gem.color };
+  }
+  if (id.startsWith('mat_')) {
+    const material = getMaterialById(id);
+    return { name: material.name, color: material.color };
+  }
+  return { name: getItemById(id).name };
+}
 
 const SLOT_LABELS: Record<EquipmentSlot, string> = {
   arma: 'Arma',
@@ -25,6 +41,7 @@ export class InventoryScreen implements Screen {
 
   private slotsEl!: HTMLElement;
   private bagEl!: HTMLElement;
+  private suppliesEl!: HTMLElement;
   private powerScoreEl!: HTMLElement;
 
   constructor(
@@ -66,6 +83,7 @@ export class InventoryScreen implements Screen {
     this.powerScoreEl = el('div', { className: 'subtitle', text: '' });
     this.slotsEl = el('div', { className: 'equip-slots' });
     this.bagEl = el('div', { className: 'bag-list' });
+    this.suppliesEl = el('div', { className: 'bag-list' });
 
     const backBtn = el('div', {
       className: 'btn primary',
@@ -83,6 +101,8 @@ export class InventoryScreen implements Screen {
         this.slotsEl,
         el('h3', { text: 'Mochila' }),
         this.bagEl,
+        el('h3', { text: 'Poções, Gemas e Materiais' }),
+        this.suppliesEl,
       ]),
       el('div', { className: 'bottom-bar' }, [backBtn]),
     ]);
@@ -135,6 +155,8 @@ export class InventoryScreen implements Screen {
       }),
     );
 
+    this.renderSupplies();
+
     if (this.player.bag.length === 0) {
       this.bagEl.replaceChildren(el('div', { className: 'item-name', text: '(mochila vazia — derrote inimigos para encontrar itens)' }));
       return;
@@ -169,6 +191,27 @@ export class InventoryScreen implements Screen {
             }),
           ],
         );
+      }),
+    );
+  }
+
+  private renderSupplies(): void {
+    const entries = Object.entries(this.player.inventory).filter(([, count]) => count > 0);
+    if (entries.length === 0) {
+      this.suppliesEl.replaceChildren(el('div', { className: 'item-name', text: '(nada em posse — poções, gemas e materiais aparecem aqui)' }));
+      return;
+    }
+    this.suppliesEl.replaceChildren(
+      ...entries.map(([id, count]) => {
+        const info = inventoryEntryInfo(id);
+        const nameChildren: Array<HTMLElement | string> =
+          info.color !== undefined
+            ? [el('span', { className: 'swatch gem-swatch', style: { background: `#${info.color.toString(16).padStart(6, '0')}` } }), info.name]
+            : [info.name];
+        return el('div', { className: 'bag-item' }, [
+          el('div', { className: 'bag-item-info' }, [el('div', { className: 'item-name' }, nameChildren)]),
+          el('div', { className: 'item-rarity', text: `x${count}` }),
+        ]);
       }),
     );
   }

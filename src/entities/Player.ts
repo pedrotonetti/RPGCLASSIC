@@ -230,8 +230,12 @@ export class Player {
     return { hpRestored, mpRestored };
   }
 
+  get bagFull(): boolean {
+    return this.bag.length >= MAX_BAG_SIZE;
+  }
+
   addLoot(instance: EquipmentInstance): boolean {
-    if (this.bag.length >= MAX_BAG_SIZE) return false;
+    if (this.bagFull) return false;
     this.bag.push(instance);
     return true;
   }
