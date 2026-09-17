@@ -806,6 +806,7 @@ export class OverworldScreen implements Screen {
               text: `Vender (${price}g)`,
               onClick: () => {
                 this.player.bag = this.player.bag.filter((i) => i.uid !== instance.uid);
+                if (instance.socketedGemId) this.player.addItem(instance.socketedGemId, 1);
                 this.player.gold += price;
                 saveGame(this.player);
                 this.renderShop();
@@ -894,6 +895,7 @@ export class OverworldScreen implements Screen {
           onClick: () => {
             this.player.inventory[gemId] -= 1;
             if (this.player.inventory[gemId] <= 0) delete this.player.inventory[gemId];
+            if (instance.socketedGemId) this.player.addItem(instance.socketedGemId, 1);
             instance.socketedGemId = gemId;
             saveGame(this.player);
             if (slot === 'arma') this.rebuildPlayerVisual();
