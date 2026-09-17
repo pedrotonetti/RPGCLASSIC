@@ -185,8 +185,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     name: 'Artesã Bina',
     role: 'Artesã',
     zoneId: MAIN_CITY_ID,
-    mapX: 4,
-    mapY: 7,
+    mapX: 6,
+    mapY: 4,
     appearance: npcAppearance({
       gender: 'feminino',
       hairStyle: 'longo',
