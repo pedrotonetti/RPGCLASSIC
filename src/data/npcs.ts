@@ -1,13 +1,30 @@
 import type { CharacterAppearance } from '../config/customization';
+import { CLASS_ZONE_THEMES } from './classZones';
+import { MAIN_CITY_ID } from './zones';
+
+export type VendorKind = 'ferreiro' | 'artesao' | 'boticario' | 'joalheiro';
+
+export interface VendorInfo {
+  kind: VendorKind;
+  /** Consumable item ids for sale (apothecary). */
+  itemIds?: string[];
+  /** Equipment template ids for sale — a fresh 'verde' instance is rolled on purchase (blacksmith, artisan). */
+  equipmentTemplateIds?: string[];
+  /** Gem ids for sale (jeweler). */
+  gemIds?: string[];
+}
 
 export interface NpcDefinition {
   id: string;
   name: string;
   role: string;
+  /** Which zone this NPC stands in — the main city, or one of the class villages. */
+  zoneId: string;
   mapX: number;
   mapY: number;
   dialogue: string[];
   appearance: CharacterAppearance;
+  vendor?: VendorInfo;
 }
 
 function npcAppearance(overrides: Partial<CharacterAppearance>): CharacterAppearance {
@@ -31,11 +48,31 @@ function npcAppearance(overrides: Partial<CharacterAppearance>): CharacterAppear
   };
 }
 
+const WEAPON_ARMOR_TEMPLATE_IDS = [
+  'espada_curta',
+  'machado_guerra',
+  'cajado_arcano',
+  'arco_longo',
+  'adaga_sombria',
+  'grimorio_amaldicoado',
+  'manoplas_combate',
+  'martelo_sagrado',
+  'armadura_couro',
+  'armadura_placas',
+  'vestes_arcanas',
+  'manto_sagrado',
+];
+
+const ACCESSORY_TEMPLATE_IDS = ['anel_sorte', 'amuleto_vitalidade', 'bracelete_arcano', 'talisma_velocidade'];
+
+const GEM_IDS = ['gem_ruby', 'gem_sapphire', 'gem_emerald', 'gem_topaz', 'gem_amethyst', 'gem_moonstone'];
+
 export const NPC_DEFINITIONS: NpcDefinition[] = [
   {
     id: 'tobias',
     name: 'Ancião Tobias',
     role: 'Líder de Pedravale',
+    zoneId: MAIN_CITY_ID,
     mapX: 5,
     mapY: 4,
     appearance: npcAppearance({
@@ -59,6 +96,7 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     id: 'elira',
     name: 'Ferreira Elira',
     role: 'Ferreira',
+    zoneId: MAIN_CITY_ID,
     mapX: 3,
     mapY: 6,
     appearance: npcAppearance({
@@ -74,11 +112,13 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Ando forjando à luz de vela — as Ipê-árvores perto da forja não brotam uma flor sequer este ano.',
       'Se encontrar minérios raros por aí, me avise — sempre há algo novo para forjar.',
     ],
+    vendor: { kind: 'ferreiro', equipmentTemplateIds: WEAPON_ARMOR_TEMPLATE_IDS },
   },
   {
     id: 'bram',
     name: 'Guarda Bram',
     role: 'Guarda da Vila',
+    zoneId: MAIN_CITY_ID,
     mapX: 8,
     mapY: 3,
     appearance: npcAppearance({
@@ -97,7 +137,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
   {
     id: 'mira',
     name: 'Curandeira Mira',
-    role: 'Curandeira',
+    role: 'Boticária',
+    zoneId: MAIN_CITY_ID,
     mapX: 7,
     mapY: 6,
     appearance: npcAppearance({
@@ -112,11 +153,13 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Poções de vida e mana, sempre à mão para quem parte em aventura.',
       'Rezo pela Florescência todo ano. Este ano, pela primeira vez, tenho medo de que ela não venha.',
     ],
+    vendor: { kind: 'boticario', itemIds: ['potion_hp', 'potion_mp'] },
   },
   {
     id: 'zaya',
     name: 'Zaya',
     role: 'Batedora Viajante',
+    zoneId: MAIN_CITY_ID,
     mapX: 4,
     mapY: 7,
     appearance: npcAppearance({
@@ -135,7 +178,74 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       '(Zaya sorri, mas por um instante seus olhos pesam, como quem carrega um recado que ainda não entregou.)',
     ],
   },
+  {
+    id: 'artesa_bina',
+    name: 'Artesã Bina',
+    role: 'Artesã',
+    zoneId: MAIN_CITY_ID,
+    mapX: 4,
+    mapY: 7,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'longo',
+      hairColor: 0x2a2a35,
+      primaryColor: 0x8a6a3f,
+      secondaryColor: 0xd97a2e,
+      bodyType: 'magro',
+    }),
+    dialogue: [
+      'Anéis, amuletos, braceletes — o que a sorte não dá, um bom artesanato empresta.',
+      'Cada peça que faço carrega um pouco de quem a encomendou. É um trabalho pessoal, esse.',
+    ],
+    vendor: { kind: 'artesao', equipmentTemplateIds: ACCESSORY_TEMPLATE_IDS },
+  },
+  {
+    id: 'joalheiro_nemo',
+    name: 'Joalheiro Nemo',
+    role: 'Joalheiro',
+    zoneId: MAIN_CITY_ID,
+    mapX: 8,
+    mapY: 6,
+    appearance: npcAppearance({
+      hairStyle: 'careca',
+      primaryColor: 0x4a2f20,
+      secondaryColor: 0xe0b23a,
+      bodyType: 'robusto',
+      headAccessory: 'nenhum',
+    }),
+    dialogue: [
+      'Gemas lapidadas à mão, cada uma pronta para engastar em arma ou armadura.',
+      'Uma gema bem engastada não só fortalece — ela brilha. Combate é teatro, e teatro precisa de luz.',
+    ],
+    vendor: { kind: 'joalheiro', gemIds: GEM_IDS },
+  },
 ];
+
+// One elder (starting village) and one mentor (secondary village) per class,
+// generated from the shared theme table instead of hand-duplicated —
+// see data/classZones.ts for names/dialogue per class.
+for (const theme of CLASS_ZONE_THEMES) {
+  NPC_DEFINITIONS.push({
+    id: `${theme.classId}_elder`,
+    name: theme.elderName,
+    role: theme.elderTitle,
+    zoneId: theme.startVillageId,
+    mapX: 8,
+    mapY: 7,
+    appearance: npcAppearance({ primaryColor: theme.accentColor, secondaryColor: 0xf2ede1, hairStyle: 'longo', hairColor: 0xe8e4dc }),
+    dialogue: theme.elderGreeting,
+  });
+  NPC_DEFINITIONS.push({
+    id: `${theme.classId}_mentor`,
+    name: theme.mentorName,
+    role: theme.mentorTitle,
+    zoneId: theme.secondaryVillageId,
+    mapX: 11,
+    mapY: 8,
+    appearance: npcAppearance({ primaryColor: theme.accentColor, secondaryColor: 0x2a2a35, bodyType: 'robusto' }),
+    dialogue: theme.mentorGreeting,
+  });
+}
 
 export function getNpcById(id: string): NpcDefinition {
   const found = NPC_DEFINITIONS.find((n) => n.id === id);

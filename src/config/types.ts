@@ -87,6 +87,8 @@ export interface EquipmentInstance {
   templateId: string;
   rarity: ItemRarity;
   itemLevel: number;
+  /** Gem id socketed into this item, if any — adds its stat bonus and tints the item with a glow. */
+  socketedGemId?: string;
 }
 
 export interface ItemDefinition {

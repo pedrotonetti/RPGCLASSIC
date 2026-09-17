@@ -5,6 +5,7 @@ import type { CharacterClassDefinition, EquipmentInstance, EquipmentSlot, SkillD
 import { computeEquipmentBonus, createStarterItem, getEquipmentTemplate } from '../data/equipment';
 import { getItemById } from '../data/items';
 import { computeSkillLevelStats, skillPointsForLevel, ultimateLevelForCharacter } from '../systems/skillMath';
+import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, startZoneForClass } from '../data/zones';
 import { computeStatsAtLevel } from './statMath';
 
 export interface PlayerSaveData {
@@ -18,6 +19,8 @@ export interface PlayerSaveData {
   inventory: Record<string, number>;
   mapX: number;
   mapY: number;
+  /** Which zone (main city, or a class's starting/secondary village) mapX/mapY are relative to. */
+  zoneId: string;
   appearance: CharacterAppearance;
   equipment: Partial<Record<EquipmentSlot, EquipmentInstance>>;
   bag: EquipmentInstance[];
@@ -44,6 +47,7 @@ export class Player {
   /** Continuous overworld world-space position (units, not tile indices) — free movement, not grid-snapped. */
   mapX: number;
   mapY: number;
+  zoneId: string;
   appearance: CharacterAppearance;
   equipment: Partial<Record<EquipmentSlot, EquipmentInstance>>;
   bag: EquipmentInstance[];
@@ -67,6 +71,7 @@ export class Player {
     // this file's existing style of not depending on world-layout modules.
     this.mapX = data?.mapX ?? 11;
     this.mapY = data?.mapY ?? 11;
+    this.zoneId = data?.zoneId ?? MAIN_CITY_ID;
     const classDef = getClassById(classId);
     this.appearance = data?.appearance ?? defaultAppearance(classDef.color, classDef.accentColor);
     this.equipment = data?.equipment ?? {};
@@ -87,6 +92,13 @@ export class Player {
     const player = new Player(name, classId);
     const starterWeapon = STARTER_WEAPON[classId];
     if (starterWeapon) player.equipment.arma = createStarterItem(starterWeapon, 'verde', 1);
+
+    // Every class starts in its own village, not the shared main city.
+    player.zoneId = startZoneForClass(classId);
+    const spawn = arriveWorldPosition(getZoneById(player.zoneId).generate().playerStart);
+    player.mapX = spawn.x;
+    player.mapY = spawn.z;
+
     return player;
   }
 
@@ -261,6 +273,7 @@ export class Player {
       inventory: { ...this.inventory },
       mapX: this.mapX,
       mapY: this.mapY,
+      zoneId: this.zoneId,
       appearance: { ...this.appearance },
       equipment: { ...this.equipment },
       bag: [...this.bag],

@@ -1,4 +1,5 @@
 import type { ItemRarity } from '../config/types';
+import { CLASS_ZONE_THEMES } from './classZones';
 
 export type QuestObjectiveKind = 'talkTo' | 'defeat' | 'reachLevel';
 
@@ -93,6 +94,62 @@ export const QUEST_CHAIN: QuestDefinition[] = [
   },
 ];
 
+/**
+ * Three quests per class, playing out entirely in that class's own starting
+ * and secondary village before the shared Chapter 1 story (QUEST_CHAIN,
+ * above) picks up once the character reaches Pedravale.
+ */
+function buildClassPreludeQuests(): QuestDefinition[] {
+  const quests: QuestDefinition[] = [];
+  for (const theme of CLASS_ZONE_THEMES) {
+    const q0Id = `${theme.classId}_q0_arrival`;
+    const q1Id = `${theme.classId}_q1_journey`;
+    const q2Id = `${theme.classId}_q2_pedravale`;
+    quests.push(
+      {
+        id: q0Id,
+        title: 'Primeiros Passos',
+        description: `${theme.elderName} pede que você prove seu valor contra as criaturas que rondam ${theme.startVillageName}.`,
+        giverNpcId: `${theme.classId}_elder`,
+        objective: { kind: 'defeat', amount: 3 },
+        rewardXp: 15,
+        rewardGold: 10,
+        nextQuestId: q1Id,
+      },
+      {
+        id: q1Id,
+        title: 'Rumo à Vila Secundária',
+        description: `Viaje até ${theme.secondaryVillageName} e apresente-se a ${theme.mentorName}.`,
+        giverNpcId: `${theme.classId}_elder`,
+        objective: { kind: 'talkTo', targetId: `${theme.classId}_mentor`, amount: 1 },
+        rewardXp: 25,
+        rewardGold: 15,
+        nextQuestId: q2Id,
+      },
+      {
+        id: q2Id,
+        title: 'Rumo a Pedravale',
+        description: 'Siga a estrada até Pedravale e fale com o Guarda Bram no portão.',
+        giverNpcId: `${theme.classId}_mentor`,
+        objective: { kind: 'talkTo', targetId: 'bram', amount: 1 },
+        rewardXp: 35,
+        rewardGold: 20,
+        nextQuestId: 'q1_awaken',
+      },
+    );
+  }
+  return quests;
+}
+
+export const CLASS_PRELUDE_QUESTS = buildClassPreludeQuests();
+
+const ALL_QUESTS: QuestDefinition[] = [...CLASS_PRELUDE_QUESTS, ...QUEST_CHAIN];
+
 export function getQuestById(id: string): QuestDefinition | undefined {
-  return QUEST_CHAIN.find((q) => q.id === id);
+  return ALL_QUESTS.find((q) => q.id === id);
+}
+
+/** The first quest a brand-new character of this class should be given. */
+export function firstQuestIdForClass(classId: string): string {
+  return `${classId}_q0_arrival`;
 }

@@ -104,7 +104,18 @@ export function makeGrassTexture(baseColor: number, size = 128): THREE.CanvasTex
   return texture;
 }
 
-export function buildOverworldMeshes(tiles: TileType[][]): WorldMeshes {
+/** Blends `accent` into the base grass green at low weight — enough that each zone's territory reads as visually distinct without stopping looking like grass. */
+function tintedGrassColor(accentColor: number): number {
+  const base = hexToRgb(0x4c8a3f);
+  const accent = hexToRgb(accentColor);
+  const t = 0.22;
+  const r = clampByte(base[0] + (accent[0] - base[0]) * t);
+  const g = clampByte(base[1] + (accent[1] - base[1]) * t);
+  const b = clampByte(base[2] + (accent[2] - base[2]) * t);
+  return (r << 16) | (g << 8) | b;
+}
+
+export function buildOverworldMeshes(tiles: TileType[][], accentColor = 0x4c8a3f): WorldMeshes {
   const mapHeight = tiles.length;
   const mapWidth = tiles[0].length;
   const widthWorld = mapWidth * TILE_SIZE;
@@ -112,7 +123,7 @@ export function buildOverworldMeshes(tiles: TileType[][]): WorldMeshes {
 
   const group = new THREE.Group();
 
-  const grassTex = makeGrassTexture(0x4c8a3f);
+  const grassTex = makeGrassTexture(tintedGrassColor(accentColor));
   grassTex.repeat.set(mapWidth * 1.2, mapHeight * 1.2);
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(widthWorld, depthWorld),

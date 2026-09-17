@@ -104,18 +104,34 @@ export class OverworldCombat {
     return this.engine !== null;
   }
 
-  /** Places a handful of monsters on grass tiles scattered across the map, well clear of the player's start. */
-  spawnMonsters(tiles: TileType[][], startTile: { x: number; y: number }): void {
+  /**
+   * Places a handful of monsters on grass tiles scattered across the map,
+   * well clear of the player's start. `enemyIds`, when given, restricts
+   * monsters to that pool (a village's own weak/mid field) instead of the
+   * main city's level-weighted pool; `minDistFromStart`/`minSpacing` should
+   * shrink for small village maps so spawns aren't crowded out entirely.
+   */
+  spawnMonsters(
+    tiles: TileType[][],
+    startTile: { x: number; y: number },
+    opts: { count?: number; enemyIds?: string[]; minDistFromStart?: number; minSpacing?: number } = {},
+  ): void {
     this.messageEl = el('div', { className: 'panel battle-message-bar' });
     this.messageEl.hidden = true;
     this.comboEl = el('div', { className: 'combo-badge' });
     this.comboEl.hidden = true;
     this.game.uiRoot.append(this.messageEl, this.comboEl);
 
-    const points = pickSpawnPoints(tiles, startTile, MONSTER_COUNT);
+    const points = pickSpawnPoints(
+      tiles,
+      startTile,
+      opts.count ?? MONSTER_COUNT,
+      opts.minDistFromStart ?? MIN_SPAWN_DIST_FROM_START,
+      opts.minSpacing ?? MIN_SPAWN_SPACING,
+    );
     for (const p of points) {
-      const ids = pickEncounterEnemyIds(this.player.level);
-      this.monsters.push(this.buildMonster(ids[0], p.x, p.y));
+      const id = opts.enemyIds ? opts.enemyIds[Math.floor(Math.random() * opts.enemyIds.length)] : pickEncounterEnemyIds(this.player.level)[0];
+      this.monsters.push(this.buildMonster(id, p.x, p.y));
     }
   }
 
@@ -672,12 +688,14 @@ function pickSpawnPoints(
   tiles: TileType[][],
   startTile: { x: number; y: number },
   count: number,
+  minDistFromStart: number,
+  minSpacing: number,
 ): Array<{ x: number; y: number }> {
   const candidates: Array<{ x: number; y: number }> = [];
   for (let y = 0; y < tiles.length; y++) {
     for (let x = 0; x < tiles[0].length; x++) {
       if (tiles[y][x] !== TileType.Grass) continue;
-      if (Math.hypot(x - startTile.x, y - startTile.y) < MIN_SPAWN_DIST_FROM_START) continue;
+      if (Math.hypot(x - startTile.x, y - startTile.y) < minDistFromStart) continue;
       candidates.push({ x, y });
     }
   }
@@ -688,7 +706,7 @@ function pickSpawnPoints(
   const picked: Array<{ x: number; y: number }> = [];
   for (const c of candidates) {
     if (picked.length >= count) break;
-    if (picked.every((p) => Math.hypot(p.x - c.x, p.y - c.y) >= MIN_SPAWN_SPACING)) picked.push(c);
+    if (picked.every((p) => Math.hypot(p.x - c.x, p.y - c.y) >= minSpacing)) picked.push(c);
   }
   return picked;
 }

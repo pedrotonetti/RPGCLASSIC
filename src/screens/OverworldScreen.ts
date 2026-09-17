@@ -3,14 +3,19 @@ import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { TILE_SIZE } from '../config/gameConfig';
 import { isWalkable, TileType } from '../config/tiles';
+import { createStarterItem, getEquipmentTemplate } from '../data/equipment';
+import { getGemById } from '../data/gems';
+import { getItemById } from '../data/items';
 import { getMountById } from '../data/mounts';
-import { NPC_DEFINITIONS, type NpcDefinition } from '../data/npcs';
+import { NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
+import { arriveWorldPosition, getZoneById, type ZoneDefinition, type ZoneExit } from '../data/zones';
+import { rarityTier, rarityToHex } from '../config/rarity';
+import type { EquipmentSlot, ItemRarity } from '../config/types';
 import { Player } from '../entities/Player';
 import { CharacterAnimator } from '../render/animation';
 import { buildHumanCharacter, buildMountModel, buildPlayerCharacter, getRig } from '../render/characterModel';
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
 import { buildOverworldMeshes, tileCenterWorld } from '../render/worldBuilder';
-import { generateOverworldMap, MAP_HEIGHT, MAP_WIDTH } from '../systems/MapGenerator';
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
@@ -20,6 +25,8 @@ import { InventoryScreen } from './InventoryScreen';
 import { MainMenuScreen } from './MainMenuScreen';
 import { RankingScreen } from './RankingScreen';
 import { SkillTreeScreen } from './SkillTreeScreen';
+
+const SLOT_LABELS: Record<EquipmentSlot, string> = { arma: 'Arma', armadura: 'Armadura', acessorio: 'Acessório' };
 
 type Dir = 'up' | 'down' | 'left' | 'right';
 
@@ -103,6 +110,8 @@ export class OverworldScreen implements Screen {
   private npcSlots: NpcSlot[] = [];
   private wildlife: WildlifeSlot[] = [];
   private combat!: OverworldCombat;
+  private zoneDef!: ZoneDefinition;
+  private zoneRespawnTile = { x: 5, y: 5 };
   private time = 0;
 
   private isMoving = false;
@@ -118,6 +127,7 @@ export class OverworldScreen implements Screen {
   private dialogueNpc: NpcDefinition | null = null;
   private dialogueLineIndex = 0;
   private nearbyNpc: NpcDefinition | null = null;
+  private shopNpc: NpcDefinition | null = null;
 
   private promptEl!: HTMLElement;
   private hpEl!: HTMLElement;
@@ -129,6 +139,10 @@ export class OverworldScreen implements Screen {
   private pauseOverlay!: HTMLElement;
   private questTrackerEl!: HTMLElement;
   private mountSectionEl!: HTMLElement;
+  private shopOverlay!: HTMLElement;
+  private shopTitleEl!: HTMLElement;
+  private shopBodyEl!: HTMLElement;
+  private shopGoldEl!: HTMLElement;
 
   constructor(
     private game: Game,
@@ -143,9 +157,11 @@ export class OverworldScreen implements Screen {
     this.scene.background = new THREE.Color(0x8ec9e8);
     this.scene.fog = new THREE.Fog(0x8ec9e8, 16, 46);
 
-    const { tiles, playerStart } = generateOverworldMap();
+    this.zoneDef = getZoneById(this.player.zoneId);
+    const { tiles, playerStart } = this.zoneDef.generate();
     this.tiles = tiles;
-    const { group, waterMaterial } = buildOverworldMeshes(tiles);
+    this.zoneRespawnTile = playerStart;
+    const { group, waterMaterial } = buildOverworldMeshes(tiles, this.zoneDef.accentColor);
     this.waterMaterial = waterMaterial;
     this.scene.add(group);
 
@@ -178,12 +194,18 @@ export class OverworldScreen implements Screen {
     this.spawnWildlife();
     this.positionCameraImmediate();
 
-    this.combat = new OverworldCombat(this.game, this.player, this.scene, this.animator, () => this.handleDefeat(playerStart));
-    this.combat.spawnMonsters(tiles, playerStart);
+    this.combat = new OverworldCombat(this.game, this.player, this.scene, this.animator, () => this.handleDefeat());
+    this.combat.spawnMonsters(tiles, playerStart, {
+      count: this.zoneDef.monsterCount,
+      enemyIds: this.zoneDef.monsterIds,
+      minDistFromStart: this.zoneDef.monsterIds ? 3 : undefined,
+      minSpacing: this.zoneDef.monsterIds ? 2 : undefined,
+    });
 
     this.buildHud();
     this.buildDpad();
     this.buildDialogueOverlay();
+    this.buildShopOverlay();
     this.buildPauseOverlay();
 
     window.addEventListener('keydown', this.keydownHandler);
@@ -205,7 +227,7 @@ export class OverworldScreen implements Screen {
   update(dt: number): void {
     this.time += dt;
 
-    if (!this.paused && !this.dialogueNpc) {
+    if (!this.paused && !this.dialogueNpc && !this.shopNpc) {
       this.updateMovement(dt);
       this.updateInteraction();
       this.combat.update(dt, this.avatar.position, this.camera);
@@ -243,6 +265,11 @@ export class OverworldScreen implements Screen {
 
   private onKeyDown(e: KeyboardEvent): void {
     this.heldKeys.add(e.key.toLowerCase());
+
+    if (this.shopNpc) {
+      if (e.key === 'Escape') this.closeShop();
+      return;
+    }
 
     if (this.dialogueNpc) {
       if (e.key === 'e' || e.key === 'E' || e.key === 'Enter' || e.key === ' ') this.advanceDialogue();
@@ -360,11 +387,11 @@ export class OverworldScreen implements Screen {
 
   // --- movement (continuous, free-roam — no grid snapping) ---------------
 
-  /** Which tile a world-space point falls in, or null if outside the map. */
+  /** Which tile a world-space point falls in, or null if outside the current zone's map. */
   private tileAt(x: number, z: number): TileType | null {
     const tx = Math.floor(x / TILE_SIZE);
     const ty = Math.floor(z / TILE_SIZE);
-    if (tx < 0 || ty < 0 || tx >= MAP_WIDTH || ty >= MAP_HEIGHT) return null;
+    if (ty < 0 || ty >= this.tiles.length || tx < 0 || tx >= this.tiles[0].length) return null;
     return this.tiles[ty][tx];
   }
 
@@ -414,7 +441,22 @@ export class OverworldScreen implements Screen {
 
       this.player.mapX = pos.x;
       this.player.mapY = pos.z;
+
+      const tx = Math.floor(pos.x / TILE_SIZE);
+      const ty = Math.floor(pos.z / TILE_SIZE);
+      const exit = this.zoneDef.exits.find((e) => e.atTile.x === tx && e.atTile.y === ty);
+      if (exit) this.transitionToZone(exit);
     }
+  }
+
+  /** Leaves the current zone through `exit`, arriving at its destination — a full screen rebuild, same as the old battle/respawn transitions. */
+  private transitionToZone(exit: ZoneExit): void {
+    this.player.zoneId = exit.toZone;
+    const arrive = arriveWorldPosition(exit.arriveTile);
+    this.player.mapX = arrive.x;
+    this.player.mapY = arrive.z;
+    saveGame(this.player);
+    this.game.goTo(new OverworldScreen(this.game, this.player));
   }
 
   /** Rotates `current` toward `target` by at most `maxDelta` radians, the short way around the circle. */
@@ -426,9 +468,9 @@ export class OverworldScreen implements Screen {
     return current + Math.sign(delta) * maxDelta;
   }
 
-  /** Teleports the player back to the village and applies the usual defeat penalty — the in-place equivalent of BattleScreen's old handleDefeat. */
-  private handleDefeat(playerStart: { x: number; y: number }): void {
-    const respawnPos = tileCenterWorld(playerStart.x, playerStart.y);
+  /** Teleports the player back to this zone's own safe spot and applies the usual defeat penalty — the in-place equivalent of BattleScreen's old handleDefeat. */
+  private handleDefeat(): void {
+    const respawnPos = tileCenterWorld(this.zoneRespawnTile.x, this.zoneRespawnTile.y);
     this.player.mapX = respawnPos.x;
     this.player.mapY = respawnPos.z;
     this.avatar.position.set(respawnPos.x, this.avatar.position.y, respawnPos.z);
@@ -441,7 +483,7 @@ export class OverworldScreen implements Screen {
   // --- NPCs & dialogue --------------------------------------------------
 
   private buildNpcs(): void {
-    for (const def of NPC_DEFINITIONS) {
+    for (const def of NPC_DEFINITIONS.filter((n) => n.zoneId === this.player.zoneId)) {
       const model = buildHumanCharacter(def.appearance, 'none');
       tileCenterWorld(def.mapX, def.mapY, model.position);
       model.rotation.y = Math.PI;
@@ -577,9 +619,199 @@ export class OverworldScreen implements Screen {
   }
 
   private closeDialogue(): void {
+    const npc = this.dialogueNpc;
     this.dialogueNpc = null;
     this.dialogueOverlay.hidden = true;
     this.refreshQuestTracker();
+    if (npc?.vendor) this.openShop(npc);
+  }
+
+  // --- shops (vendor NPCs: blacksmith, apothecary, artisan, jeweler) -----
+
+  private openShop(npc: NpcDefinition): void {
+    this.shopNpc = npc;
+    this.shopOverlay.hidden = false;
+    this.renderShop();
+  }
+
+  private closeShop(): void {
+    this.shopNpc = null;
+    this.shopOverlay.hidden = true;
+  }
+
+  private sellPrice(rarity: ItemRarity, itemLevel: number): number {
+    return Math.round(10 * (rarityTier(rarity) + 1) * (1 + itemLevel * 0.15));
+  }
+
+  private renderShop(): void {
+    const npc = this.shopNpc;
+    if (!npc?.vendor) return;
+    const vendor: VendorInfo = npc.vendor;
+
+    this.shopTitleEl.textContent = `${npc.name} — ${npc.role}`;
+    this.shopGoldEl.textContent = `Ouro: ${this.player.gold}`;
+
+    const sections: HTMLElement[] = [];
+
+    const buyRows: HTMLElement[] = [];
+    for (const itemId of vendor.itemIds ?? []) {
+      const item = getItemById(itemId);
+      buyRows.push(
+        this.shopRow(item.name, item.description, item.price, () => {
+          if (this.player.gold < item.price) return;
+          this.player.gold -= item.price;
+          this.player.addItem(itemId, 1);
+          saveGame(this.player);
+          this.renderShop();
+        }),
+      );
+    }
+    for (const templateId of vendor.equipmentTemplateIds ?? []) {
+      const template = getEquipmentTemplate(templateId);
+      const price = 60 + this.player.level * 8;
+      buyRows.push(
+        this.shopRow(template.name, template.description, price, () => {
+          if (this.player.gold < price) return;
+          this.player.gold -= price;
+          this.player.addLoot(createStarterItem(templateId, 'verde', Math.max(1, this.player.level)));
+          saveGame(this.player);
+          this.renderShop();
+        }),
+      );
+    }
+    for (const gemId of vendor.gemIds ?? []) {
+      const gem = getGemById(gemId);
+      buyRows.push(
+        this.shopRow(gem.name, gem.description, gem.price, () => {
+          if (this.player.gold < gem.price) return;
+          this.player.gold -= gem.price;
+          this.player.addItem(gemId, 1);
+          saveGame(this.player);
+          this.renderShop();
+        }, gem.color),
+      );
+    }
+    sections.push(el('div', { className: 'shop-section' }, [el('h3', { text: 'Comprar' }), ...buyRows]));
+
+    if (this.player.bag.length > 0) {
+      const sellRows = this.player.bag.map((instance) => {
+        const template = getEquipmentTemplate(instance.templateId);
+        const price = this.sellPrice(instance.rarity, instance.itemLevel);
+        return el(
+          'div',
+          { className: 'shop-row' },
+          [
+            el('div', { className: 'shop-row-info' }, [
+              el('div', { className: 'item-name', text: `${template.name} (Nv.${instance.itemLevel})`, style: { color: rarityToHex(instance.rarity) } }),
+            ]),
+            el('div', {
+              className: 'btn small',
+              text: `Vender (${price}g)`,
+              onClick: () => {
+                this.player.bag = this.player.bag.filter((i) => i.uid !== instance.uid);
+                this.player.gold += price;
+                saveGame(this.player);
+                this.renderShop();
+              },
+            }),
+          ],
+        );
+      });
+      sections.push(el('div', { className: 'shop-section' }, [el('h3', { text: 'Vender' }), ...sellRows]));
+    }
+
+    if (vendor.kind === 'joalheiro') {
+      sections.push(this.buildSocketSection());
+    }
+
+    this.shopBodyEl.replaceChildren(...sections);
+  }
+
+  private shopRow(name: string, description: string, price: number, onBuy: () => void, swatchColor?: number): HTMLElement {
+    const canAfford = this.player.gold >= price;
+    const nameChildren: Array<HTMLElement | string> = [];
+    if (swatchColor !== undefined) {
+      nameChildren.push(el('span', { className: 'swatch gem-swatch', style: { background: `#${swatchColor.toString(16).padStart(6, '0')}` } }));
+    }
+    nameChildren.push(name);
+    return el('div', { className: 'shop-row' }, [
+      el('div', { className: 'shop-row-info' }, [
+        el('div', { className: 'item-name' }, nameChildren),
+        el('div', { className: 'item-rarity', text: description }),
+      ]),
+      el('div', {
+        className: `btn small ${canAfford ? '' : 'disabled'}`,
+        text: `Comprar (${price}g)`,
+        onClick: canAfford ? onBuy : undefined,
+      }),
+    ]);
+  }
+
+  /** Jeweler-only: socket an owned gem into an equipped item for a stat bonus and a glow. */
+  private buildSocketSection(): HTMLElement {
+    const ownedGems = Object.keys(this.player.inventory).filter((id) => id.startsWith('gem_') && (this.player.inventory[id] ?? 0) > 0);
+    if (ownedGems.length === 0) {
+      return el('div', { className: 'shop-section' }, [
+        el('h3', { text: 'Engastar Gema' }),
+        el('div', { className: 'item-rarity', text: 'Compre uma gema acima para poder engastá-la.' }),
+      ]);
+    }
+
+    const slots: EquipmentSlot[] = ['arma', 'armadura', 'acessorio'];
+    const rows: HTMLElement[] = [];
+    for (const slot of slots) {
+      const instance = this.player.equipment[slot];
+      if (!instance) continue;
+      const template = getEquipmentTemplate(instance.templateId);
+      const gemBtns = ownedGems.map((gemId) => {
+        const gem = getGemById(gemId);
+        return el('div', {
+          className: 'btn small',
+          text: `${gem.name} x${this.player.inventory[gemId]}`,
+          onClick: () => {
+            this.player.inventory[gemId] -= 1;
+            if (this.player.inventory[gemId] <= 0) delete this.player.inventory[gemId];
+            instance.socketedGemId = gemId;
+            saveGame(this.player);
+            this.renderShop();
+          },
+        });
+      });
+      rows.push(
+        el('div', { className: 'shop-row' }, [
+          el('div', { className: 'shop-row-info' }, [
+            el('div', {
+              className: 'item-name',
+              text: `${SLOT_LABELS[slot]}: ${template.name}${instance.socketedGemId ? ` (${getGemById(instance.socketedGemId).name} engastada)` : ''}`,
+            }),
+          ]),
+          el('div', { className: 'row' }, gemBtns),
+        ]),
+      );
+    }
+    if (rows.length === 0) {
+      return el('div', { className: 'shop-section' }, [
+        el('h3', { text: 'Engastar Gema' }),
+        el('div', { className: 'item-rarity', text: 'Equipe uma arma, armadura ou acessório primeiro.' }),
+      ]);
+    }
+    return el('div', { className: 'shop-section' }, [el('h3', { text: 'Engastar Gema' }), ...rows]);
+  }
+
+  private buildShopOverlay(): void {
+    this.shopTitleEl = el('h2', {});
+    this.shopGoldEl = el('div', { className: 'subtitle' });
+    this.shopBodyEl = el('div', { className: 'shop-body' });
+    const closeBtn = el('div', { className: 'btn primary', text: 'Fechar', onClick: () => this.closeShop() });
+
+    this.shopOverlay = el('div', { className: 'panel shop-overlay' }, [
+      this.shopTitleEl,
+      this.shopGoldEl,
+      this.shopBodyEl,
+      closeBtn,
+    ]);
+    this.shopOverlay.hidden = true;
+    this.game.uiRoot.append(this.shopOverlay);
   }
 
   // --- camera --------------------------------------------------------

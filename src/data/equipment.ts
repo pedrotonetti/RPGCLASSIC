@@ -1,5 +1,6 @@
 import { RARITY_ORDER, RARITY_STAT_MULTIPLIER } from '../config/rarity';
 import type { EquipmentInstance, EquipmentTemplate, ItemRarity, Stats } from '../config/types';
+import { getGemById } from './gems';
 
 export const EQUIPMENT_TEMPLATES: EquipmentTemplate[] = [
   // --- weapons ---------------------------------------------------------
@@ -31,7 +32,7 @@ export function getEquipmentTemplate(id: string): EquipmentTemplate {
   return found;
 }
 
-/** Flat stat bonuses an equipped instance grants, after rarity and item-level scaling. */
+/** Flat stat bonuses an equipped instance grants, after rarity and item-level scaling, plus its socketed gem's bonus if any. */
 export function computeEquipmentBonus(instance: EquipmentInstance): Partial<Stats> {
   const template = getEquipmentTemplate(instance.templateId);
   const rarityMult = RARITY_STAT_MULTIPLIER[instance.rarity];
@@ -39,6 +40,12 @@ export function computeEquipmentBonus(instance: EquipmentInstance): Partial<Stat
   const bonus: Partial<Stats> = {};
   for (const [stat, weight] of Object.entries(template.statWeights) as Array<[keyof Stats, number]>) {
     bonus[stat] = Math.round(weight * rarityMult * levelMult * 10) / 10;
+  }
+  if (instance.socketedGemId) {
+    const gem = getGemById(instance.socketedGemId);
+    for (const [stat, value] of Object.entries(gem.statBonus) as Array<[keyof Stats, number]>) {
+      bonus[stat] = (bonus[stat] ?? 0) + value;
+    }
   }
   return bonus;
 }

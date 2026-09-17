@@ -1,12 +1,12 @@
 import { createStarterItem } from '../data/equipment';
 import { getNpcById } from '../data/npcs';
-import { getQuestById, QUEST_CHAIN, type QuestDefinition } from '../data/quests';
+import { firstQuestIdForClass, getQuestById, type QuestDefinition } from '../data/quests';
 import type { Player } from '../entities/Player';
 
-/** Activates the very first quest the first time a fresh character enters the world. */
+/** Activates the very first quest the first time a fresh character enters the world — that class's own village prelude, not the shared main-city story. */
 export function ensureQuestStarted(player: Player): void {
   if (!player.activeQuestId && player.completedQuestIds.length === 0) {
-    player.activeQuestId = QUEST_CHAIN[0].id;
+    player.activeQuestId = firstQuestIdForClass(player.classId);
   }
 }
 
