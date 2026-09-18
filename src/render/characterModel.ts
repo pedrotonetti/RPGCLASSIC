@@ -96,6 +96,7 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
   const thighGeo = new THREE.CapsuleGeometry(legRadius, thighLength * 0.82, 6, 12);
   const shinGeo = new THREE.CapsuleGeometry(legRadius * 0.85, shinLength * 0.8, 6, 12);
   const kneeCapGeo = new THREE.SphereGeometry(legRadius * 1.05, 8, 8);
+  const hipCapGeo = new THREE.SphereGeometry(legRadius * 1.2, 8, 8);
   const footGeo = new THREE.BoxGeometry(0.13, 0.09, 0.26);
   const hipWidth = isFem ? 0.16 : 0.13;
   const hipY = legHeight + 0.06;
@@ -105,6 +106,12 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
   for (const side of [-1, 1] as const) {
     const legGroup = new THREE.Group();
     legGroup.position.set(hipWidth * side, hipY, 0);
+
+    // A rounded cap right at the hip socket, same trick as the shoulder cap
+    // below — bridges the pelvis mesh and the thigh capsule so the leg reads
+    // as growing out of the body instead of floating beside it.
+    const hipCap = mesh(hipCapGeo, clothMat);
+    legGroup.add(hipCap);
 
     const thigh = mesh(thighGeo, clothMat);
     thigh.position.set(0, -thighLength / 2, 0);
@@ -134,42 +141,58 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
 
   // Hips + torso (added to upperBody, which sits at the world origin — the
   // whole upper body can be nudged/leaned as one unit for animation).
-  const waistWidth = (isFem ? 0.19 : 0.21) * body.torso;
+  const waistWidth = (isFem ? 0.155 : 0.17) * body.torso;
   const hips = mesh(new THREE.CapsuleGeometry(waistWidth, 0.06, 6, 12), clothMat);
   hips.position.set(0, hipY, 0);
   hips.scale.set(1, 0.7, 0.85);
   upperBody.add(hips);
 
-  const torsoHeight = 0.5;
-  const shoulderWidth = (isFem ? 0.24 : 0.28) * body.shoulder;
-  const torsoRadius = (isFem ? 0.2 : 0.24) * body.torso;
-  const torso = mesh(new THREE.CapsuleGeometry(torsoRadius, torsoHeight, 6, 14), clothMat);
-  const torsoY = hipY + 0.12 + torsoHeight / 2;
-  torso.position.set(0, torsoY, 0);
-  // Taper: broader at the shoulders, narrower at the waist (a believable torso silhouette).
-  torso.scale.set(shoulderWidth / torsoRadius, 1, 0.8);
-  upperBody.add(torso);
+  // Torso: two overlapping capsules — a narrow waist capsule and a broader
+  // chest capsule — instead of one capsule uniformly scaled up to shoulder
+  // width. A single scaled capsule has the exact same cross-section from
+  // hip to shoulder (no real taper), which read as a bloated, barrel-shaped
+  // trunk; stacking a narrow-then-wide pair gives an actual waist-to-chest
+  // taper while keeping each segment's own rounded caps for a soft, seamless
+  // silhouette (the caps overlap deliberately so no seam shows).
+  const waistRadius = waistWidth * 1.05;
+  const chestRadius = (isFem ? 0.175 : 0.19) * body.torso;
+  const shoulderWidth = (isFem ? 0.205 : 0.235) * body.shoulder;
+  const waistSegHeight = 0.12;
+  const chestSegHeight = 0.24;
+  const waistY = hipY + 0.1 + waistSegHeight / 2;
+  const chestY = waistY + waistSegHeight / 2 + chestSegHeight / 2 - 0.07;
+
+  const waist = mesh(new THREE.CapsuleGeometry(waistRadius, waistSegHeight, 6, 12), clothMat);
+  waist.position.set(0, waistY, 0);
+  waist.scale.set(1, 1, 0.85);
+  upperBody.add(waist);
+
+  const chest = mesh(new THREE.CapsuleGeometry(chestRadius, chestSegHeight, 6, 14), clothMat);
+  chest.position.set(0, chestY, 0);
+  chest.scale.set(shoulderWidth / chestRadius, 1, 0.82);
+  upperBody.add(chest);
 
   const belt = mesh(new THREE.CylinderGeometry(waistWidth * 1.05, waistWidth * 1.05, 0.07, 16), trimMat);
   belt.position.set(0, hipY + 0.1, 0);
   upperBody.add(belt);
 
   // Arms (upper arm + forearm + hand), each a group pivoted at the shoulder.
-  // Pivoted well clear of the torso's own width (plus a shoulder-cap sphere
-  // bridging the joint) so the arm never intersects the torso mesh, and
-  // long enough that the hand hangs past the hip into open space beside the
-  // thigh — a too-short arm previously left the hand overlapping the torso.
-  const shoulderY = torsoY + torsoHeight / 2 - 0.03;
+  // The pivot sits close to the chest's own scaled width (rather than well
+  // beyond it), with a shoulder-cap sphere bridging the joint — the arm
+  // grows out of the torso instead of hanging beside it with a visible gap.
+  // The arm is still long enough that the hand clears the hip into open
+  // space beside the thigh.
+  const shoulderY = chestY + chestSegHeight / 2 - 0.02;
   const armRadius = 0.065 * body.limb;
   const upperArmGeo = new THREE.CapsuleGeometry(armRadius, 0.28, 6, 10);
   const forearmGeo = new THREE.CapsuleGeometry(armRadius * 0.9, 0.3, 6, 10);
   const handGeo = new THREE.SphereGeometry(armRadius * 1.05, 10, 8);
-  const shoulderCapGeo = new THREE.SphereGeometry(armRadius * 1.15, 10, 8);
+  const shoulderCapGeo = new THREE.SphereGeometry(armRadius * 1.2, 10, 8);
 
   const armGroups: THREE.Group[] = [];
   for (const side of [-1, 1] as const) {
     const armGroup = new THREE.Group();
-    const shoulderX = shoulderWidth * 1.35 * side;
+    const shoulderX = shoulderWidth * 1.28 * side;
     armGroup.position.set(shoulderX, shoulderY, 0);
     armGroup.rotation.z = -0.06 * side;
 
@@ -195,11 +218,11 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
   const [armL, armR] = armGroups;
 
   // Neck + head. `CapsuleGeometry`'s "height" param is only the cylindrical
-  // midsection — the capsule's actual top is a further `torsoRadius` above
+  // midsection — the capsule's actual top is a further `chestRadius` above
   // that (the rounded cap). The old neckY ignored the cap entirely and
   // measured from the midsection top, which buried the neck (and the head
   // sitting on it) inside the torso's rounded shoulder mass.
-  const torsoTopY = torsoY + torsoHeight / 2 + torsoRadius;
+  const torsoTopY = chestY + chestSegHeight / 2 + chestRadius;
   const neckHeight = 0.14;
   const neckY = torsoTopY - 0.03 + neckHeight / 2; // slight overlap into the torso top for a seamless join
   const neck = mesh(new THREE.CylinderGeometry(0.075, 0.09, neckHeight, 10), skinMat);
