@@ -875,12 +875,6 @@ export class OverworldScreen implements Screen {
   /** Jeweler-only: socket an owned gem into an equipped item for a stat bonus and a glow. */
   private buildSocketSection(): HTMLElement {
     const ownedGems = Object.keys(this.player.inventory).filter((id) => id.startsWith('gem_') && (this.player.inventory[id] ?? 0) > 0);
-    if (ownedGems.length === 0) {
-      return el('div', { className: 'shop-section' }, [
-        el('h3', { text: 'Engastar Gema' }),
-        el('div', { className: 'item-rarity', text: 'Compre uma gema acima para poder engastá-la.' }),
-      ]);
-    }
 
     const slots: EquipmentSlot[] = ['arma', 'armadura', 'acessorio'];
     const rows: HTMLElement[] = [];
@@ -904,6 +898,25 @@ export class OverworldScreen implements Screen {
           },
         });
       });
+      if (instance.socketedGemId) {
+        gemBtns.push(
+          el('div', {
+            className: 'btn small',
+            text: 'Remover Gema',
+            onClick: () => {
+              this.player.addItem(instance.socketedGemId!, 1);
+              delete instance.socketedGemId;
+              saveGame(this.player);
+              if (slot === 'arma') this.rebuildPlayerVisual();
+              this.renderShop();
+            },
+          }),
+        );
+      }
+      const actions =
+        gemBtns.length > 0
+          ? el('div', { className: 'row' }, gemBtns)
+          : el('div', { className: 'item-rarity', text: 'Compre uma gema acima para engastar aqui.' });
       rows.push(
         el('div', { className: 'shop-row' }, [
           el('div', { className: 'shop-row-info' }, [
@@ -912,7 +925,7 @@ export class OverworldScreen implements Screen {
               text: `${SLOT_LABELS[slot]}: ${template.name}${instance.socketedGemId ? ` (${getGemById(instance.socketedGemId).name} engastada)` : ''}`,
             }),
           ]),
-          el('div', { className: 'row' }, gemBtns),
+          actions,
         ]),
       );
     }

@@ -232,7 +232,6 @@ ouro e às vezes um item garantido.
 - [ ] Ranking real (multiplayer) via backend (Firebase/Supabase/API própria).
 - [ ] Trocar os modelos low-poly por modelos `.glb` reais (via `GLTFLoader`).
 - [ ] Masmorras/instâncias separadas do overworld compartilhado.
-- [ ] Opção de remover (não só substituir) uma gema engastada.
 - [ ] Empacotar como app nativo Android/iOS com
       [Capacitor](https://capacitorjs.com/) (o código web atual já funciona
       como base — é só rodar `npx cap init` / `npx cap add android|ios` sobre
