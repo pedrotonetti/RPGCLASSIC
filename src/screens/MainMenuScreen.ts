@@ -3,16 +3,26 @@ import { CLASS_DEFINITIONS } from '../config/classes';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { buildClassPreview } from '../render/characterModel';
+import { audio } from '../systems/AudioSystem';
 import { clearSave, hasSave, loadGame } from '../systems/SaveSystem';
 import { el } from '../ui/dom';
 import { IntroScreen } from './IntroScreen';
 import { OverworldScreen } from './OverworldScreen';
 
+const MUSIC_PREF_KEY = 'rpgclassic:musicOn';
+
+function musicPreferredOn(): boolean {
+  return localStorage.getItem(MUSIC_PREF_KEY) !== 'off';
+}
+
 export class MainMenuScreen implements Screen {
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
   private showcase!: THREE.Group;
+  private motes!: THREE.Points;
+  private moteVelocities: Float32Array = new Float32Array();
   private time = 0;
+  private musicBtn!: HTMLElement;
 
   constructor(private game: Game) {
     this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 50);
@@ -47,10 +57,15 @@ export class MainMenuScreen implements Screen {
     this.showcase = buildClassPreview(def.id);
     this.scene.add(this.showcase);
 
+    this.buildMotes();
     this.buildUi();
+
+    if (musicPreferredOn()) audio.startTheme();
   }
 
-  unmount(): void {}
+  unmount(): void {
+    audio.stopTheme();
+  }
 
   onResize(width: number, height: number): void {
     this.camera.aspect = width / height;
@@ -60,6 +75,57 @@ export class MainMenuScreen implements Screen {
   update(dt: number): void {
     this.time += dt;
     this.showcase.rotation.y = this.time * 0.6;
+
+    // Slow drifting motes — a common "mysterious fantasy title screen"
+    // touch (fireflies/dust catching the rim light). Each rises gently and
+    // wraps back to the bottom once it drifts above the frame, so the
+    // effect loops forever without ever resetting visibly.
+    const positions = this.motes.geometry.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < positions.count; i++) {
+      const vy = this.moteVelocities[i];
+      let y = positions.getY(i) + vy * dt;
+      if (y > 3.2) y = -0.5;
+      positions.setY(i, y);
+      const x = positions.getX(i) + Math.sin(this.time * 0.4 + i) * 0.0015;
+      positions.setX(i, x);
+    }
+    positions.needsUpdate = true;
+  }
+
+  /** A handful of soft glowing motes drifting up through the scene — cheap atmosphere for the title screen. */
+  private buildMotes(): void {
+    const count = 60;
+    const positions = new Float32Array(count * 3);
+    this.moteVelocities = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 6;
+      positions[i * 3 + 1] = Math.random() * 3.5 - 0.5;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 5;
+      this.moteVelocities[i] = 0.12 + Math.random() * 0.18;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0xf2c14e,
+      size: 0.045,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.motes = new THREE.Points(geo, mat);
+    this.scene.add(this.motes);
+  }
+
+  private toggleMusic(): void {
+    if (audio.isThemePlaying()) {
+      audio.stopTheme();
+      localStorage.setItem(MUSIC_PREF_KEY, 'off');
+    } else {
+      audio.startTheme();
+      localStorage.setItem(MUSIC_PREF_KEY, 'on');
+    }
+    this.musicBtn.textContent = audio.isThemePlaying() ? '♪' : '✕';
   }
 
   private buildUi(): void {
@@ -94,13 +160,20 @@ export class MainMenuScreen implements Screen {
       }),
     );
 
+    this.musicBtn = el('div', {
+      className: 'btn music-toggle',
+      text: musicPreferredOn() ? '♪' : '✕',
+      onClick: () => this.toggleMusic(),
+    });
+
     const menu = el(
       'div',
       { className: 'main-menu screen' },
       [
+        this.musicBtn,
         el('div', { className: 'top-bar' }, [
-          el('h1', { className: 'pixel-title', text: 'RPG CLASSIC' }),
-          el('div', { className: 'subtitle', text: 'agora em 3D — uma aventura em construção' }),
+          el('h1', { className: 'title-logo', text: 'IPÊRA' }),
+          el('div', { className: 'subtitle', text: 'As Raízes despertam. Um Vozeiro precisa ouvi-las.' }),
         ]),
         el('div', { className: 'bottom-bar' }, [
           el('div', { className: 'stack center' }, buttons),

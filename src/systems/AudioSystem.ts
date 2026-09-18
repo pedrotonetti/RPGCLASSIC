@@ -17,6 +17,9 @@ class AudioSystem {
   private noiseBuffer: AudioBuffer | null = null;
   private muted = false;
   private lastUiClickAt = 0;
+  private themeVoices: Array<{ osc: OscillatorNode; gain: GainNode }> = [];
+  private themeTimer: ReturnType<typeof setTimeout> | null = null;
+  private themePlaying = false;
 
   setMuted(muted: boolean): void {
     this.muted = muted;
@@ -210,6 +213,87 @@ class AudioSystem {
 
   questComplete(): void {
     this.chord([659, 784, 988], 0.4, 'triangle', 0.15);
+  }
+
+  // --- title theme ------------------------------------------------------
+
+  /**
+   * A soft, mysterious ambient loop for the title screen: an open-fifth
+   * drone (two low tones a fifth apart, each breathing slowly via its own
+   * LFO-modulated gain) under a sparse, randomly-picked bell melody in a
+   * D dorian scale — deliberately unresolved, nothing lands on a strong
+   * tonic chord, for a "light but unsettled" mood rather than a hummable
+   * tune. Idempotent: calling it while already playing does nothing.
+   */
+  startTheme(): void {
+    if (this.themePlaying) return;
+    const ctx = this.context();
+    if (!ctx || !this.master) return;
+    this.themePlaying = true;
+
+    const drone: Array<{ freq: number; gain: number; lfoRate: number }> = [
+      { freq: 146.83, gain: 0.05, lfoRate: 0.055 }, // D3
+      { freq: 220.0, gain: 0.032, lfoRate: 0.047 }, // A3 — open fifth above
+      { freq: 293.66, gain: 0.02, lfoRate: 0.04 }, // D4 — faint upper octave
+    ];
+    for (const voice of drone) {
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = voice.freq;
+
+      const gain = ctx.createGain();
+      gain.gain.value = voice.gain * 0.6;
+
+      const lfo = ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = voice.lfoRate;
+      const lfoDepth = ctx.createGain();
+      lfoDepth.gain.value = voice.gain * 0.4;
+      lfo.connect(lfoDepth).connect(gain.gain);
+
+      osc.connect(gain).connect(this.master);
+      osc.start();
+      lfo.start();
+      this.themeVoices.push({ osc, gain }, { osc: lfo, gain: lfoDepth });
+    }
+
+    this.scheduleThemeNote();
+  }
+
+  private scheduleThemeNote(): void {
+    if (!this.themePlaying) return;
+    const scale = [293.66, 349.23, 392.0, 440.0, 523.25, 587.33]; // D E F A C D (dorian-flavored), one octave up from the drone
+    const freq = scale[Math.floor(Math.random() * scale.length)];
+    this.tone({ freq, duration: 2.2, type: 'sine', gain: 0.05, attack: 0.7 });
+    const nextInMs = 2400 + Math.random() * 2800;
+    this.themeTimer = setTimeout(() => this.scheduleThemeNote(), nextInMs);
+  }
+
+  /** Fades the theme out and tears down its nodes. Safe to call even if it isn't playing. */
+  stopTheme(): void {
+    if (!this.themePlaying) return;
+    this.themePlaying = false;
+    if (this.themeTimer !== null) {
+      clearTimeout(this.themeTimer);
+      this.themeTimer = null;
+    }
+    const ctx = this.ctx;
+    const now = ctx?.currentTime ?? 0;
+    for (const { osc, gain } of this.themeVoices) {
+      try {
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(gain.gain.value, now);
+        gain.gain.linearRampToValueAtTime(0, now + 1.0);
+        osc.stop(now + 1.05);
+      } catch {
+        // Already stopped — nothing to unwind.
+      }
+    }
+    this.themeVoices = [];
+  }
+
+  isThemePlaying(): boolean {
+    return this.themePlaying;
   }
 }
 
