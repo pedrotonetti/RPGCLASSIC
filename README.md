@@ -3,8 +3,12 @@
 Um RPG 3D de ação (estilo ARPG mobile) que roda no navegador e pode ser
 instalado como app (PWA): criação de personagem com dezenas de opções de
 aparência, 8 classes com árvore de habilidades própria, combate em tempo real
-com recarga de habilidades, itens com raridade, uma missão principal narrada
-por NPCs na vila, e um ranking de poder entre jogadores.
+direto no mundo (sem tela de batalha separada), um mundo com uma vila e uma
+cidade secundária por classe além da cidade principal compartilhada,
+NPCs vendedores (ferreiro, boticário, artesã, joalheiro) com compra/venda e
+fabricação a partir de materiais, gemas engastáveis em equipamentos, itens
+com raridade, missões por classe que convergem numa missão principal
+narrada por NPCs, e um ranking de poder entre jogadores.
 
 ## Tecnologias
 
@@ -37,15 +41,38 @@ npm run preview   # serve o build de produção localmente
 npm run typecheck # só checagem de tipos, sem build
 ```
 
+## Deploy
+
+O repositório já está pronto para publicar — `vercel.json` na raiz define o
+build (`vite`, `npm run build`, saída em `dist/`), e não há backend/variáveis
+de ambiente necessárias.
+
+- **Vercel** (recomendado): em [vercel.com/new](https://vercel.com/new),
+  "Import Git Repository" → selecione `pedrotonetti/rpgclassic` → o Vercel
+  detecta o `vercel.json` automaticamente → "Deploy". Leva menos de um
+  minuto e cada novo push atualiza o link sozinho. *(Isso precisa ser feito
+  pela própria conta Vercel do dono do repositório — o ambiente de
+  desenvolvimento deste projeto não tem acesso de rede à API da Vercel para
+  publicar automaticamente por aqui.)*
+- **GitHub Pages** (alternativa, já configurada): o workflow
+  `.github/workflows/deploy-pages.yml` builda e publica a cada push nesta
+  branch, mas precisa ser habilitado uma única vez em **Settings → Pages →
+  Source: GitHub Actions** no repositório — só quem tem acesso às
+  configurações do repo consegue fazer esse passo.
+
 ## Como jogar
 
-- **Setas / WASD** — mover pelo mapa (movimento em grade, câmera em terceira
-  pessoa acompanhando o personagem).
-- **E** — falar com um NPC próximo (aparece um aviso na tela quando há um por perto).
-- Encostar na grama tem chance de iniciar uma batalha em tempo real.
-- Na batalha, clique num ícone da barra de habilidades (ou tecle 1-6) para
-  usá-la — cada uma tem seu próprio custo de mana e tempo de recarga, exibido
-  como um preenchimento escuro sobre o ícone.
+- **Setas / WASD** — mover livremente pelo mapa (movimento contínuo, não em
+  grade, câmera em terceira pessoa acompanhando o personagem).
+- **E** — falar com um NPC próximo (aparece um aviso na tela quando há um por
+  perto) — inclui NPCs comuns (diálogo) e vendedores (abre a loja ao fim do
+  diálogo).
+- Os monstros ficam visíveis andando pelo mapa, com sua própria IA
+  (perseguem ao se aproximar); encostar neles inicia o combate diretamente
+  no mundo, sem trocar de tela.
+- Durante o combate, clique num ícone da barra de habilidades (ou tecle 1-6)
+  para usá-la — cada uma tem seu próprio custo de mana e tempo de recarga,
+  exibido como um preenchimento escuro sobre o ícone.
 - **ESC** — abre o menu de pausa (Inventário, Árvore de Habilidades, Ranking
   Global, Salvar e Sair).
 - Em dispositivos de toque, um D-pad aparece no canto inferior esquerdo.
@@ -62,7 +89,7 @@ src/
   systems/       lógica pura: combate em tempo real, missões, power score, mapa, save/load
   engine/        Game (loop + troca de telas) e a interface Screen
   render/        geração procedural dos modelos 3D (personagens humanos + inimigos) e do mundo
-  screens/       cada "tela" do jogo (menu, criação, mundo, batalha, skills, inventário, ranking)
+  screens/       cada "tela" do jogo (menu, criação, mundo/combate, skills, inventário, ranking)
   ui/            helpers de DOM e o CSS de toda a interface (overlay HTML)
 ```
 
@@ -74,11 +101,14 @@ telas. Toda a lógica de jogo (`config/`, `data/`, `entities/`, `systems/`) é
 ### Fluxo de telas
 
 `MainMenu` → `CharacterSelect` (classe) → `CharacterCreation` (aparência) →
-`Overworld` ⇄ `Battle`, com `SkillTree`, `Inventory` e `Ranking` acessíveis
-pelo menu de pausa do `Overworld`. Cada `Screen` (`src/screens/*.ts`) é dona
-da sua própria `THREE.Scene`/`THREE.Camera` e constrói sua própria UI em
-HTML/CSS por cima do canvas (`game.uiRoot`) — os menus e o HUD são DOM
-normal, não sprites de texto renderizados no WebGL.
+`Overworld`, com `SkillTree`, `Inventory` e `Ranking` acessíveis pelo menu de
+pausa do `Overworld`. Não existe mais uma tela de batalha separada: o
+combate acontece dentro do próprio `Overworld` contra monstros visíveis no
+mapa (`systems/OverworldCombat.ts`), e trocar de zona (vila ↔ cidade) é uma
+troca completa de `OverworldScreen` para o novo mapa (`data/zones.ts`). Cada
+`Screen` (`src/screens/*.ts`) é dona da sua própria `THREE.Scene`/`THREE.Camera`
+e constrói sua própria UI em HTML/CSS por cima do canvas (`game.uiRoot`) —
+os menus e o HUD são DOM normal, não sprites de texto renderizados no WebGL.
 
 ## Criação de personagem
 
@@ -148,15 +178,38 @@ jogo ainda não tem backend, é uma simulação local e transparente sobre isso;
 plugar um serviço real (Firebase/Supabase/API própria) exigiria só trocar
 `estimatePlayerRank`/`getTopRivals` por chamadas de rede.
 
-## NPCs, diálogos e missões
+## Mundo: vilas, cidades e zonas
 
-Pedravale, a vila inicial, tem 4 NPCs (`src/data/npcs.ts`) com diálogo
-próprio; aproximar-se de um mostra um aviso `[E] Falar com...`. A missão
-principal (`src/data/quests.ts`, `systems/QuestSystem.ts`) é uma cadeia
-linear de 6 missões — do primeiro encontro com o Ancião Tobias até o
-confronto com o Dragão Jovem nas ruínas — misturando objetivos de diálogo,
-derrota de inimigos e nível alcançado, com recompensas em XP, ouro e às
-vezes um item garantido.
+Cada classe nasce na própria vila inicial (monstros fracos, primeiras
+missões), evolui para uma vila secundária ainda ligada ao território da
+classe (monstros mais fortes) e por fim chega a Pedravale, a cidade
+principal compartilhada por todas as classes — 17 zonas no total
+(`src/data/zones.ts`, `data/classZones.ts`), todas geradas por um único
+gerador de mapa paramétrico (`generateVillageMap` em
+`systems/MapGenerator.ts`) diferenciado por cor de destaque, NPCs e pool de
+monstros. Atravessar um portão entre zonas recarrega o `Overworld` na nova
+zona (ver `OverworldScreen.transitionToZone`).
+
+## NPCs, vendedores e missões
+
+Além de NPCs de diálogo puro, várias zonas têm NPCs vendedores
+(`src/data/npcs.ts`, campo `vendor`): ferreiro e artesã (armas/armaduras/
+acessórios), boticário (poções) e joalheiro (gemas). Cada um permite
+**comprar** com ouro ou **fabricar** a partir de materiais dropados por
+monstros (`src/data/materials.ts`) por um custo menor em ouro, trocando
+material por uma raridade maior (equipamentos) ou o dobro da quantidade
+(poções/gemas). O joalheiro também engasta gemas (`src/data/gems.ts`) nos
+equipamentos já equipados, somando um bônus de atributo fixo e um brilho
+emissivo visível na arma.
+
+Cada classe tem sua própria cadeia de 3 missões iniciais (derrotar
+monstros na vila inicial → viajar e falar com o mentor da vila secundária →
+falar com o Guarda Bram no portão de Pedravale) que desemboca na missão
+principal compartilhada (`src/data/quests.ts`, `systems/QuestSystem.ts`):
+uma cadeia linear de 6 missões — do primeiro encontro com o Ancião Tobias
+até o confronto com o Dragão Jovem nas ruínas — misturando objetivos de
+diálogo, derrota de inimigos e nível alcançado, com recompensas em XP,
+ouro e às vezes um item garantido.
 
 ## Como estender
 
@@ -178,9 +231,8 @@ vezes um item garantido.
 
 - [ ] Ranking real (multiplayer) via backend (Firebase/Supabase/API própria).
 - [ ] Trocar os modelos low-poly por modelos `.glb` reais (via `GLTFLoader`).
-- [ ] Loja na vila para comprar/vender itens com o ouro acumulado.
-- [ ] Mapas maiores/múltiplos com transições entre áreas e masmorras.
-- [ ] Efeitos de status (veneno, atordoamento) no combate em tempo real.
+- [ ] Masmorras/instâncias separadas do overworld compartilhado.
+- [ ] Opção de remover (não só substituir) uma gema engastada.
 - [ ] Empacotar como app nativo Android/iOS com
       [Capacitor](https://capacitorjs.com/) (o código web atual já funciona
       como base — é só rodar `npx cap init` / `npx cap add android|ios` sobre
