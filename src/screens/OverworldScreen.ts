@@ -16,7 +16,7 @@ import { Player } from '../entities/Player';
 import { CharacterAnimator } from '../render/animation';
 import { buildHumanCharacter, buildMountModel, buildPlayerCharacter, getRig } from '../render/characterModel';
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
-import { buildOverworldMeshes, tileCenterWorld } from '../render/worldBuilder';
+import { buildOverworldMeshes, tileCenterWorld, type TreeCollider } from '../render/worldBuilder';
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
@@ -98,6 +98,7 @@ export class OverworldScreen implements Screen {
 
   private tiles: TileType[][] = [];
   private waterMaterial: THREE.MeshStandardMaterial | null = null;
+  private treeColliders: TreeCollider[] = [];
   private playerModel!: THREE.Group;
   private mountModel: THREE.Group | null = null;
   /** Whichever object currently moves through the world — the rider alone, or the mount carrying them. */
@@ -160,8 +161,9 @@ export class OverworldScreen implements Screen {
     const { tiles, playerStart } = this.zoneDef.generate();
     this.tiles = tiles;
     this.zoneRespawnTile = playerStart;
-    const { group, waterMaterial } = buildOverworldMeshes(tiles, this.zoneDef.accentColor);
+    const { group, waterMaterial, treeColliders } = buildOverworldMeshes(tiles, this.zoneDef.accentColor);
     this.waterMaterial = waterMaterial;
+    this.treeColliders = treeColliders;
     this.scene.add(group);
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.4);
@@ -230,6 +232,14 @@ export class OverworldScreen implements Screen {
       this.updateMovement(dt);
       this.updateInteraction();
       this.combat.update(dt, this.avatar.position, this.camera);
+      // Mana already regens mid-fight too (CombatEngine.tick calls
+      // regenMp on its own), but outside of combat nothing was ticking
+      // either stat at all — walking around never restored HP or MP no
+      // matter how long you waited.
+      if (!this.combat.isEngaged()) {
+        this.player.regenHp(dt);
+        this.player.regenMp(dt);
+      }
     }
 
     this.animator.setMoving(this.isMoving);
@@ -529,7 +539,19 @@ export class OverworldScreen implements Screen {
       model.rotation.y = Math.PI;
       this.scene.add(model);
 
-      const labelEl = el('div', { className: 'npc-label', text: def.name });
+      // The label already tracks the NPC's exact screen position every frame
+      // (updateNpcLabels), so it doubles as a tap target sitting right over
+      // them — the only way to talk to an NPC on a device with no "E" key.
+      // Only fires once the player has actually walked into interact range,
+      // same distance gate the keyboard shortcut uses; tapping one from afar
+      // is a no-op rather than teleporting the conversation to them.
+      const labelEl = el('div', {
+        className: 'npc-label',
+        text: def.name,
+        onClick: () => {
+          if (this.nearbyNpc === def) this.openDialogue(def);
+        },
+      });
       this.game.uiRoot.append(labelEl);
       this.npcSlots.push({ def, model, labelEl });
     }
@@ -972,10 +994,72 @@ export class OverworldScreen implements Screen {
   private desiredCameraPosition(target = new THREE.Vector3()): THREE.Vector3 {
     const yaw = this.avatar.rotation.y;
     const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-    return target
+    target
       .copy(this.avatar.position)
       .addScaledVector(forward, -CAM_DISTANCE)
       .add(new THREE.Vector3(0, CAM_HEIGHT, 0));
+
+    // Pull the camera in front of any tree between it and the player instead
+    // of letting it clip through its canopy — nothing here checked for
+    // obstacles at all before, so standing next to a tree could put the
+    // camera right inside its foliage: at that range a single flat-shaded
+    // facet fills most of the frame as a big dark wedge, easy to mistake for
+    // some giant creature's leg. Checked against each tree's actual ground
+    // footprint (a circle) rather than raycasting the low-poly mesh itself —
+    // a single ray can slip past a facet that the camera's own body (and its
+    // wide near-plane frustum) would still clip straight through.
+    let closestSafeDist = Math.hypot(target.x - this.avatar.position.x, target.z - this.avatar.position.z);
+    const px = this.avatar.position.x;
+    const pz = this.avatar.position.z;
+    const dx = target.x - px;
+    const dz = target.z - pz;
+    const segLenSq = dx * dx + dz * dz;
+    if (segLenSq > 0.0001) {
+      for (const tree of this.treeColliders) {
+        const fx = px - tree.x;
+        const fz = pz - tree.z;
+        const a = segLenSq;
+        const b = 2 * (fx * dx + fz * dz);
+        const c = fx * fx + fz * fz - tree.radius * tree.radius;
+        const discriminant = b * b - 4 * a * c;
+        if (discriminant < 0) continue;
+        const sqrtDisc = Math.sqrt(discriminant);
+        const tEnter = (-b - sqrtDisc) / (2 * a);
+        if (tEnter <= 0 || tEnter >= 1) continue; // circle doesn't block this segment, or player is already inside it
+        const enterDist = tEnter * Math.sqrt(segLenSq);
+        closestSafeDist = Math.min(closestSafeDist, Math.max(enterDist - 0.6, 0.9));
+      }
+    }
+    const fullDist = Math.hypot(target.x - this.avatar.position.x, target.z - this.avatar.position.z);
+    if (closestSafeDist < fullDist - 0.001) {
+      const t = closestSafeDist / fullDist;
+      target.x = px + dx * t;
+      target.z = pz + dz * t;
+    }
+
+    // A dense cluster (e.g. right at a forest's edge) can have a tree that
+    // never sat exactly on the original player->camera segment but ends up
+    // close to the pulled-in point anyway — reduce the distance a few more
+    // times, this time checking the actual candidate point rather than the
+    // line, since one straight segment can't account for that.
+    for (let pass = 0; pass < 3; pass++) {
+      let violated = false;
+      for (const tree of this.treeColliders) {
+        const ox = target.x - tree.x;
+        const oz = target.z - tree.z;
+        const dist = Math.hypot(ox, oz);
+        const minDist = tree.radius + 0.3;
+        if (dist < minDist) {
+          const t = Math.hypot(target.x - px, target.z - pz);
+          const shrink = Math.max(t - 0.4, 0.9) / Math.max(t, 0.001);
+          target.x = px + (target.x - px) * shrink;
+          target.z = pz + (target.z - pz) * shrink;
+          violated = true;
+        }
+      }
+      if (!violated) break;
+    }
+    return target;
   }
 
   private positionCameraImmediate(): void {

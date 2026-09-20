@@ -66,6 +66,8 @@ const MIN_SPAWN_SPACING = 5; // tiles
 const AGGRO_RADIUS = 3.4;
 const DEAGGRO_RADIUS = 6.0;
 const ATTACK_RANGE = 1.15;
+/** How far the player can retreat from every engaged monster before combat auto-ends — bigger than ATTACK_RANGE so backing off one step doesn't instantly re-trigger it. */
+const ENGAGE_LEASH_RANGE = 4.0;
 const CHASE_BASE_SPEED = 1.1;
 const CHASE_SPEED_PER_STAT = 0.06;
 const WANDER_RADIUS = 1.8;
@@ -175,6 +177,11 @@ export class OverworldCombat {
     return monster;
   }
 
+  /** Whether the player is currently in an active fight — used to gate passive HP regen, which should only apply while out of combat. */
+  isEngaged(): boolean {
+    return this.engine !== null;
+  }
+
   /** Advances monster AI, the active fight (if any), and refreshes all combat HUD elements. Call every frame. */
   update(dt: number, playerPos: THREE.Vector3, camera: THREE.Camera): void {
     this.clock += dt;
@@ -185,11 +192,21 @@ export class OverworldCombat {
     this.updateLabels(camera, playerPos);
 
     if (this.engine) {
-      const events = this.engine.tick(dt);
-      this.processEvents(events);
-      this.refreshHotbarCooldowns();
-      this.refreshCombo();
-      if (this.engine.outcome !== 'ongoing') this.endEngagement(this.engine.outcome);
+      const stillInRange = this.engagedMonsters.some(
+        (m) => Math.hypot(playerPos.x - m.model.position.x, playerPos.z - m.model.position.z) <= ENGAGE_LEASH_RANGE,
+      );
+      if (!stillInRange) {
+        // Walked away without winning or losing — combat (and its hotbar)
+        // should end here instead of staying on screen indefinitely; nothing
+        // previously checked distance once a fight had started.
+        this.endEngagement('fled');
+      } else {
+        const events = this.engine.tick(dt);
+        this.processEvents(events);
+        this.refreshHotbarCooldowns();
+        this.refreshCombo();
+        if (this.engine.outcome !== 'ongoing') this.endEngagement(this.engine.outcome);
+      }
     }
 
     if (this.messageHideAt > 0 && this.clock >= this.messageHideAt) {

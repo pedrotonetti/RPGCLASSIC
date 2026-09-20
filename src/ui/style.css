@@ -364,7 +364,13 @@ body {
   font-size: 14px;
   color: #cfe8d0;
   text-shadow: 2px 2px 0 #000;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
+  /* Padding widens the actual tap target well past the text itself — the
+     label is the only way to talk to an NPC without a keyboard, so it needs
+     to be forgiving on a touchscreen, not just visually a nametag. */
+  padding: 10px 14px;
+  margin: -10px -14px;
 }
 
 .quest-tracker {

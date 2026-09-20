@@ -43,6 +43,9 @@ export class Player {
   gold = 30;
   currentHp: number;
   currentMp: number;
+  /** Sub-1 leftover from each regen tick — restoreMp()/heal() only take whole numbers, so a tiny per-frame amount (a fraction of 1 HP/MP) would otherwise round down to nothing every single frame and never actually regenerate. */
+  private hpRegenAccumulator = 0;
+  private mpRegenAccumulator = 0;
   inventory: Record<string, number>;
   /** Continuous overworld world-space position (units, not tile indices) — free movement, not grid-snapped. */
   mapX: number;
@@ -128,6 +131,10 @@ export class Player {
     return Math.max(1, this.stats.maxMp * 0.045);
   }
 
+  get hpRegenPerSecond(): number {
+    return Math.max(0.5, this.stats.maxHp * 0.02);
+  }
+
   get xpToNextLevel(): number {
     return XP_TO_LEVEL(this.level);
   }
@@ -195,7 +202,23 @@ export class Player {
   }
 
   regenMp(dt: number): void {
-    this.restoreMp(this.mpRegenPerSecond * dt);
+    this.mpRegenAccumulator += this.mpRegenPerSecond * dt;
+    const whole = Math.floor(this.mpRegenAccumulator);
+    if (whole > 0) {
+      this.mpRegenAccumulator -= whole;
+      this.restoreMp(whole);
+    }
+  }
+
+  /** Passive HP regen — only meant to be ticked while out of combat (see OverworldScreen); in-fight recovery goes through heal() via potions/skills instead. */
+  regenHp(dt: number): void {
+    if (!this.isAlive()) return;
+    this.hpRegenAccumulator += this.hpRegenPerSecond * dt;
+    const whole = Math.floor(this.hpRegenAccumulator);
+    if (whole > 0) {
+      this.hpRegenAccumulator -= whole;
+      this.heal(whole);
+    }
   }
 
   /** Applies XP gain, resolving as many level-ups as the XP allows. Returns levels gained. */

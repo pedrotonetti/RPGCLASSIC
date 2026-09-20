@@ -2,12 +2,21 @@ import * as THREE from 'three';
 import { TILE_SIZE } from '../config/gameConfig';
 import { TileType } from '../config/tiles';
 
+export interface TreeCollider {
+  x: number;
+  z: number;
+  /** Ground-plane radius covering the tree's full canopy footprint (its three offset lobes), for simple circle-vs-path camera occlusion checks. */
+  radius: number;
+}
+
 export interface WorldMeshes {
   group: THREE.Group;
   widthWorld: number;
   depthWorld: number;
   /** Shared material driving all water tiles — animate it for a shimmering surface. */
   waterMaterial: THREE.MeshStandardMaterial | null;
+  /** Ground-plane circles the camera should steer clear of instead of clipping through — see OverworldScreen.desiredCameraPosition. */
+  treeColliders: TreeCollider[];
 }
 
 export function tileCenterWorld(tx: number, ty: number, target = new THREE.Vector3()): THREE.Vector3 {
@@ -137,6 +146,7 @@ export function buildOverworldMeshes(tiles: TileType[][], accentColor = 0x4c8a3f
   const pathPositions: THREE.Vector3[] = [];
   const waterPositions: THREE.Vector3[] = [];
   const treePositions: THREE.Vector3[] = [];
+  const treeColliders: TreeCollider[] = [];
 
   for (let y = 0; y < mapHeight; y++) {
     for (let x = 0; x < mapWidth; x++) {
@@ -217,6 +227,10 @@ export function buildOverworldMeshes(tiles: TileType[][], accentColor = 0x4c8a3f
       const scale = 0.85 + rand * 0.4;
       const angle = rand * Math.PI * 2;
       q.setFromAxisAngle(axisY, angle);
+      // Covers the main canopy (radius 0.5) plus how far the two side lobes
+      // get offset from center (CANOPY_SEP_A/B * scale) plus their own
+      // radius — the full combined foliage footprint, not just the trunk.
+      treeColliders.push({ x: p.x, z: p.z, radius: 1.6 * scale });
 
       m.compose(new THREE.Vector3(p.x, 0.35 * scale, p.z), q, s.setScalar(scale));
       trunkInst.setMatrixAt(i, m);
@@ -252,5 +266,5 @@ export function buildOverworldMeshes(tiles: TileType[][], accentColor = 0x4c8a3f
     group.add(trunkInst, canopyMain, canopySideA, canopySideB);
   }
 
-  return { group, widthWorld, depthWorld, waterMaterial };
+  return { group, widthWorld, depthWorld, waterMaterial, treeColliders };
 }
