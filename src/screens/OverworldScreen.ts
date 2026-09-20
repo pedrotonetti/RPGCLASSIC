@@ -10,16 +10,19 @@ import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
 import { NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
 import { arriveWorldPosition, getZoneById, type ZoneDefinition, type ZoneExit } from '../data/zones';
+import { dungeonsInHostZone, getDungeonById, type DungeonDefinition } from '../data/dungeons';
 import { rarityTier, rarityToHex } from '../config/rarity';
 import type { EquipmentSlot, ItemRarity } from '../config/types';
 import { Player } from '../entities/Player';
 import type { CharacterAnimatorLike } from '../render/animation';
 import { GltfCharacterAnimator } from '../render/gltfCharacterAnimator';
 import { buildHumanCharacter, buildMountModel } from '../render/characterModel';
+import { animateDungeonPortal, buildDungeonPortalMesh } from '../render/dungeonPortal';
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
 import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
 import { OverworldCombat } from '../systems/OverworldCombat';
+import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
 import { ensureClassCallingStarted, ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
@@ -79,6 +82,16 @@ interface NpcSlot {
   labelEl: HTMLElement;
 }
 
+interface DungeonPortalSlot {
+  def: DungeonDefinition;
+  group: THREE.Group;
+  glowMaterial: THREE.MeshStandardMaterial;
+  labelEl: HTMLElement;
+}
+
+/** Glow tint shared by every dungeon entrance portal — a corrupted violet distinct from any class's own accent color, so it always reads as "instance, not open world" from across the map. */
+const DUNGEON_PORTAL_GLOW = 0x8a5cf5;
+
 interface WildlifeSlot {
   model: THREE.Group;
   actor: GltfActor;
@@ -136,6 +149,15 @@ export class OverworldScreen implements Screen {
   private zoneRespawnTile = { x: 5, y: 5 };
   private time = 0;
 
+  private dungeonPortals: DungeonPortalSlot[] = [];
+  private nearbyDungeon: DungeonDefinition | null = null;
+  /** Set only when the CURRENT zone is a dungeon instance (see mount()) — null in any open-world zone, including one that hosts other dungeons' portals. */
+  private activeDungeon: DungeonDefinition | null = null;
+  private dungeonRunState: DungeonRunState | null = null;
+  private dungeonProgressEl: HTMLElement | null = null;
+  private dungeonCompleteEl: HTMLElement | null = null;
+  private dungeonCompleteMessageEl: HTMLElement | null = null;
+
   private isMoving = false;
   /** Whether input was active last frame — used only to detect the idle→active edge that re-snapshots movementRefYaw (see computeInputAxis). */
   private wasInputActive = false;
@@ -189,6 +211,7 @@ export class OverworldScreen implements Screen {
     this.scene.fog = new THREE.Fog(0x8ec9e8, 16, 46);
 
     this.zoneDef = getZoneById(this.player.zoneId);
+    this.activeDungeon = this.zoneDef.dungeonId ? getDungeonById(this.zoneDef.dungeonId) : null;
     const { tiles, playerStart, buildings } = this.zoneDef.generate();
     this.tiles = tiles;
     this.zoneRespawnTile = playerStart;
@@ -239,21 +262,39 @@ export class OverworldScreen implements Screen {
     }
 
     this.spawnWildlife();
+    this.buildDungeonPortals();
     this.positionCameraImmediate();
 
     this.combat = new OverworldCombat(this.game, this.player, this.scene, this.animator, () => this.handleDefeat());
-    this.combat.spawnMonsters(tiles, playerStart, {
-      count: this.zoneDef.monsterCount,
-      enemyIds: this.zoneDef.monsterIds,
-      minDistFromStart: this.zoneDef.monsterIds ? 3 : undefined,
-      minSpacing: this.zoneDef.monsterIds ? 2 : undefined,
-    });
+    if (this.activeDungeon) {
+      const dungeon = this.activeDungeon;
+      this.dungeonRunState = startDungeonRun(dungeon);
+      this.combat.spawnDungeonEncounters(
+        dungeon.encounters,
+        { atTile: dungeon.bossTile, enemyId: dungeon.boss.enemyId, visualId: dungeon.boss.visualId },
+        {
+          onEncounterCleared: (index) => this.onDungeonEncounterCleared(index),
+          onBossDefeated: () => this.onDungeonBossDefeated(),
+        },
+      );
+    } else {
+      this.combat.spawnMonsters(tiles, playerStart, {
+        count: this.zoneDef.monsterCount,
+        enemyIds: this.zoneDef.monsterIds,
+        minDistFromStart: this.zoneDef.monsterIds ? 3 : undefined,
+        minSpacing: this.zoneDef.monsterIds ? 2 : undefined,
+      });
+    }
 
     this.buildHud();
     this.buildJoystick();
     this.buildDialogueOverlay();
     this.buildShopOverlay();
     this.buildPauseOverlay();
+    if (this.activeDungeon) {
+      this.buildDungeonHud();
+      this.buildDungeonCompleteOverlay();
+    }
 
     window.addEventListener('keydown', this.keydownHandler);
     window.addEventListener('keyup', this.keyupHandler);
@@ -295,6 +336,7 @@ export class OverworldScreen implements Screen {
     this.updateWildlife(dt);
     this.updateCamera(dt);
     this.updateNpcLabels();
+    this.updateDungeonPortals();
     this.refreshHud();
   }
 
@@ -345,6 +387,7 @@ export class OverworldScreen implements Screen {
 
     if (e.key === 'e' || e.key === 'E') {
       if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
+      else if (this.nearbyDungeon) this.enterDungeon(this.nearbyDungeon);
     }
     if (e.key === 'm' || e.key === 'M') {
       this.cycleMount();
@@ -736,9 +779,16 @@ export class OverworldScreen implements Screen {
   private updateInteraction(): void {
     const found = this.npcSlots.find((s) => s.model.position.distanceTo(this.avatar.position) <= INTERACT_RANGE);
     this.nearbyNpc = found?.def ?? null;
+
+    const foundPortal = this.dungeonPortals.find((p) => p.group.position.distanceTo(this.avatar.position) <= INTERACT_RANGE);
+    this.nearbyDungeon = foundPortal?.def ?? null;
+
     if (this.nearbyNpc) {
       this.promptEl.hidden = false;
       this.promptEl.textContent = `[E] Falar com ${this.nearbyNpc.name}`;
+    } else if (this.nearbyDungeon) {
+      this.promptEl.hidden = false;
+      this.promptEl.textContent = `[E] Entrar em ${this.nearbyDungeon.name}`;
     } else {
       this.promptEl.hidden = true;
     }
@@ -782,6 +832,126 @@ export class OverworldScreen implements Screen {
     this.dialogueOverlay.hidden = true;
     this.refreshQuestTracker();
     if (npc?.vendor) this.openShop(npc);
+  }
+
+  // --- dungeon instances (fixed entrance portals + the run itself) -------
+
+  /** Drops one portal per dungeon whose fixed entrance lives in THIS zone (see DungeonDefinition.portal.hostZoneId) — a no-op zone-local list in every zone that hosts none. */
+  private buildDungeonPortals(): void {
+    for (const dungeon of dungeonsInHostZone(this.player.zoneId)) {
+      const { group, glowMaterial } = buildDungeonPortalMesh(DUNGEON_PORTAL_GLOW);
+      const pos = tileCenterWorld(dungeon.portal.atTile.x, dungeon.portal.atTile.y);
+      group.position.copy(pos);
+      this.scene.add(group);
+
+      const labelEl = el(
+        'div',
+        {
+          className: 'dungeon-portal-label',
+          onClick: () => {
+            if (this.nearbyDungeon === dungeon) this.enterDungeon(dungeon);
+          },
+        },
+        [el('div', { className: 'dname', text: dungeon.name }), el('div', { className: 'dlevel', text: `Nv. recomendado ${dungeon.recommendedLevel}` })],
+      );
+      this.game.uiRoot.append(labelEl);
+
+      this.dungeonPortals.push({ def: dungeon, group, glowMaterial, labelEl });
+    }
+  }
+
+  /** Keeps every portal's glow pulsing and its label tracking screen position — mirrors updateNpcLabels. */
+  private updateDungeonPortals(): void {
+    for (const p of this.dungeonPortals) {
+      animateDungeonPortal(p.glowMaterial, this.time);
+
+      const anchor = p.group.position.clone().add(new THREE.Vector3(0, 2.8, 0));
+      const proj = anchor.project(this.camera);
+      if (proj.z > 1) {
+        p.labelEl.hidden = true;
+        continue;
+      }
+      p.labelEl.hidden = false;
+      p.labelEl.style.left = `${(proj.x * 0.5 + 0.5) * window.innerWidth}px`;
+      p.labelEl.style.top = `${(-proj.y * 0.5 + 0.5) * window.innerHeight}px`;
+    }
+  }
+
+  /** Walks the player into a dungeon's own instance zone — same "arrive at a fixed tile" mechanics as any other zone transition, just triggered by an interact prompt instead of stepping on an exit tile. */
+  private enterDungeon(dungeon: DungeonDefinition): void {
+    this.player.zoneId = dungeon.zoneId;
+    const arrive = arriveWorldPosition(dungeon.playerStart);
+    this.player.mapX = arrive.x;
+    this.player.mapY = arrive.z;
+    saveGame(this.player);
+    audio.encounterStart();
+    this.game.goTo(new OverworldScreen(this.game, this.player, this.avatarData));
+  }
+
+  /** The dungeon completion overlay's "instant warp" option — the walk-back-out corridor exit (a normal ZoneExit) works too, this just spares the walk. */
+  private returnToHostZone(): void {
+    const dungeon = this.activeDungeon;
+    if (!dungeon) return;
+    this.player.zoneId = dungeon.portal.hostZoneId;
+    const arrive = arriveWorldPosition(dungeon.portal.arriveTile);
+    this.player.mapX = arrive.x;
+    this.player.mapY = arrive.z;
+    saveGame(this.player);
+    this.game.goTo(new OverworldScreen(this.game, this.player, this.avatarData));
+  }
+
+  private onDungeonEncounterCleared(index: number): void {
+    if (!this.dungeonRunState) return;
+    void index;
+    this.dungeonRunState = recordEncounterCleared(this.dungeonRunState);
+    this.refreshDungeonProgress();
+    this.combat.showBanner('Emboscada eliminada!', 1600);
+  }
+
+  private onDungeonBossDefeated(): void {
+    const dungeon = this.activeDungeon;
+    if (!dungeon || !this.dungeonRunState || this.dungeonRunState.bossDefeated) return;
+    const { state, reward } = completeDungeon(this.player, dungeon, this.dungeonRunState);
+    this.dungeonRunState = state;
+    saveGame(this.player);
+    this.combat.showBanner(reward.message, 3200);
+    if (this.dungeonCompleteMessageEl) this.dungeonCompleteMessageEl.textContent = reward.message;
+    if (this.dungeonCompleteEl) this.dungeonCompleteEl.hidden = false;
+  }
+
+  private buildDungeonHud(): void {
+    this.dungeonProgressEl = el('div', { className: 'dungeon-progress' });
+    this.game.uiRoot.append(this.dungeonProgressEl);
+    this.refreshDungeonProgress();
+  }
+
+  private refreshDungeonProgress(): void {
+    if (this.dungeonProgressEl && this.dungeonRunState) {
+      this.dungeonProgressEl.textContent = encounterProgressText(this.dungeonRunState);
+    }
+  }
+
+  private buildDungeonCompleteOverlay(): void {
+    const dungeon = this.activeDungeon;
+    if (!dungeon) return;
+    this.dungeonCompleteMessageEl = el('p', { text: '' });
+    const returnBtn = el('div', { className: 'btn primary', text: `Retornar a ${this.zoneNameOf(dungeon.portal.hostZoneId)}`, onClick: () => this.returnToHostZone() });
+    const stayBtn = el('div', { className: 'btn', text: 'Continuar explorando', onClick: () => { if (this.dungeonCompleteEl) this.dungeonCompleteEl.hidden = true; } });
+    this.dungeonCompleteEl = el('div', { className: 'panel dungeon-complete-overlay' }, [
+      el('h2', { text: 'Chefe derrotado!' }),
+      this.dungeonCompleteMessageEl,
+      el('div', { className: 'stack' }, [returnBtn, stayBtn]),
+    ]);
+    this.dungeonCompleteEl.hidden = true;
+    this.game.uiRoot.append(this.dungeonCompleteEl);
+  }
+
+  private zoneNameOf(zoneId: string): string {
+    try {
+      return getZoneById(zoneId).name;
+    } catch {
+      return 'a vila';
+    }
   }
 
   // --- shops (vendor NPCs: blacksmith, apothecary, artisan, jeweler) -----

@@ -478,6 +478,91 @@ body {
   width: 100px;
 }
 
+/* Prominent top-of-screen boss name/health banner — distinct from the small
+   per-monster nameplate above, shown only while fighting an isBoss enemy
+   (dungeon bosses, and the story's own young_dragon). */
+.boss-banner {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, 88vw);
+  text-align: center;
+  pointer-events: none;
+}
+.boss-banner-name {
+  font-size: 22px;
+  color: var(--accent);
+  text-shadow: 2px 2px 0 #000;
+  letter-spacing: 1px;
+  margin-bottom: 3px;
+}
+.boss-banner-hp-bg {
+  width: 100%;
+  height: 16px;
+  background: #1a1423;
+  border: 2px solid var(--panel-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.boss-banner-hp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8a1f1f, var(--hp));
+  transition: width 0.25s ease-out;
+}
+
+/* Dungeon entrance portal — same tap/interact-prompt pattern as an NPC label. */
+.dungeon-portal-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  text-align: center;
+  font-size: 14px;
+  color: #d9c8f2;
+  text-shadow: 2px 2px 0 #000;
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 10px 14px;
+  margin: -10px -14px;
+}
+.dungeon-portal-label .dname {
+  font-weight: bold;
+}
+.dungeon-portal-label .dlevel {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* Small "Emboscadas: 2/3" readout shown only while inside a dungeon instance. */
+.dungeon-progress {
+  position: absolute;
+  top: 148px;
+  left: 8px;
+  padding: 5px 10px;
+  font-size: 15px;
+  color: #d9c8f2;
+  background: rgba(26, 20, 35, 0.7);
+  border-radius: 4px;
+}
+
+.dungeon-complete-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 22px 30px;
+  text-align: center;
+  min-width: 280px;
+  max-width: 90vw;
+}
+.dungeon-complete-overlay h2 {
+  margin: 0 0 10px;
+  color: var(--accent);
+}
+.dungeon-complete-overlay p {
+  margin: 0 0 16px;
+  font-size: 18px;
+}
+
 /* Feedback for the current fight lives top-center — the bottom strip is
    already busy with the movement d-pad and the combat hotbar now that both
    are on screen together. */

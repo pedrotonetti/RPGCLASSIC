@@ -1,6 +1,7 @@
 import { TILE_SIZE } from '../config/gameConfig';
 import { CLASS_ZONE_THEMES, getClassZoneTheme } from './classZones';
-import { generateOverworldMap, generateVillageMap, mainCityArrivalTile, MAIN_CITY_GATES, type GeneratedMap } from '../systems/MapGenerator';
+import { DUNGEON_DEFINITIONS } from './dungeons';
+import { generateDungeonMap, generateOverworldMap, generateVillageMap, mainCityArrivalTile, MAIN_CITY_GATES, type GeneratedMap } from '../systems/MapGenerator';
 
 export const MAIN_CITY_ID = 'main_city';
 
@@ -22,6 +23,14 @@ export interface ZoneDefinition {
   /** Enemy ids this zone's monsters are drawn from. Omit to use the level-weighted main city pool. */
   monsterIds?: string[];
   monsterCount: number;
+  /**
+   * Set for a dungeon instance's own linear-corridor zone (see
+   * `data/dungeons.ts`) — when present, `OverworldScreen` spawns this
+   * dungeon's fixed encounter pods and boss (via
+   * `OverworldCombat.spawnDungeonEncounters`) instead of the usual random
+   * `spawnMonsters` scatter, and shows the encounter-progress/boss-banner HUD.
+   */
+  dungeonId?: string;
 }
 
 const MAIN_CITY_ACCENT = 0x4c8a3f; // the field's usual grass green — no special tint for the shared hub
@@ -97,6 +106,29 @@ function mainCityExits(): ZoneExit[] {
 
 const CLASS_VILLAGE_ZONES = buildClassVillageZones();
 
+/** A sickly, corrupted-root tint distinct from every village's own accent and from the main city's plain grass green — every dungeon shares it so an instance always reads as "not open-world" the instant it loads. */
+const DUNGEON_ACCENT = 0x5a4a6e;
+
+function buildDungeonZones(): Record<string, ZoneDefinition> {
+  const zones: Record<string, ZoneDefinition> = {};
+  for (const dungeon of DUNGEON_DEFINITIONS) {
+    zones[dungeon.zoneId] = {
+      id: dungeon.zoneId,
+      name: dungeon.name,
+      accentColor: DUNGEON_ACCENT,
+      generate: () => generateDungeonMap({ seed: dungeon.seed, encounterCount: dungeon.encounters.length }),
+      exits: [{ atTile: dungeon.exitTile, toZone: dungeon.portal.hostZoneId, arriveTile: dungeon.portal.arriveTile }],
+      // Monsters here are placed at fixed points, not scattered by
+      // spawnMonsters — see OverworldScreen.mount's dungeonId branch.
+      monsterCount: 0,
+      dungeonId: dungeon.id,
+    };
+  }
+  return zones;
+}
+
+const DUNGEON_ZONES = buildDungeonZones();
+
 export const ZONE_DEFINITIONS: Record<string, ZoneDefinition> = {
   [MAIN_CITY_ID]: {
     id: MAIN_CITY_ID,
@@ -107,6 +139,7 @@ export const ZONE_DEFINITIONS: Record<string, ZoneDefinition> = {
     monsterCount: 30,
   },
   ...CLASS_VILLAGE_ZONES,
+  ...DUNGEON_ZONES,
 };
 
 export function getZoneById(id: string): ZoneDefinition {
