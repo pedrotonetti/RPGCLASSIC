@@ -55,7 +55,15 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,glb}'],
+        // glb models are intentionally NOT precached: fox.glb was small
+        // enough not to matter, but the vendored character models
+        // (public/models/characters/*.glb) are ~3.5MB each — several would
+        // already blow past Workbox's 2MiB single-file precache limit
+        // (a hard build error), and precaching all of them eagerly would
+        // undo the whole point of loading them lazily per class. They're
+        // still fetched fine at runtime (just not proactively cached at
+        // install time); the browser's own HTTP cache covers repeat visits.
+        globPatterns: ['**/*.{js,css,html,svg}'],
       },
     }),
   ],
