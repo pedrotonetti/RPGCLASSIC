@@ -1,4 +1,5 @@
 import type { EnemyDefinition, SkillDefinition, Stats } from '../config/types';
+import { getBossById } from '../data/bosses';
 import { getEnemyById } from '../data/enemies';
 
 /** A single enemy instance within one battle. Enemies don't persist between battles. */
@@ -18,7 +19,10 @@ export class Enemy {
   }
 
   get def(): EnemyDefinition {
-    return getEnemyById(this.definitionId);
+    // Dungeon bosses (data/bosses.ts) live outside data/enemies.ts's own
+    // ENEMY_DEFINITIONS on purpose (see that file's header) — checked first
+    // so a boss id never falls through to getEnemyById's throw.
+    return getBossById(this.definitionId) ?? getEnemyById(this.definitionId);
   }
 
   get name(): string {

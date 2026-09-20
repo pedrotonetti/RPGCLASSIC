@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getClassById } from '../config/classes';
+import { TILE_SIZE } from '../config/gameConfig';
 import { TileType } from '../config/tiles';
 import type { SkillDefinition } from '../config/types';
 import type { Game } from '../engine/Game';
@@ -42,6 +43,33 @@ interface WorldMonster {
   respawnAt: number;
   labelEl: HTMLElement;
   hpFillEl: HTMLElement;
+  /** Set only for a dungeon's own fixed monster pods (see spawnDungeonEncounters) — never respawns once dead, matching an instance run being one-and-done per visit. */
+  noRespawn?: boolean;
+  /** Index into this dungeon run's `encounters` array — every monster sharing one index belongs to the same fixed pod. */
+  dungeonEncounterIndex?: number;
+  /** The one boss monster of a dungeon run, if any. */
+  isDungeonBoss?: boolean;
+}
+
+/** One fixed-position monster pod along a dungeon's corridor — see spawnDungeonEncounters. */
+export interface DungeonEncounterSpawn {
+  atTile: { x: number; y: number };
+  enemyIds: string[];
+}
+
+/** The one boss spawn of a dungeon run — see spawnDungeonEncounters. */
+export interface DungeonBossSpawn {
+  atTile: { x: number; y: number };
+  enemyId: string;
+  /** Existing enemy id whose 3D shape to reuse for the boss's model (see data/dungeons.ts's own doc comment on this). */
+  visualId: string;
+}
+
+export interface DungeonCombatHooks {
+  /** Fired the instant every monster in one fixed pod is dead (never twice for the same index). */
+  onEncounterCleared: (index: number) => void;
+  /** Fired the instant the dungeon's boss dies — the caller already knows which boss from its own DungeonDefinition. */
+  onBossDefeated: () => void;
 }
 
 interface HotbarSlot {
@@ -91,6 +119,16 @@ export class OverworldCombat {
   private blockFillEl!: HTMLElement;
   private dodgeFillEl!: HTMLElement;
   private messageHideAt = 0;
+  private hudBuilt = false;
+
+  /** Prominent top-of-screen name/health banner shown only while fighting an `isBoss` enemy — distinct from the small per-monster nameplate every wandering monster gets. */
+  private bossBannerEl: HTMLElement | null = null;
+  private bossBannerNameEl: HTMLElement | null = null;
+  private bossBannerFillEl: HTMLElement | null = null;
+  private activeBossMonster: WorldMonster | null = null;
+
+  /** Set only inside a dungeon zone (see OverworldScreen.mount) — lets encounter/boss defeats drive that dungeon's own run-state tracking (DungeonSystem.ts) without OverworldCombat needing to know anything about dungeons itself. */
+  private dungeonHooks: DungeonCombatHooks | null = null;
 
   private pendingTargetPick: ((monster: WorldMonster) => void) | null = null;
 
@@ -118,11 +156,7 @@ export class OverworldCombat {
     startTile: { x: number; y: number },
     opts: { count?: number; enemyIds?: string[]; minDistFromStart?: number; minSpacing?: number } = {},
   ): void {
-    this.messageEl = el('div', { className: 'panel battle-message-bar' });
-    this.messageEl.hidden = true;
-    this.comboEl = el('div', { className: 'combo-badge' });
-    this.comboEl.hidden = true;
-    this.game.uiRoot.append(this.messageEl, this.comboEl);
+    this.ensureBaseHud();
 
     const points = pickSpawnPoints(
       tiles,
@@ -137,12 +171,67 @@ export class OverworldCombat {
     }
   }
 
-  private buildMonster(enemyId: string, tx: number, ty: number): WorldMonster {
+  /**
+   * Places a dungeon's monsters at FIXED points along its corridor instead
+   * of `spawnMonsters`'s random scatter — a few enemies per encounter
+   * clustered tightly around that pod's tile, plus one boss in the arena.
+   * None of these ever respawn (an instance run is one-and-done per visit —
+   * leaving and re-entering rebuilds the whole zone, and with it a fresh
+   * run, from scratch anyway). `hooks` drives that dungeon's own
+   * `DungeonSystem` run-state as each pod (and finally the boss) falls.
+   */
+  spawnDungeonEncounters(encounters: DungeonEncounterSpawn[], boss: DungeonBossSpawn, hooks: DungeonCombatHooks): void {
+    this.ensureBaseHud();
+    this.dungeonHooks = hooks;
+
+    // Small fixed offsets (world units) so a pod's monsters fan out instead
+    // of stacking exactly on top of one another.
+    const GROUP_OFFSETS: Array<{ dx: number; dy: number }> = [
+      { dx: 0, dy: 0 },
+      { dx: 0.45, dy: 0.15 },
+      { dx: -0.45, dy: 0.15 },
+      { dx: 0.25, dy: -0.4 },
+      { dx: -0.25, dy: -0.4 },
+    ];
+    encounters.forEach((encounter, index) => {
+      encounter.enemyIds.forEach((enemyId, slot) => {
+        const off = GROUP_OFFSETS[slot % GROUP_OFFSETS.length];
+        const m = this.buildMonster(enemyId, encounter.atTile.x + off.dx / TILE_SIZE, encounter.atTile.y + off.dy / TILE_SIZE);
+        m.dungeonEncounterIndex = index;
+        m.noRespawn = true;
+        this.monsters.push(m);
+      });
+    });
+
+    const bossMonster = this.buildMonster(boss.enemyId, boss.atTile.x, boss.atTile.y, { visualId: boss.visualId, scale: 1.6 });
+    bossMonster.isDungeonBoss = true;
+    bossMonster.noRespawn = true;
+    this.monsters.push(bossMonster);
+  }
+
+  private ensureBaseHud(): void {
+    if (this.hudBuilt) return;
+    this.hudBuilt = true;
+    this.messageEl = el('div', { className: 'panel battle-message-bar' });
+    this.messageEl.hidden = true;
+    this.comboEl = el('div', { className: 'combo-badge' });
+    this.comboEl.hidden = true;
+    this.bossBannerNameEl = el('div', { className: 'boss-banner-name' });
+    this.bossBannerFillEl = el('div', { className: 'boss-banner-hp-fill' });
+    this.bossBannerEl = el('div', { className: 'boss-banner' }, [
+      this.bossBannerNameEl,
+      el('div', { className: 'boss-banner-hp-bg' }, [this.bossBannerFillEl]),
+    ]);
+    this.bossBannerEl.hidden = true;
+    this.game.uiRoot.append(this.messageEl, this.comboEl, this.bossBannerEl);
+  }
+
+  private buildMonster(enemyId: string, tx: number, ty: number, opts: { visualId?: string; scale?: number } = {}): WorldMonster {
     const enemy = new Enemy(enemyId);
-    const model = buildEnemyModel(enemyId, enemy.color);
+    const model = buildEnemyModel(opts.visualId ?? enemyId, enemy.color);
     const spawnX = tx * 2 + 1;
     const spawnZ = ty * 2 + 1;
-    const baseScale = enemy.def.isBoss ? 1.15 : 1;
+    const baseScale = opts.scale ?? (enemy.def.isBoss ? 1.15 : 1);
     model.scale.setScalar(baseScale);
     model.position.set(spawnX, enemyId === 'bat' ? 1.0 : 0, spawnZ);
     model.rotation.y = Math.random() * Math.PI * 2;
@@ -337,6 +426,13 @@ export class OverworldCombat {
     }
     this.engine.enemies.push(m.enemy);
     this.engagedMonsters.push(m);
+
+    if (m.enemy.def.isBoss && this.bossBannerEl && this.bossBannerNameEl && this.bossBannerFillEl) {
+      this.activeBossMonster = m;
+      this.bossBannerNameEl.textContent = m.enemy.name;
+      this.bossBannerFillEl.style.width = '100%';
+      this.bossBannerEl.hidden = false;
+    }
   }
 
   private endEngagement(outcome: 'victory' | 'defeat' | 'fled'): void {
@@ -371,6 +467,8 @@ export class OverworldCombat {
     this.hotbarEl = null;
     this.itemBarEl = null;
     this.comboEl.hidden = true;
+    this.activeBossMonster = null;
+    if (this.bossBannerEl) this.bossBannerEl.hidden = true;
   }
 
   // --- HUD ---------------------------------------------------------------
@@ -627,13 +725,25 @@ export class OverworldCombat {
   private setMonsterHp(m: WorldMonster, hp: number): void {
     const ratio = Math.max(0, Math.min(1, hp / m.enemy.stats.maxHp));
     m.hpFillEl.style.width = `${ratio * 100}%`;
+    if (m === this.activeBossMonster && this.bossBannerFillEl) {
+      this.bossBannerFillEl.style.width = `${ratio * 100}%`;
+    }
   }
 
   private killMonster(m: WorldMonster): void {
     m.state = 'dead';
     m.model.visible = false;
     m.labelEl.hidden = true;
-    m.respawnAt = this.clock + RESPAWN_DELAY;
+    m.respawnAt = m.noRespawn ? -1 : this.clock + RESPAWN_DELAY;
+
+    if (m.dungeonEncounterIndex !== undefined && this.dungeonHooks) {
+      const index = m.dungeonEncounterIndex;
+      const podStillAlive = this.monsters.some((other) => other.dungeonEncounterIndex === index && other.state !== 'dead');
+      if (!podStillAlive) this.dungeonHooks.onEncounterCleared(index);
+    }
+    if (m.isDungeonBoss && this.dungeonHooks) {
+      this.dungeonHooks.onBossDefeated();
+    }
   }
 
   private popupForEvent(event: CombatEvent, anchor: { x: number; y: number }): void {

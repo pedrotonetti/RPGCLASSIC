@@ -1,8 +1,36 @@
 import { describe, it, expect } from 'vitest';
-import { generateOverworldMap, generateVillageMap, MAIN_CITY_GATES, mainCityArrivalTile, MAP_WIDTH, MAP_HEIGHT, BUILDING_FOOTPRINTS } from './MapGenerator';
+import {
+  generateOverworldMap,
+  generateVillageMap,
+  generateDungeonMap,
+  dungeonLayout,
+  MAIN_CITY_GATES,
+  mainCityArrivalTile,
+  MAP_WIDTH,
+  MAP_HEIGHT,
+  BUILDING_FOOTPRINTS,
+} from './MapGenerator';
 import { CLASS_ZONE_THEMES } from '../data/classZones';
 import { NPC_DEFINITIONS } from '../data/npcs';
 import { isWalkable, TileType } from '../config/tiles';
+
+/** Flood-fills from `from` over every walkable tile, for connectivity checks. */
+function reachableTiles(tiles: TileType[][], from: { x: number; y: number }): Set<string> {
+  const seen = new Set<string>();
+  const stack = [from];
+  const height = tiles.length;
+  const width = tiles[0].length;
+  while (stack.length > 0) {
+    const p = stack.pop()!;
+    const key = `${p.x},${p.y}`;
+    if (seen.has(key)) continue;
+    if (p.x < 0 || p.y < 0 || p.x >= width || p.y >= height) continue;
+    if (!isWalkable(tiles[p.y][p.x])) continue;
+    seen.add(key);
+    stack.push({ x: p.x + 1, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x, y: p.y - 1 });
+  }
+  return seen;
+}
 
 function tileAt(tiles: TileType[][], x: number, y: number): TileType {
   return tiles[y][x];
@@ -81,6 +109,52 @@ describe('MapGenerator (procedural buildings)', () => {
     for (const k of Object.keys(BUILDING_FOOTPRINTS) as Array<keyof typeof BUILDING_FOOTPRINTS>) {
       expect(BUILDING_FOOTPRINTS[k].w).toBeGreaterThanOrEqual(1);
       expect(BUILDING_FOOTPRINTS[k].h).toBeGreaterThanOrEqual(1);
+    }
+  });
+});
+
+describe('generateDungeonMap (linear corridor instances)', () => {
+  it.each([1, 3, 4, 5])('carves a fully connected path from the exit gate to every encounter and the boss arena (%i encounters)', (encounterCount) => {
+    const layout = dungeonLayout(encounterCount);
+    const { tiles, playerStart } = generateDungeonMap({ seed: 42, encounterCount });
+
+    expect(tiles.length).toBe(layout.height);
+    expect(tiles[0].length).toBe(layout.width);
+    expect(playerStart).toEqual(layout.playerStart);
+
+    const reachable = reachableTiles(tiles, layout.playerStart);
+    expect(reachable.has(`${layout.exitTile.x},${layout.exitTile.y}`)).toBe(true);
+    expect(reachable.has(`${layout.bossTile.x},${layout.bossTile.y}`)).toBe(true);
+    for (const enc of layout.encounterTiles) {
+      expect(reachable.has(`${enc.x},${enc.y}`), `encounter tile ${enc.x},${enc.y} unreachable`).toBe(true);
+    }
+  });
+
+  it('is deterministic for a given seed and encounter count', () => {
+    const a = generateDungeonMap({ seed: 7, encounterCount: 3 });
+    const b = generateDungeonMap({ seed: 7, encounterCount: 3 });
+    expect(a.tiles).toEqual(b.tiles);
+    expect(a.playerStart).toEqual(b.playerStart);
+  });
+
+  it('places encounters strictly between the entrance and the boss arena, entrance-to-boss order', () => {
+    const layout = dungeonLayout(4);
+    // South (higher y) is the entrance/exit side; the corridor climbs north
+    // (decreasing y) toward the boss — see MapGenerator's own doc comment.
+    expect(layout.exitTile.y).toBeGreaterThan(layout.playerStart.y);
+    let previousY = layout.playerStart.y;
+    for (const enc of layout.encounterTiles) {
+      expect(enc.y).toBeLessThan(previousY);
+      previousY = enc.y;
+    }
+    expect(layout.bossTile.y).toBeLessThan(previousY);
+  });
+
+  it('never spills the boss arena above the map\'s own top border', () => {
+    for (const encounterCount of [1, 2, 3, 4, 5, 6]) {
+      const layout = dungeonLayout(encounterCount);
+      expect(layout.bossTile.y).toBeGreaterThanOrEqual(1);
+      expect(layout.bossTile.y).toBeLessThan(layout.height - 1);
     }
   });
 });

@@ -443,3 +443,165 @@ export function generateVillageMap(opts: VillageMapOptions): GeneratedMap {
 
   return { tiles, playerStart: { x: cx, y: cy }, buildings };
 }
+
+// --- dungeon instances: fixed-layout linear corridors (see data/dungeons.ts) ---
+
+/**
+ * A dungeon map is a single north-south corridor, not a free-roam square —
+ * "diversify the stages/instances" per the design brief means Diablo/PW-style
+ * instances: a fixed gauntlet of monster chambers leading to one boss arena,
+ * not another open village. Every span (entrance room, each
+ * corridor-then-chamber pair, the final corridor, the boss arena) is carved
+ * out of solid rock (TileType.Tree, reused here as "twisted corrupted root
+ * wall" — see LORE.md's framing of monsters as corrupted ancestors, which
+ * this reuses rather than inventing a new tile type/renderer) so the whole
+ * thing reads as a tunnel, always the same shape for a given encounter count.
+ */
+const DUNGEON_WIDTH = 13;
+const DUNGEON_CORRIDOR_HALF = 1; // 3-tile-wide connecting corridors
+const DUNGEON_ROOM_HALF = 4; // ~9-tile-wide encounter chambers
+const DUNGEON_BOSS_HALF = 5; // full-width boss arena
+const DUNGEON_ENTRANCE_DEPTH = 5;
+const DUNGEON_CORRIDOR_DEPTH = 5;
+const DUNGEON_CHAMBER_DEPTH = 7;
+const DUNGEON_BOSS_DEPTH = 11;
+
+interface DungeonSpan {
+  yTop: number;
+  yBottom: number;
+  half: number;
+}
+
+interface DungeonGeometry {
+  width: number;
+  height: number;
+  spans: DungeonSpan[];
+  bossSpan: DungeonSpan;
+  playerStart: { x: number; y: number };
+  exitTile: { x: number; y: number };
+  encounterTiles: Array<{ x: number; y: number }>;
+  bossTile: { x: number; y: number };
+}
+
+/**
+ * Pure geometry (no tile grid) for a dungeon with `encounterCount` fixed
+ * combat chambers before the boss — the single source of truth both
+ * `dungeonLayout` (metadata `data/dungeons.ts` builds its fixed encounter/
+ * boss tile positions from) and `generateDungeonMap` (which actually carves
+ * the tile grid) derive from, so the two can never drift apart.
+ */
+function computeDungeonGeometry(encounterCount: number): DungeonGeometry {
+  const width = DUNGEON_WIDTH;
+  const cx = Math.floor(width / 2);
+  const height =
+    2 + // north/south solid-rock border rows
+    DUNGEON_ENTRANCE_DEPTH +
+    encounterCount * (DUNGEON_CORRIDOR_DEPTH + DUNGEON_CHAMBER_DEPTH) +
+    DUNGEON_CORRIDOR_DEPTH +
+    DUNGEON_BOSS_DEPTH;
+
+  const spans: DungeonSpan[] = [];
+  const ySouth = height - 1;
+  const entranceTop = ySouth - DUNGEON_ENTRANCE_DEPTH;
+  spans.push({ yTop: entranceTop, yBottom: ySouth - 1, half: DUNGEON_ROOM_HALF });
+  const playerStart = { x: cx, y: ySouth - 2 };
+  const exitTile = { x: cx, y: ySouth };
+
+  let cursor = entranceTop - 1;
+  const encounterTiles: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < encounterCount; i++) {
+    const corridorBottom = cursor;
+    const corridorTop = corridorBottom - DUNGEON_CORRIDOR_DEPTH + 1;
+    spans.push({ yTop: corridorTop, yBottom: corridorBottom, half: DUNGEON_CORRIDOR_HALF });
+    cursor = corridorTop - 1;
+
+    const chamberBottom = cursor;
+    const chamberTop = chamberBottom - DUNGEON_CHAMBER_DEPTH + 1;
+    spans.push({ yTop: chamberTop, yBottom: chamberBottom, half: DUNGEON_ROOM_HALF });
+    encounterTiles.push({ x: cx, y: Math.round((chamberTop + chamberBottom) / 2) });
+    cursor = chamberTop - 1;
+  }
+
+  const finalCorridorBottom = cursor;
+  const finalCorridorTop = finalCorridorBottom - DUNGEON_CORRIDOR_DEPTH + 1;
+  spans.push({ yTop: finalCorridorTop, yBottom: finalCorridorBottom, half: DUNGEON_CORRIDOR_HALF });
+  cursor = finalCorridorTop - 1;
+
+  const bossBottom = cursor;
+  const bossTop = Math.max(1, bossBottom - DUNGEON_BOSS_DEPTH + 1);
+  const bossSpan = { yTop: bossTop, yBottom: bossBottom, half: DUNGEON_BOSS_HALF };
+  spans.push(bossSpan);
+  const bossTile = { x: cx, y: Math.round((bossTop + bossBottom) / 2) };
+
+  return { width, height, spans, bossSpan, playerStart, exitTile, encounterTiles, bossTile };
+}
+
+export interface DungeonLayout {
+  width: number;
+  height: number;
+  /** Where the player spawns on entering, just inside the exit gate. */
+  playerStart: { x: number; y: number };
+  /** Tile that leads back to the dungeon's host zone (see ZoneExit). */
+  exitTile: { x: number; y: number };
+  /** Center tile of each fixed encounter chamber, entrance-to-boss order. */
+  encounterTiles: Array<{ x: number; y: number }>;
+  /** Center tile of the boss arena. */
+  bossTile: { x: number; y: number };
+}
+
+/** Metadata-only view of a dungeon's fixed layout — `data/dungeons.ts` uses this to place its encounters/boss without needing to generate (or duplicate the math behind) the actual tile grid. */
+export function dungeonLayout(encounterCount: number): DungeonLayout {
+  const g = computeDungeonGeometry(encounterCount);
+  return { width: g.width, height: g.height, playerStart: g.playerStart, exitTile: g.exitTile, encounterTiles: g.encounterTiles, bossTile: g.bossTile };
+}
+
+export interface DungeonMapOptions {
+  seed: number;
+  /** Number of fixed combat chambers between the entrance and the boss arena. */
+  encounterCount: number;
+}
+
+/** Builds the actual tile grid for a dungeon instance — a linear corridor/gauntlet, not a free-roam village. See `dungeonLayout` for the matching tile metadata. */
+export function generateDungeonMap(opts: DungeonMapOptions): GeneratedMap {
+  const rand = mulberry32(opts.seed);
+  const g = computeDungeonGeometry(opts.encounterCount);
+  const cx = Math.floor(g.width / 2);
+
+  const tiles: TileType[][] = [];
+  for (let y = 0; y < g.height; y++) tiles.push(new Array<TileType>(g.width).fill(TileType.Tree));
+
+  for (const span of g.spans) {
+    const x0 = Math.max(1, cx - span.half);
+    const x1 = Math.min(g.width - 2, cx + span.half);
+    for (let y = span.yTop; y <= span.yBottom; y++) {
+      for (let x = x0; x <= x1; x++) tiles[y][x] = TileType.Grass;
+    }
+  }
+  // Breach the south wall so the exit gate is reachable from just inside it.
+  tiles[g.height - 1][cx] = TileType.Grass;
+
+  // Sparse dead-root clutter across the wider rooms so they don't read as
+  // empty rectangles — the corridor's own width (centered on cx) is left
+  // untouched so the path stays guaranteed-connected however the dice land.
+  for (let y = 1; y < g.height - 1; y++) {
+    for (let x = 1; x < g.width - 1; x++) {
+      if (tiles[y][x] !== TileType.Grass) continue;
+      if (Math.abs(x - cx) <= DUNGEON_CORRIDOR_HALF) continue;
+      if (rand() < 0.07) tiles[y][x] = TileType.Tree;
+    }
+  }
+  // Guarantee every fixed encounter/boss/start/exit tile stayed clear even if
+  // the clutter pass above happened to land right on one of them.
+  for (const t of [g.playerStart, g.exitTile, g.bossTile, ...g.encounterTiles]) {
+    tiles[t.y][t.x] = TileType.Grass;
+  }
+
+  // A corrupted shrine (reusing the same landmark tower every secondary
+  // village gets) marks the boss arena as a real destination, not just the
+  // last empty room.
+  const buildings: BuildingPlacement[] = [];
+  const shrine = placeLandmark(tiles, 'tower', Math.min(g.width - 3, cx + 2), g.bossSpan.yTop + 1);
+  if (shrine) buildings.push(shrine);
+
+  return { tiles, playerStart: g.playerStart, buildings };
+}
