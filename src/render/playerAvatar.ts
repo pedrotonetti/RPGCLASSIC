@@ -57,7 +57,18 @@ interface HeldMeshConfig {
 
 const HELD_MESHES: Record<string, HeldMeshConfig> = {
   // Barbarian.glb: right hand {1H_Axe, 2H_Axe, Mug}, left hand {1H_Axe_Offhand, Barbarian_Round_Shield}.
-  warrior: { show: ['2H_Axe'], hide: ['1H_Axe', 'Mug', '1H_Axe_Offhand', 'Barbarian_Round_Shield'], gemAnchor: '2H_Axe' },
+  // Barbarian_Hat and Barbarian_Cape are also hidden (unlike Knight_Helmet/
+  // Knight_Cape and Mage_Hat/Mage_Cape, which read fine left visible): this
+  // particular hat is an oversized fur hood that, combined with the cape,
+  // swallows the whole head/torso into one dark round mass from behind —
+  // found by dumping the model's actual mesh tree in-game and comparing
+  // screenshots with/without them, since the resulting silhouette (dark,
+  // round-eared) was easy to mistake for some unrelated creature entirely.
+  warrior: {
+    show: ['2H_Axe'],
+    hide: ['1H_Axe', 'Mug', '1H_Axe_Offhand', 'Barbarian_Round_Shield', 'Barbarian_Hat', 'Barbarian_Cape'],
+    gemAnchor: '2H_Axe',
+  },
   // Knight.glb: right hand {1H_Sword, 2H_Sword}, left hand {1H_Sword_Offhand, Badge/Rectangle/Round/Spike_Shield}.
   paladin: {
     show: ['1H_Sword', 'Round_Shield'],
