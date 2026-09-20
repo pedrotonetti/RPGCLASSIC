@@ -113,7 +113,7 @@ export const CLASS_ZONE_THEMES: ClassZoneTheme[] = [
       'Pedravale precisa de curandeiros como você. Tobias a sul vai querer conversar.',
     ],
     startMonsters: ['slime', 'bat'],
-    secondaryMonsters: ['skeleton', 'goblin', 'fire_elemental'],
+    secondaryMonsters: ['skeleton', 'goblin', 'giant_spider'],
   },
   {
     classId: 'paladin',
@@ -179,7 +179,7 @@ export const CLASS_ZONE_THEMES: ClassZoneTheme[] = [
       'Pedravale é a sul. Tobias esconde mais sobre a Sede do que admite — cuidado.',
     ],
     startMonsters: ['slime', 'bat'],
-    secondaryMonsters: ['skeleton', 'stone_golem', 'goblin'],
+    secondaryMonsters: ['skeleton', 'dark_wolf', 'goblin'],
   },
   {
     classId: 'monk',
