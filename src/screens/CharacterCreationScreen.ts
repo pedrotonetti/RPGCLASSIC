@@ -25,9 +25,8 @@ import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { Player } from '../entities/Player';
 import { buildHumanCharacter, type ClassAccessory } from '../render/characterModel';
-import { el } from '../ui/dom';
+import { el, goToLazy } from '../ui/dom';
 import { CharacterSelectScreen } from './CharacterSelectScreen';
-import { OverworldScreen } from './OverworldScreen';
 
 const CLASS_ACCESSORY: Record<string, ClassAccessory> = {
   warrior: 'sword',
@@ -235,6 +234,9 @@ export class CharacterCreationScreen implements Screen {
     const name = this.heroName.trim().length > 0 ? this.heroName.trim().slice(0, 16) : 'Herói';
     const player = Player.createNew(name, this.classId);
     player.appearance = this.appearance;
-    this.game.goTo(new OverworldScreen(this.game, player));
+    goToLazy(this.game, async () => {
+      const { OverworldScreen } = await import('./OverworldScreen');
+      return new OverworldScreen(this.game, player);
+    });
   }
 }

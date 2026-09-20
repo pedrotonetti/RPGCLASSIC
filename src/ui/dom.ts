@@ -1,3 +1,5 @@
+import type { Game } from '../engine/Game';
+import type { Screen } from '../engine/Screen';
 import { audio } from '../systems/AudioSystem';
 
 type Child = Node | string | null | undefined | false;
@@ -39,4 +41,21 @@ export function el<K extends keyof HTMLElementTagNameMap>(
     node.append(child);
   }
   return node;
+}
+
+/**
+ * Navigates to a screen whose module is lazy-loaded (code-split), so heavy
+ * screens (overworld and everything it pulls in) don't have to be in the
+ * initial bundle. `load` resolves the screen once its chunk has downloaded;
+ * a "Carregando…" indicator only appears if that takes long enough to
+ * notice, so a fast/cached import shows nothing in between.
+ */
+export function goToLazy(game: Game, load: () => Promise<Screen>): void {
+  const timer = window.setTimeout(() => {
+    game.uiRoot.append(el('div', { className: 'loading-text', text: 'Carregando…' }));
+  }, 150);
+  load().then((screen) => {
+    window.clearTimeout(timer);
+    game.goTo(screen);
+  });
 }

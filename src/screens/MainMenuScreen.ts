@@ -5,9 +5,8 @@ import type { Screen } from '../engine/Screen';
 import { buildClassPreview } from '../render/characterModel';
 import { audio } from '../systems/AudioSystem';
 import { clearSave, hasSave, loadGame } from '../systems/SaveSystem';
-import { el } from '../ui/dom';
+import { el, goToLazy } from '../ui/dom';
 import { IntroScreen } from './IntroScreen';
-import { OverworldScreen } from './OverworldScreen';
 
 const MUSIC_PREF_KEY = 'rpgclassic:musicOn';
 
@@ -139,7 +138,10 @@ export class MainMenuScreen implements Screen {
           onClick: () => {
             const player = loadGame();
             if (player) {
-              this.game.goTo(new OverworldScreen(this.game, player));
+              goToLazy(this.game, async () => {
+                const { OverworldScreen } = await import('./OverworldScreen');
+                return new OverworldScreen(this.game, player);
+              });
             } else {
               // Corrupted/unreadable save: don't leave the button silently
               // doing nothing — clear it and let the player start fresh.

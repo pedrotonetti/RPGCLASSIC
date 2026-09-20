@@ -11,8 +11,7 @@ import { Player } from '../entities/Player';
 import { buildPlayerCharacter } from '../render/characterModel';
 import { computePowerScore } from '../systems/PowerScore';
 import { saveGame } from '../systems/SaveSystem';
-import { el } from '../ui/dom';
-import { OverworldScreen } from './OverworldScreen';
+import { el, goToLazy } from '../ui/dom';
 
 /** Resolves a player.inventory key (potion, gem, or material id) to a display name and optional swatch color. */
 function inventoryEntryInfo(id: string): { name: string; color?: number } {
@@ -90,7 +89,10 @@ export class InventoryScreen implements Screen {
       text: '< Voltar à Aventura',
       onClick: () => {
         saveGame(this.player);
-        this.game.goTo(new OverworldScreen(this.game, this.player));
+        goToLazy(this.game, async () => {
+          const { OverworldScreen } = await import('./OverworldScreen');
+          return new OverworldScreen(this.game, this.player);
+        });
       },
     });
 
