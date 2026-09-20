@@ -11,6 +11,13 @@ export default defineConfig({
     target: 'es2022',
     chunkSizeWarningLimit: 1500,
   },
+  test: {
+    // Vitest's default exclude doesn't know about .claude/worktrees/ (used
+    // for isolated parallel-agent checkouts) — without this, a worktree
+    // sitting inside the repo tree gets its own copy of every *.test.ts
+    // picked up too, double-counting (or worse, stale-counting) results.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/.claude/**'],
+  },
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
