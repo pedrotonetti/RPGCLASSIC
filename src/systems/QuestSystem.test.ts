@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { Player } from '../entities/Player';
-import { firstQuestIdForClass, getQuestById } from '../data/quests';
-import { ensureQuestStarted, notifyEnemyDefeated, notifyLevelChanged, notifyTalkedTo } from './QuestSystem';
+import { firstCallingQuestIdForClass, firstQuestIdForClass, getQuestById } from '../data/quests';
+import { ensureClassCallingStarted, ensureQuestStarted, notifyEnemyDefeated, notifyLevelChanged, notifyTalkedTo } from './QuestSystem';
 
 function freshPlayer(classId = 'warrior'): Player {
   return Player.createNew('Testador', classId);
 }
+
+/** All 8 playable classes — see src/config/classes.ts. */
+const ALL_CLASS_IDS = ['warrior', 'mage', 'archer', 'cleric', 'paladin', 'assassin', 'necromancer', 'monk'];
 
 describe('ensureQuestStarted', () => {
   it('assigns the class\'s first prelude quest to a brand-new character', () => {
@@ -118,6 +121,113 @@ describe('quest chain end', () => {
 
     expect(message).not.toBeNull();
     expect(player.completedQuestIds).toContain('q6_dragon');
+    expect(player.activeQuestId).toBeNull();
+  });
+});
+
+describe('ensureClassCallingStarted', () => {
+  it('does nothing before q6_dragon (the current end of the shared chain) is completed', () => {
+    const player = freshPlayer('warrior');
+    ensureClassCallingStarted(player);
+    expect(player.activeQuestId).toBeNull();
+  });
+
+  it('does not override an already-active quest, even after q6_dragon is done', () => {
+    const player = freshPlayer('warrior');
+    player.completedQuestIds.push('q6_dragon');
+    player.activeQuestId = 'q1_awaken';
+    ensureClassCallingStarted(player);
+    expect(player.activeQuestId).toBe('q1_awaken');
+  });
+
+  it('does not restart a class\'s calling chain once its first quest is already completed', () => {
+    const player = freshPlayer('warrior');
+    player.completedQuestIds.push('q6_dragon', firstCallingQuestIdForClass('warrior'));
+    ensureClassCallingStarted(player);
+    expect(player.activeQuestId).toBeNull();
+  });
+
+  it.each(ALL_CLASS_IDS)('starts the %s calling chain\'s first quest once q6_dragon is complete and no quest is active', (classId) => {
+    const player = freshPlayer(classId);
+    player.completedQuestIds.push('q6_dragon');
+
+    ensureClassCallingStarted(player);
+
+    expect(player.activeQuestId).toBe(firstCallingQuestIdForClass(classId));
+  });
+});
+
+describe('CLASS_CALLING_QUESTS chains', () => {
+  it.each(ALL_CLASS_IDS)('starts %s\'s first calling quest as a talkTo objective that advances to a second quest', (classId) => {
+    const firstId = firstCallingQuestIdForClass(classId);
+    const quest = getQuestById(firstId);
+
+    expect(quest).toBeDefined();
+    expect(quest!.objective.kind).toBe('talkTo');
+    expect(quest!.nextQuestId).toBeTruthy();
+  });
+
+  it.each(ALL_CLASS_IDS)('completes %s\'s first calling quest by talking to its deliverer NPC, advancing activeQuestId via nextQuestId', (classId) => {
+    const player = freshPlayer(classId);
+    const firstId = firstCallingQuestIdForClass(classId);
+    const quest = getQuestById(firstId)!;
+    player.activeQuestId = firstId;
+    const goldBefore = player.gold;
+
+    const message = notifyTalkedTo(player, quest.objective.targetId!);
+
+    expect(message).not.toBeNull();
+    expect(player.completedQuestIds).toContain(firstId);
+    expect(player.activeQuestId).toBe(quest.nextQuestId);
+    expect(player.gold).toBe(goldBefore + quest.rewardGold);
+  });
+
+  it('walks the warrior calling chain end to end: convoy -> convoy defense -> first line of defense', () => {
+    const player = freshPlayer('warrior');
+    player.completedQuestIds.push('q6_dragon');
+    ensureClassCallingStarted(player);
+    expect(player.activeQuestId).toBe('warrior_pc1_convoy');
+
+    expect(notifyTalkedTo(player, 'doroteia_comboio')).not.toBeNull();
+    expect(player.activeQuestId).toBe('warrior_pc2_convoy_defense');
+
+    for (let i = 0; i < 5; i++) {
+      expect(notifyEnemyDefeated(player, 'dark_wolf')).toBeNull();
+    }
+    expect(notifyEnemyDefeated(player, 'dark_wolf')).not.toBeNull();
+    expect(player.activeQuestId).toBe('warrior_pc3_first_line');
+
+    player.level = 12;
+    expect(notifyLevelChanged(player)).toBeNull();
+    player.level = 13;
+    const finalMessage = notifyLevelChanged(player);
+
+    expect(finalMessage).not.toBeNull();
+    expect(player.activeQuestId).toBeNull();
+    expect(player.completedQuestIds).toEqual(
+      expect.arrayContaining(['q6_dragon', 'warrior_pc1_convoy', 'warrior_pc2_convoy_defense', 'warrior_pc3_first_line']),
+    );
+  });
+
+  it('walks the mage calling chain end to end: scroll -> attune -> seal breaks', () => {
+    const player = freshPlayer('mage');
+    player.completedQuestIds.push('q6_dragon');
+    ensureClassCallingStarted(player);
+    expect(player.activeQuestId).toBe('mage_pc1_scroll');
+
+    expect(notifyTalkedTo(player, 'correio_bento')).not.toBeNull();
+    expect(player.activeQuestId).toBe('mage_pc2_attune');
+
+    player.level = 14;
+    expect(notifyLevelChanged(player)).not.toBeNull();
+    expect(player.activeQuestId).toBe('mage_pc3_seal_broken');
+
+    for (let i = 0; i < 5; i++) {
+      expect(notifyEnemyDefeated(player, 'skeleton')).toBeNull();
+    }
+    const finalMessage = notifyEnemyDefeated(player, 'skeleton');
+
+    expect(finalMessage).not.toBeNull();
     expect(player.activeQuestId).toBeNull();
   });
 });

@@ -143,7 +143,300 @@ function buildClassPreludeQuests(): QuestDefinition[] {
 
 export const CLASS_PRELUDE_QUESTS = buildClassPreludeQuests();
 
-const ALL_QUESTS: QuestDefinition[] = [...CLASS_PRELUDE_QUESTS, ...QUEST_CHAIN];
+/**
+ * "O Chamado" — each class's personal 2-3 quest coda in Pedravale itself,
+ * unlocked once QUEST_CHAIN's current end (q6_dragon) is complete. These run
+ * entirely in parallel across classes (a warrior never sees a mage's chain,
+ * and vice versa) but each is built from that class's own hook — see the
+ * design brief in the task that produced this file — and each one's last
+ * quest ends on a line that visibly gestures at Tobias hiding something
+ * about the Zeladores da Raiz, without staging that reveal itself: eight
+ * threads converging on the same secret, left for a future pass to pay off.
+ * See QuestSystem.ensureClassCallingStarted for how a chain is triggered.
+ */
+export const CLASS_CALLING_QUESTS: QuestDefinition[] = [
+  // --- Guerreiro: o comboio de refugiados -------------------------------
+  {
+    id: 'warrior_pc1_convoy',
+    title: 'O Comboio em Fuga',
+    description:
+      'O Comandante Gael mandou uma mensageira à frente de um comboio de refugiados que foge do Forte de Ferro para Pedravale. Encontre-a nos portões da vila.',
+    giverNpcId: 'doroteia_comboio',
+    objective: { kind: 'talkTo', targetId: 'doroteia_comboio', amount: 1 },
+    rewardXp: 60,
+    rewardGold: 40,
+    nextQuestId: 'warrior_pc2_convoy_defense',
+  },
+  {
+    id: 'warrior_pc2_convoy_defense',
+    title: 'Escoltar sob a Sede',
+    description:
+      'Bandos de lobos corrompidos seguem o rastro do comboio pela trilha. Afaste-os antes que alcancem os portões de Pedravale.',
+    giverNpcId: 'doroteia_comboio',
+    objective: { kind: 'defeat', targetId: 'dark_wolf', amount: 6 },
+    rewardXp: 220,
+    rewardGold: 140,
+    rewardItem: { templateId: 'machado_guerra', rarity: 'azul' },
+    nextQuestId: 'warrior_pc3_first_line',
+  },
+  {
+    id: 'warrior_pc3_first_line',
+    title: 'Primeira Linha de Defesa',
+    description:
+      'Gael tinha razão: Pedravale nunca teve uma guarda de verdade. Enquanto você treina para ser essa linha de frente, o Ancião Tobias começa a evitar perguntas sobre como a cidade vai se proteger de algo maior que lobos e bandidos.',
+    giverNpcId: 'doroteia_comboio',
+    objective: { kind: 'reachLevel', amount: 13 },
+    rewardXp: 320,
+    rewardGold: 220,
+  },
+
+  // --- Mago: o pergaminho que só reage a um Vozeiro ---------------------
+  {
+    id: 'mage_pc1_scroll',
+    title: 'O Pergaminho Selado',
+    description:
+      'Um mensageiro da Torre dos Arcanos chegou com um pergaminho que nenhuma mana consegue abrir. O Magíster Orin suspeita que só reage a um Vozeiro.',
+    giverNpcId: 'correio_bento',
+    objective: { kind: 'talkTo', targetId: 'correio_bento', amount: 1 },
+    rewardXp: 60,
+    rewardGold: 40,
+    nextQuestId: 'mage_pc2_attune',
+  },
+  {
+    id: 'mage_pc2_attune',
+    title: 'Afinar a Própria Voz',
+    description:
+      'O selo do pergaminho não cede à magia comum. Aprofunde seu próprio dom de Vozeiro até que ele reconheça sua voz.',
+    giverNpcId: 'correio_bento',
+    objective: { kind: 'reachLevel', amount: 14 },
+    rewardXp: 220,
+    rewardGold: 140,
+    rewardItem: { templateId: 'cajado_arcano', rarity: 'azul' },
+    nextQuestId: 'mage_pc3_seal_broken',
+  },
+  {
+    id: 'mage_pc3_seal_broken',
+    title: 'O Selo se Rompe',
+    description:
+      'Quando o pergaminho enfim se abre sob sua voz, esqueletos guardiões despertam para proteger o que sobrou do selo. Os símbolos entalhados no pergaminho, porém, são os mesmos riscos das vigas mais velhas da casa do Ancião Tobias — e ele nunca disse que sabia lê-los.',
+    giverNpcId: 'correio_bento',
+    objective: { kind: 'defeat', targetId: 'skeleton', amount: 6 },
+    rewardXp: 320,
+    rewardGold: 220,
+  },
+
+  // --- Arqueiro: rastros que fogem em vez de atacar ---------------------
+  {
+    id: 'archer_pc1_trail',
+    title: 'Rastros ao Contrário',
+    description:
+      'Caçador Ren jura ter visto criaturas corrompidas fugindo de Pedravale em vez de atacar — todas na mesma direção, como se algo as chamasse.',
+    giverNpcId: 'cacador_ren',
+    objective: { kind: 'talkTo', targetId: 'cacador_ren', amount: 1 },
+    rewardXp: 60,
+    rewardGold: 40,
+    nextQuestId: 'archer_pc2_intercept',
+  },
+  {
+    id: 'archer_pc2_intercept',
+    title: 'Interceptar a Fuga',
+    description:
+      'Intercepte os goblins em fuga antes que cheguem longe demais para rastrear. Talvez o padrão da fuga guarde uma pista de para onde — e para quem — estão indo.',
+    giverNpcId: 'cacador_ren',
+    objective: { kind: 'defeat', targetId: 'goblin', amount: 6 },
+    rewardXp: 220,
+    rewardGold: 140,
+    rewardItem: { templateId: 'arco_longo', rarity: 'azul' },
+    nextQuestId: 'archer_pc3_source',
+  },
+  {
+    id: 'archer_pc3_source',
+    title: 'O Chamado sob a Serra',
+    description:
+      'O rastro termina sempre no mesmo ponto: as raízes mais fundas sob Pedravale, perto de onde o Ancião Tobias guarda os registros mais antigos da vila. Ren jura já ter visto Tobias lá embaixo, uma vez, há anos — e nunca mais tocou no assunto.',
+    giverNpcId: 'cacador_ren',
+    objective: { kind: 'reachLevel', amount: 13 },
+    rewardXp: 320,
+    rewardGold: 220,
+  },
+
+  // --- Clériga/o: as Raízes do ipezal gritando ---------------------------
+  {
+    id: 'cleric_pc1_scream',
+    title: 'O Grito nas Raízes',
+    description:
+      'A Zeladora Sable sente as Raízes do ipezal de Pedravale gritando, não sussurrando — algo que só um curador de verdade percebe.',
+    giverNpcId: 'zeladora_sable',
+    objective: { kind: 'talkTo', targetId: 'zeladora_sable', amount: 1 },
+    rewardXp: 60,
+    rewardGold: 40,
+    nextQuestId: 'cleric_pc2_soothe',
+  },
+  {
+    id: 'cleric_pc2_soothe',
+    title: 'Acalmar o Ipezal',
+    description:
+      'Criaturas corrompidas rondam o ipezal, atraídas pelo mesmo grito que você ouve. Afaste-as para que as Raízes possam ser ouvidas em paz.',
+    giverNpcId: 'zeladora_sable',
+    objective: { kind: 'defeat', amount: 5 },
+    rewardXp: 220,
+    rewardGold: 140,
+    rewardItem: { templateId: 'manto_sagrado', rarity: 'azul' },
+    nextQuestId: 'cleric_pc3_warning',
+  },
+  {
+    id: 'cleric_pc3_warning',
+    title: 'A Mensagem nas Raízes',
+    description:
+      'Quando finalmente ouve por inteiro o que as Raízes gritam, não é sobre a Sede que avança lá fora — é um nome. Um nome que o Ancião Tobias reconhece na hora, e que apaga do rosto antes que você pergunte o que significa.',
+    giverNpcId: 'zeladora_sable',
+    objective: { kind: 'reachLevel', amount: 13 },
+    rewardXp: 320,
+    rewardGold: 220,
+  },
+
+  // --- Paladino: o juramento esquecido dos Zeladores --------------------
+  {
+    id: 'paladin_pc1_oath',
+    title: 'O Juramento nos Arquivos',
+    description:
+      'O Escrivão Aldo encontrou, nos arquivos mais velhos de Pedravale, um voto esquecido feito pelos lendários Zeladores da Raiz.',
+    giverNpcId: 'escrivao_aldo',
+    objective: { kind: 'talkTo', targetId: 'escrivao_aldo', amount: 1 },
+    rewardXp: 60,
+    rewardGold: 40,
+    nextQuestId: 'paladin_pc2_worthy',
+  },
+  {
+    id: 'paladin_pc2_worthy',
+    title: 'Provar-se Digno',
+    description:
+      'Reativar um juramento antigo não é decisão de escrivão — é decisão de quem carrega honra o bastante para jurá-lo de novo. Prove que você carrega essa força.',
+    giverNpcId: 'escrivao_aldo',
+    objective: { kind: 'reachLevel', amount: 14 },
+    rewardXp: 220,
+    rewardGold: 140,
+    nextQuestId: 'paladin_pc3_reactivate',
+  },
+  {
+    id: 'paladin_pc3_reactivate',
+    title: 'O Juramento Reativado',
+    description:
+      'Diante do templo, você jura reativar o voto dos Zeladores da Raiz contra orcs corrompidos que testam a decisão com aço. Ao dizer as palavras em voz alta, sente que alguém em Pedravale já as ouviu antes — e percebe, pelo silêncio súbito do Ancião Tobias, que esse alguém pode ser ele.',
+    giverNpcId: 'escrivao_aldo',
+    objective: { kind: 'defeat', targetId: 'orc', amount: 6 },
+    rewardXp: 320,
+    rewardGold: 220,
+    rewardItem: { templateId: 'martelo_sagrado', rarity: 'azul' },
+  },
+
+  // --- Assassina/o: espiões disfarçados em Pedravale ---------------------
+  {
+    id: 'assassin_pc1_watch',
+    title: 'Rostos Estranhos',
+    description:
+      'A Vigia Talma, chefe da guarda de Pedravale, suspeita que rostos desconhecidos andam entrando na vila fazendo perguntas que não deveriam fazer.',
+    giverNpcId: 'vigia_talma',
+    objective: { kind: 'talkTo', targetId: 'vigia_talma', amount: 1 },
+    rewardXp: 60,
+    rewardGold: 40,
+    nextQuestId: 'assassin_pc2_shadow',
+  },
+  {
+    id: 'assassin_pc2_shadow',
+    title: 'Desmascarar as Sombras',
+    description:
+      'Espiões disfarçados de mercadores e bandidos se escondem entre os moradores. Confronte-os antes que reportem o que virem sobre você.',
+    giverNpcId: 'vigia_talma',
+    objective: { kind: 'defeat', targetId: 'bandit', amount: 6 },
+    rewardXp: 220,
+    rewardGold: 140,
+    rewardItem: { templateId: 'adaga_sombria', rarity: 'azul' },
+    nextQuestId: 'assassin_pc3_mask',
+  },
+  {
+    id: 'assassin_pc3_mask',
+    title: 'O Nome que Ninguém Diz',
+    description:
+      'Um dos espiões, antes de fugir, sussurra um nome que você só conhecia de rumores: Ilva. Quando você repete o nome para o Ancião Tobias, ele troca de assunto rápido demais para ser coincidência.',
+    giverNpcId: 'vigia_talma',
+    objective: { kind: 'reachLevel', amount: 13 },
+    rewardXp: 320,
+    rewardGold: 220,
+  },
+
+  // --- Necromante: ouvir as Raízes corrompidas apavora a vila ------------
+  {
+    id: 'necromancer_pc1_fear',
+    title: 'O Medo da Vila',
+    description:
+      'Dona Ilma, moradora de Pedravale, vem até você — sem raiva, só medo. As crianças não dormem desde que ouviram você "conversando" sozinho perto do ipezal velho.',
+    giverNpcId: 'dona_ilma',
+    objective: { kind: 'talkTo', targetId: 'dona_ilma', amount: 1 },
+    rewardXp: 60,
+    rewardGold: 40,
+    nextQuestId: 'necromancer_pc2_prove',
+  },
+  {
+    id: 'necromancer_pc2_prove',
+    title: 'Provar o Controle',
+    description:
+      'Mostre a Pedravale que ouvir as Raízes corrompidas não é o mesmo que servir a elas — detenha as criaturas que rondam a vila à noite.',
+    giverNpcId: 'dona_ilma',
+    objective: { kind: 'defeat', amount: 6 },
+    rewardXp: 220,
+    rewardGold: 140,
+    rewardItem: { templateId: 'grimorio_amaldicoado', rarity: 'azul' },
+    nextQuestId: 'necromancer_pc3_trust',
+  },
+  {
+    id: 'necromancer_pc3_trust',
+    title: 'Confiança Emprestada',
+    description:
+      'A vila ainda cochicha quando você passa, mas já não fecha as portas. Só o Ancião Tobias evita seu olhar de um jeito diferente dos outros — não parece medo do que você ouve. Parece mais... culpa.',
+    giverNpcId: 'dona_ilma',
+    objective: { kind: 'reachLevel', amount: 14 },
+    rewardXp: 320,
+    rewardGold: 220,
+  },
+
+  // --- Monge: sentir o desequilíbrio da Sede antes de vê-lo --------------
+  {
+    id: 'monk_pc1_imbalance',
+    title: 'A Dor que Ninguém Vê',
+    description:
+      'O Andarilho Ossian, um monge peregrino de passagem por Pedravale, reconhece de longe uma dor que não é do corpo: é do chi, do mesmo jeito que a Sede o desequilibra por dentro.',
+    giverNpcId: 'andarilho_ossian',
+    objective: { kind: 'talkTo', targetId: 'andarilho_ossian', amount: 1 },
+    rewardXp: 60,
+    rewardGold: 40,
+    nextQuestId: 'monk_pc2_discipline',
+  },
+  {
+    id: 'monk_pc2_discipline',
+    title: 'Disciplinar o Alarme',
+    description:
+      'Se seu corpo sente a Sede antes dos olhos verem, ele é o alarme mais cedo que Pedravale tem. Aprenda a suportá-lo sem se perder na dor que carrega.',
+    giverNpcId: 'andarilho_ossian',
+    objective: { kind: 'reachLevel', amount: 13 },
+    rewardXp: 220,
+    rewardGold: 140,
+    rewardItem: { templateId: 'manoplas_combate', rarity: 'azul' },
+    nextQuestId: 'monk_pc3_alarm',
+  },
+  {
+    id: 'monk_pc3_alarm',
+    title: 'A Escalada Sentida',
+    description:
+      'Você sente a próxima escalada da Sede horas antes de qualquer sinal visível — aranhas gigantes corrompidas se juntando na borda do campo — e corre para intercep-las. Quando volta, encontra o Ancião Tobias sentado sozinho, olhando o horizonte como quem já viveu esse aviso antes.',
+    giverNpcId: 'andarilho_ossian',
+    objective: { kind: 'defeat', targetId: 'giant_spider', amount: 6 },
+    rewardXp: 320,
+    rewardGold: 220,
+  },
+];
+
+const ALL_QUESTS: QuestDefinition[] = [...CLASS_PRELUDE_QUESTS, ...QUEST_CHAIN, ...CLASS_CALLING_QUESTS];
 
 export function getQuestById(id: string): QuestDefinition | undefined {
   return ALL_QUESTS.find((q) => q.id === id);
@@ -152,4 +445,23 @@ export function getQuestById(id: string): QuestDefinition | undefined {
 /** The first quest a brand-new character of this class should be given. */
 export function firstQuestIdForClass(classId: string): string {
   return `${classId}_q0_arrival`;
+}
+
+/** First quest id of each class's personal Pedravale "calling" chain — see CLASS_CALLING_QUESTS. */
+const CALLING_FIRST_QUEST_ID: Record<string, string> = {
+  warrior: 'warrior_pc1_convoy',
+  mage: 'mage_pc1_scroll',
+  archer: 'archer_pc1_trail',
+  cleric: 'cleric_pc1_scream',
+  paladin: 'paladin_pc1_oath',
+  assassin: 'assassin_pc1_watch',
+  necromancer: 'necromancer_pc1_fear',
+  monk: 'monk_pc1_imbalance',
+};
+
+/** The first quest of a class's personal Pedravale "calling" chain — see CLASS_CALLING_QUESTS. */
+export function firstCallingQuestIdForClass(classId: string): string {
+  const id = CALLING_FIRST_QUEST_ID[classId];
+  if (!id) throw new Error(`Sem missão de chamado definida para a classe: ${classId}`);
+  return id;
 }

@@ -1,6 +1,6 @@
 import { createStarterItem } from '../data/equipment';
 import { getNpcById } from '../data/npcs';
-import { firstQuestIdForClass, getQuestById, type QuestDefinition } from '../data/quests';
+import { firstCallingQuestIdForClass, firstQuestIdForClass, getQuestById, type QuestDefinition } from '../data/quests';
 import type { Player } from '../entities/Player';
 
 /** Activates the very first quest the first time a fresh character enters the world — that class's own village prelude, not the shared main-city story. */
@@ -8,6 +8,21 @@ export function ensureQuestStarted(player: Player): void {
   if (!player.activeQuestId && player.completedQuestIds.length === 0) {
     player.activeQuestId = firstQuestIdForClass(player.classId);
   }
+}
+
+/**
+ * Once QUEST_CHAIN's current end (q6_dragon) is behind the player and no
+ * other quest is active, hands them the first quest of their own class's
+ * personal "calling" chain in Pedravale (see CLASS_CALLING_QUESTS) — unless
+ * they've already been through it. Mirrors ensureQuestStarted's idempotent,
+ * call-it-every-mount style rather than gating on a one-time event.
+ */
+export function ensureClassCallingStarted(player: Player): void {
+  if (player.activeQuestId) return;
+  if (!player.completedQuestIds.includes('q6_dragon')) return;
+  const firstId = firstCallingQuestIdForClass(player.classId);
+  if (player.completedQuestIds.includes(firstId)) return;
+  player.activeQuestId = firstId;
 }
 
 export function currentQuest(player: Player): QuestDefinition | null {

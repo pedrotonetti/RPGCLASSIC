@@ -18,7 +18,7 @@ import { buildHumanCharacter, buildMountModel, buildPlayerCharacter, getRig } fr
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
 import { buildOverworldMeshes, tileCenterWorld, type TreeCollider } from '../render/worldBuilder';
 import { OverworldCombat } from '../systems/OverworldCombat';
-import { ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
+import { ensureClassCallingStarted, ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
 import { el, goToLazy } from '../ui/dom';
@@ -157,6 +157,7 @@ export class OverworldScreen implements Screen {
 
   mount(): void {
     ensureQuestStarted(this.player);
+    ensureClassCallingStarted(this.player);
 
     this.scene.background = new THREE.Color(0x8ec9e8);
     this.scene.fog = new THREE.Fog(0x8ec9e8, 16, 46);
