@@ -13,9 +13,11 @@ import { arriveWorldPosition, getZoneById, type ZoneDefinition, type ZoneExit } 
 import { rarityTier, rarityToHex } from '../config/rarity';
 import type { EquipmentSlot, ItemRarity } from '../config/types';
 import { Player } from '../entities/Player';
-import { CharacterAnimator } from '../render/animation';
-import { buildHumanCharacter, buildMountModel, buildPlayerCharacter, getRig } from '../render/characterModel';
+import type { CharacterAnimatorLike } from '../render/animation';
+import { GltfCharacterAnimator } from '../render/gltfCharacterAnimator';
+import { buildHumanCharacter, buildMountModel } from '../render/characterModel';
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
+import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { ensureClassCallingStarted, ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
@@ -106,7 +108,7 @@ export class OverworldScreen implements Screen {
   private mountModel: THREE.Group | null = null;
   /** Whichever object currently moves through the world — the rider alone, or the mount carrying them. */
   private avatar!: THREE.Object3D;
-  private animator!: CharacterAnimator;
+  private animator!: CharacterAnimatorLike;
   private dirLight!: THREE.DirectionalLight;
   private npcSlots: NpcSlot[] = [];
   private wildlife: WildlifeSlot[] = [];
@@ -154,6 +156,8 @@ export class OverworldScreen implements Screen {
   constructor(
     private game: Game,
     private player: Player,
+    /** Pre-loaded by the caller (see the `goToLazy` sites that construct this screen) so `mount()` can stay fully synchronous — GLTF loading is async, but by the time we get here it's already resolved. */
+    private avatarData: PlayerAvatar,
   ) {
     this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
   }
@@ -192,8 +196,8 @@ export class OverworldScreen implements Screen {
     this.scene.add(this.dirLight);
     this.scene.add(this.dirLight.target);
 
-    this.playerModel = buildPlayerCharacter(this.player);
-    this.animator = new CharacterAnimator(getRig(this.playerModel));
+    this.playerModel = this.avatarData.scene;
+    this.animator = new GltfCharacterAnimator(this.avatarData.actor, this.avatarData.weaponKind);
     this.avatar = this.playerModel;
     this.scene.add(this.playerModel);
     this.avatar.position.set(this.player.mapX, 0, this.player.mapY);
@@ -481,30 +485,15 @@ export class OverworldScreen implements Screen {
     this.refreshMountSection();
   }
 
-  /** Rebuilds the visible player model in place — used right after socketing a gem so its weapon glow shows immediately instead of waiting for the next zone load. */
+  /**
+   * Refreshes the socketed-weapon-gem glow right after socketing/removing
+   * one, instead of waiting for the next zone load. Unlike the old
+   * procedural rig, the class's actual model/weapon mesh never changes here
+   * — only the small glow stone pinned to it — so there's no model to
+   * rebuild or re-parent at all.
+   */
   private rebuildPlayerVisual(): void {
-    const mounted = this.mountModel !== null;
-    const oldModel = this.playerModel;
-    const newModel = buildPlayerCharacter(this.player);
-
-    if (mounted) {
-      this.mountModel!.remove(oldModel);
-      newModel.position.copy(MOUNT_SEAT_OFFSET);
-      newModel.rotation.y = 0;
-      this.mountModel!.add(newModel);
-    } else {
-      const pos = oldModel.position.clone();
-      const rotY = oldModel.rotation.y;
-      this.scene.remove(oldModel);
-      newModel.position.copy(pos);
-      newModel.rotation.y = rotY;
-      this.scene.add(newModel);
-      this.avatar = newModel;
-    }
-    disposeGroup(oldModel);
-    this.playerModel = newModel;
-    this.animator = new CharacterAnimator(getRig(newModel));
-    this.animator.setMounted(mounted);
+    applyWeaponGem(this.avatarData, this.player);
   }
 
   // --- movement (continuous, free-roam — no grid snapping) ---------------
@@ -590,7 +579,10 @@ export class OverworldScreen implements Screen {
     this.player.mapX = arrive.x;
     this.player.mapY = arrive.z;
     saveGame(this.player);
-    this.game.goTo(new OverworldScreen(this.game, this.player));
+    // Reuses the already-loaded avatar (same class, same model) instead of
+    // reloading the GLTF — a zone change doesn't need to go through
+    // `goToLazy`/`loadPlayerAvatar` again at all.
+    this.game.goTo(new OverworldScreen(this.game, this.player, this.avatarData));
   }
 
   /** Rotates `current` toward `target` by at most `maxDelta` radians, the short way around the circle. */

@@ -7,7 +7,7 @@ import { Enemy } from '../entities/Enemy';
 import type { Player } from '../entities/Player';
 import { getItemById } from '../data/items';
 import { buildEnemyModel } from '../render/characterModel';
-import type { CharacterAnimator, ActionName } from '../render/animation';
+import type { CharacterAnimatorLike, ActionName } from '../render/animation';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from './CombatSystem';
 import { audio } from './AudioSystem';
 import { computeSkillLevelStats } from './skillMath';
@@ -98,7 +98,7 @@ export class OverworldCombat {
     private game: Game,
     private player: Player,
     private scene: THREE.Scene,
-    private animator: CharacterAnimator,
+    private animator: CharacterAnimatorLike,
     private onDefeat: () => void,
   ) {}
 
