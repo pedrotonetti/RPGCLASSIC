@@ -1,12 +1,21 @@
 import * as THREE from 'three';
 import { TILE_SIZE } from '../config/gameConfig';
 import { TileType } from '../config/tiles';
+import type { BuildingKind, BuildingPlacement } from '../systems/MapGenerator';
 
 export interface TreeCollider {
   x: number;
   z: number;
   /** Ground-plane radius covering the tree's full canopy footprint (its three offset lobes), for simple circle-vs-path camera occlusion checks. */
   radius: number;
+}
+
+/** Axis-aligned world-space footprint a building occupies — checked by both OverworldScreen.canOccupy (player movement) and its camera avoidance, the same two things TreeCollider feeds. */
+export interface BuildingCollider {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
 }
 
 export interface WorldMeshes {
@@ -17,6 +26,8 @@ export interface WorldMeshes {
   waterMaterial: THREE.MeshStandardMaterial | null;
   /** Ground-plane circles the camera should steer clear of instead of clipping through — see OverworldScreen.desiredCameraPosition. */
   treeColliders: TreeCollider[];
+  /** Building footprints the player can't walk through and the camera shouldn't clip into — see OverworldScreen.canOccupy/desiredCameraPosition. */
+  buildingColliders: BuildingCollider[];
 }
 
 export function tileCenterWorld(tx: number, ty: number, target = new THREE.Vector3()): THREE.Vector3 {
@@ -113,18 +124,158 @@ export function makeGrassTexture(baseColor: number, size = 128): THREE.CanvasTex
   return texture;
 }
 
-/** Blends `accent` into the base grass green at low weight — enough that each zone's territory reads as visually distinct without stopping looking like grass. */
-function tintedGrassColor(accentColor: number): number {
-  const base = hexToRgb(0x4c8a3f);
-  const accent = hexToRgb(accentColor);
-  const t = 0.22;
-  const r = clampByte(base[0] + (accent[0] - base[0]) * t);
-  const g = clampByte(base[1] + (accent[1] - base[1]) * t);
-  const b = clampByte(base[2] + (accent[2] - base[2]) * t);
-  return (r << 16) | (g << 8) | b;
+/** Blends `accent` into `base` at weight `t` (0 = pure base, 1 = pure accent) — the shared helper behind every zone-tinted material below. */
+function blendColor(base: number, accent: number, t: number): number {
+  const b = hexToRgb(base);
+  const a = hexToRgb(accent);
+  const r = clampByte(b[0] + (a[0] - b[0]) * t);
+  const g = clampByte(b[1] + (a[1] - b[1]) * t);
+  const bl = clampByte(b[2] + (a[2] - b[2]) * t);
+  return (r << 16) | (g << 8) | bl;
 }
 
-export function buildOverworldMeshes(tiles: TileType[][], accentColor = 0x4c8a3f): WorldMeshes {
+/** Blends `accent` into the base grass green at low weight — enough that each zone's territory reads as visually distinct without stopping looking like grass. */
+function tintedGrassColor(accentColor: number): number {
+  return blendColor(0x4c8a3f, accentColor, 0.22);
+}
+
+/**
+ * Builds every procedural structure for this zone: 2-4 low-poly house
+ * archetypes (a box body plus a pyramid/cone roof, following the exact same
+ * flat-shaded primitive style as the trees below), each instanced per
+ * kind+part exactly like the tree canopy lobes are — a city can easily have
+ * 30+ buildings, so this stays as cheap as the tree instancing already is.
+ *
+ * Also derives the world-space AABB each building occupies. Buildings stay
+ * TileType.Grass/Path underneath (MapGenerator stamps their footprint to
+ * Path so spawns/trees steer clear of it) rather than getting their own
+ * non-walkable tile type, so this collider list is what actually stops the
+ * player walking through a wall and keeps the camera from clipping into
+ * one — see OverworldScreen.canOccupy and desiredCameraPosition, which
+ * consume it the same way they already do TreeCollider.
+ */
+function buildBuildingMeshes(buildings: BuildingPlacement[], accentColor: number): { group: THREE.Group; colliders: BuildingCollider[] } {
+  const group = new THREE.Group();
+  const colliders: BuildingCollider[] = [];
+  for (const b of buildings) {
+    colliders.push({
+      minX: b.x * TILE_SIZE,
+      maxX: (b.x + b.w) * TILE_SIZE,
+      minZ: b.y * TILE_SIZE,
+      maxZ: (b.y + b.h) * TILE_SIZE,
+    });
+  }
+
+  const byKind: Record<BuildingKind, BuildingPlacement[]> = { hut: [], house: [], stall: [], tower: [] };
+  for (const b of buildings) byKind[b.kind].push(b);
+
+  const m = new THREE.Matrix4();
+  const roof4Rot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4);
+  const unitScale = new THREE.Vector3(1, 1, 1);
+  const worldCenter = (b: BuildingPlacement): { x: number; z: number } => ({
+    x: (b.x + b.w / 2) * TILE_SIZE,
+    z: (b.y + b.h / 2) * TILE_SIZE,
+  });
+
+  const wallMat = new THREE.MeshStandardMaterial({ color: blendColor(0xd8c9a3, accentColor, 0.16), roughness: 0.9 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: blendColor(0x8a5236, accentColor, 0.4), roughness: 0.8, flatShading: true });
+
+  // --- hut: a small single-room home, 2x2 tile footprint ----------------
+  if (byKind.hut.length > 0) {
+    const bodyGeo = new THREE.BoxGeometry(3.0, 1.5, 3.0);
+    const roofGeo = new THREE.ConeGeometry(2.83, 1.3, 4); // 4 radial segments + the 45° rotation below = a square pyramid roof
+    const bodyInst = new THREE.InstancedMesh(bodyGeo, wallMat, byKind.hut.length);
+    const roofInst = new THREE.InstancedMesh(roofGeo, roofMat, byKind.hut.length);
+    bodyInst.castShadow = true;
+    bodyInst.receiveShadow = true;
+    roofInst.castShadow = true;
+    byKind.hut.forEach((b, i) => {
+      const { x, z } = worldCenter(b);
+      m.makeTranslation(x, 0.75, z);
+      bodyInst.setMatrixAt(i, m);
+      m.compose(new THREE.Vector3(x, 1.5 + 0.65, z), roof4Rot, unitScale);
+      roofInst.setMatrixAt(i, m);
+    });
+    group.add(bodyInst, roofInst);
+  }
+
+  // --- house: a bigger home with a chimney, 3x3 tile footprint ----------
+  if (byKind.house.length > 0) {
+    const bodyGeo = new THREE.BoxGeometry(4.6, 2.0, 4.6);
+    const roofGeo = new THREE.ConeGeometry(4.24, 1.8, 4);
+    const chimneyGeo = new THREE.BoxGeometry(0.35, 0.9, 0.35);
+    const chimneyMat = new THREE.MeshStandardMaterial({ color: 0x746a5e, roughness: 0.9 });
+    const bodyInst = new THREE.InstancedMesh(bodyGeo, wallMat, byKind.house.length);
+    const roofInst = new THREE.InstancedMesh(roofGeo, roofMat, byKind.house.length);
+    const chimneyInst = new THREE.InstancedMesh(chimneyGeo, chimneyMat, byKind.house.length);
+    bodyInst.castShadow = true;
+    bodyInst.receiveShadow = true;
+    roofInst.castShadow = true;
+    chimneyInst.castShadow = true;
+    byKind.house.forEach((b, i) => {
+      const { x, z } = worldCenter(b);
+      m.makeTranslation(x, 1.0, z);
+      bodyInst.setMatrixAt(i, m);
+      m.compose(new THREE.Vector3(x, 2.0 + 0.9, z), roof4Rot, unitScale);
+      roofInst.setMatrixAt(i, m);
+      // Offset toward one corner (never enough to clear the footprint), so
+      // it reads as a chimney rather than a mast sticking out of the ridge.
+      m.makeTranslation(x + 1.5, 2.0 + 0.45, z + 1.5);
+      chimneyInst.setMatrixAt(i, m);
+    });
+    group.add(bodyInst, roofInst, chimneyInst);
+  }
+
+  // --- stall: an open-air market stand, 1x1 tile footprint --------------
+  if (byKind.stall.length > 0) {
+    const bodyGeo = new THREE.BoxGeometry(1.5, 0.8, 1.5);
+    const awningGeo = new THREE.BoxGeometry(1.8, 0.12, 1.5);
+    const stallBodyMat = new THREE.MeshStandardMaterial({ color: blendColor(0x8a6a45, accentColor, 0.15), roughness: 0.9 });
+    const stallAwningMat = new THREE.MeshStandardMaterial({ color: blendColor(0xffffff, accentColor, 0.6), roughness: 0.6, flatShading: true });
+    const bodyInst = new THREE.InstancedMesh(bodyGeo, stallBodyMat, byKind.stall.length);
+    const awningInst = new THREE.InstancedMesh(awningGeo, stallAwningMat, byKind.stall.length);
+    bodyInst.castShadow = true;
+    bodyInst.receiveShadow = true;
+    awningInst.castShadow = true;
+    byKind.stall.forEach((b, i) => {
+      const { x, z } = worldCenter(b);
+      m.makeTranslation(x, 0.4, z);
+      bodyInst.setMatrixAt(i, m);
+      m.makeTranslation(x, 0.86, z);
+      awningInst.setMatrixAt(i, m);
+    });
+    group.add(bodyInst, awningInst);
+  }
+
+  // --- tower: a round landmark structure, 2x2 tile footprint ------------
+  // Deliberately a different silhouette (round + tall, not boxy) from the
+  // huts/houses above — this is the one every secondary village gets as its
+  // single landmark (e.g. the mage village's "Torre dos Arcanos"), and the
+  // main city gets a few scattered along its streets too.
+  if (byKind.tower.length > 0) {
+    const bodyGeo = new THREE.CylinderGeometry(1.15, 1.35, 3.6, 10);
+    const roofGeo = new THREE.ConeGeometry(1.7, 2.2, 10);
+    const towerWallMat = new THREE.MeshStandardMaterial({ color: blendColor(0xb9b3a6, accentColor, 0.22), roughness: 0.85 });
+    const towerRoofMat = new THREE.MeshStandardMaterial({ color: blendColor(0x5a3320, accentColor, 0.55), roughness: 0.75, flatShading: true });
+    const bodyInst = new THREE.InstancedMesh(bodyGeo, towerWallMat, byKind.tower.length);
+    const roofInst = new THREE.InstancedMesh(roofGeo, towerRoofMat, byKind.tower.length);
+    bodyInst.castShadow = true;
+    bodyInst.receiveShadow = true;
+    roofInst.castShadow = true;
+    byKind.tower.forEach((b, i) => {
+      const { x, z } = worldCenter(b);
+      m.makeTranslation(x, 1.8, z);
+      bodyInst.setMatrixAt(i, m);
+      m.makeTranslation(x, 3.6 + 1.1, z);
+      roofInst.setMatrixAt(i, m);
+    });
+    group.add(bodyInst, roofInst);
+  }
+
+  return { group, colliders };
+}
+
+export function buildOverworldMeshes(tiles: TileType[][], accentColor = 0x4c8a3f, buildings: BuildingPlacement[] = []): WorldMeshes {
   const mapHeight = tiles.length;
   const mapWidth = tiles[0].length;
   const widthWorld = mapWidth * TILE_SIZE;
@@ -266,5 +417,8 @@ export function buildOverworldMeshes(tiles: TileType[][], accentColor = 0x4c8a3f
     group.add(trunkInst, canopyMain, canopySideA, canopySideB);
   }
 
-  return { group, widthWorld, depthWorld, waterMaterial, treeColliders };
+  const { group: buildingsGroup, colliders: buildingColliders } = buildBuildingMeshes(buildings, accentColor);
+  group.add(buildingsGroup);
+
+  return { group, widthWorld, depthWorld, waterMaterial, treeColliders, buildingColliders };
 }
