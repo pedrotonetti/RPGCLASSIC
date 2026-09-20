@@ -113,6 +113,10 @@ export class OverworldScreen implements Screen {
   private time = 0;
 
   private isMoving = false;
+  /** Whether input was active last frame — used only to detect the idle→active edge that re-snapshots movementRefYaw (see computeInputAxis). */
+  private wasInputActive = false;
+  /** Camera yaw snapshotted at the start of the current continuous input gesture — see computeInputAxis for why this can't just re-read avatar.rotation.y every frame. */
+  private movementRefYaw = 0;
 
   private heldKeys = new Set<string>();
   /** Normalized {x,z} from the on-screen joystick, magnitude <=1; null while untouched. */
@@ -317,8 +321,8 @@ export class OverworldScreen implements Screen {
     this.heldKeys.delete(e.key.toLowerCase());
   }
 
-  /** Combines every held keyboard direction into one normalized vector (diagonals blend naturally); the on-screen joystick is a free 2D drag, so it's used as-is (unclamped magnitude gives analog-speed movement) whenever no keyboard key is held. */
-  private computeInputAxis(): { x: number; z: number } {
+  /** Combines every held keyboard direction into one normalized vector (diagonals blend naturally); the on-screen joystick is a free 2D drag, so it's used as-is (unclamped magnitude gives analog-speed movement) whenever no keyboard key is held. Raw screen-relative: x = right(+1)/left(-1), z = back(+1)/forward(-1) — not a world-space direction yet, see computeInputAxis. */
+  private computeLocalInputAxis(): { x: number; z: number } {
     const k = this.heldKeys;
     const active: Dir[] = [];
     if (k.has('arrowup') || k.has('w')) active.push('up');
@@ -338,6 +342,55 @@ export class OverworldScreen implements Screen {
       return axis;
     }
     return this.joystickAxis ?? axis;
+  }
+
+  /**
+   * Converts screen-relative input ("up" = away from camera, "right" =
+   * screen-right) into a world-space movement direction, relative to the
+   * camera's facing — like a real third-person/PlayStation-style joystick,
+   * where the stick direction always maps to what you see on screen no
+   * matter which way the character is currently facing.
+   *
+   * Before this, the raw {x, z} from DIR_AXIS was used directly as a
+   * WORLD-space vector. That happened to look right only for whichever
+   * facing DIR_AXIS.right's sign was tuned against, because the chase
+   * camera (desiredCameraPosition) re-derives its own forward from
+   * avatar.rotation.y every frame. At the default yaw (0, facing +Z), the
+   * camera's real right-hand side works out to world -X (the same
+   * right-hand rotation math desiredCameraPosition uses), but
+   * DIR_AXIS.right pointed at world +X — the opposite side. That's the
+   * "axis feels inverted" bug: a direction could move the character toward
+   * what looked like the wrong side of the screen depending on whatever
+   * direction it last happened to be facing.
+   *
+   * The reference yaw used for this conversion is a SNAPSHOT
+   * (movementRefYaw), taken once when input goes from idle to active, not
+   * avatar.rotation.y read fresh every frame. Reading it fresh would feed
+   * the avatar's own turn-to-face-target rotation back into the very
+   * vector deciding that target: for pure "right", the resulting target is
+   * always exactly 90° behind whatever the current yaw already is (proven
+   * out — there's no fixed point), so the avatar would spin in place for
+   * as long as the key was held instead of turning once and walking.
+   * Freezing the reference for the gesture's duration removes the
+   * feedback loop; it only updates again once input drops to zero and a
+   * new gesture begins.
+   */
+  private computeInputAxis(): { x: number; z: number } {
+    const local = this.computeLocalInputAxis();
+    const active = local.x !== 0 || local.z !== 0;
+    if (active && !this.wasInputActive) this.movementRefYaw = this.avatar.rotation.y;
+    this.wasInputActive = active;
+    if (!active) return local;
+
+    const yaw = this.movementRefYaw;
+    const forward = { x: Math.sin(yaw), z: Math.cos(yaw) }; // camera-forward at gesture start (see desiredCameraPosition)
+    const right = { x: -Math.cos(yaw), z: Math.sin(yaw) }; // camera-right at gesture start
+    const inputForward = -local.z;
+    const inputRight = local.x;
+    return {
+      x: forward.x * inputForward + right.x * inputRight,
+      z: forward.z * inputForward + right.z * inputRight,
+    };
   }
 
   // --- mounts --------------------------------------------------------
@@ -991,6 +1044,81 @@ export class OverworldScreen implements Screen {
 
   // --- camera --------------------------------------------------------
 
+  /**
+   * Pushes a candidate XZ point directly away from any tree canopy it
+   * overlaps, and re-clamps it to the avatar's normal orbit distance
+   * (CAM_DISTANCE) every pass — not just once at the end. Doing the clamp
+   * only after de-penetration was itself a bug: shrinking a resolved point
+   * straight back toward the avatar can walk it right back into the same
+   * tree it was just pushed clear of (worse the more clearance the push
+   * needed), so both constraints have to be satisfied together, iterating
+   * until neither moves anything. Returns whether a violation still
+   * remained after all passes (a pathologically tight cluster with no spot
+   * inside CAM_DISTANCE that's clear of everything) so the caller can fall
+   * back to lifting the camera above canopy height instead.
+   *
+   * Used on BOTH the freshly-computed ideal camera target AND the actual
+   * rendered camera.position after it lerps toward that target — the lerp
+   * itself was a gap: while walking continuously through a dense area, the
+   * ideal target keeps shifting every frame, and the smoothed position
+   * chasing it can visibly lag into a tree's canopy even though each
+   * individual target was already clear.
+   */
+  private resolveCameraXZ(x: number, z: number): { x: number; z: number; violated: boolean } {
+    // A generous buffer, not just "clear of the canopy's own radius": the
+    // camera isn't a point, it's a wide near-plane frustum, so a tree can
+    // still clip into the edge of the frame even once its center is barely
+    // outside the collision circle.
+    const TREE_CAM_BUFFER = 1.1;
+    const px = this.avatar.position.x;
+    const pz = this.avatar.position.z;
+    let violated = false;
+    for (let pass = 0; pass < 8; pass++) {
+      violated = false;
+      for (const tree of this.treeColliders) {
+        const ox = x - tree.x;
+        const oz = z - tree.z;
+        const dist = Math.hypot(ox, oz);
+        const minDist = tree.radius + TREE_CAM_BUFFER;
+        if (dist >= minDist) continue;
+        violated = true;
+        const pushDist = minDist - dist;
+        if (dist > 0.0001) {
+          x += (ox / dist) * pushDist;
+          z += (oz / dist) * pushDist;
+        } else {
+          // Degenerate case (candidate landed exactly on the tree's center)
+          // — push back toward the avatar instead of dividing by zero.
+          const toAvatar = Math.hypot(px - tree.x, pz - tree.z) || 1;
+          x += ((px - tree.x) / toAvatar) * minDist;
+          z += ((pz - tree.z) / toAvatar) * minDist;
+        }
+      }
+      const distFromAvatar = Math.hypot(x - px, z - pz);
+      if (distFromAvatar > CAM_DISTANCE) {
+        const t = CAM_DISTANCE / distFromAvatar;
+        x = px + (x - px) * t;
+        z = pz + (z - pz) * t;
+      }
+      if (!violated) break;
+    }
+    return { x, z, violated };
+  }
+
+  /**
+   * Places the camera behind the avatar, then steers it clear of any tree
+   * canopy it would otherwise sit inside — nothing here checked for
+   * obstacles at all originally, so standing next to a tree could put the
+   * camera right inside its foliage: at that range a single flat-shaded
+   * facet fills most of the frame as a big dark wedge, easy to mistake for
+   * some giant creature's leg (or a stray dark blob floating at screen edge
+   * when only part of a lobe pokes into the near plane).
+   *
+   * This checks against each tree's actual ground footprint (a circle)
+   * rather than raycasting the low-poly mesh itself — a single ray can slip
+   * past a facet that the camera's own body (and its wide near-plane
+   * frustum) would still clip straight through.
+   */
   private desiredCameraPosition(target = new THREE.Vector3()): THREE.Vector3 {
     const yaw = this.avatar.rotation.y;
     const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
@@ -999,66 +1127,17 @@ export class OverworldScreen implements Screen {
       .addScaledVector(forward, -CAM_DISTANCE)
       .add(new THREE.Vector3(0, CAM_HEIGHT, 0));
 
-    // Pull the camera in front of any tree between it and the player instead
-    // of letting it clip through its canopy — nothing here checked for
-    // obstacles at all before, so standing next to a tree could put the
-    // camera right inside its foliage: at that range a single flat-shaded
-    // facet fills most of the frame as a big dark wedge, easy to mistake for
-    // some giant creature's leg. Checked against each tree's actual ground
-    // footprint (a circle) rather than raycasting the low-poly mesh itself —
-    // a single ray can slip past a facet that the camera's own body (and its
-    // wide near-plane frustum) would still clip straight through.
-    let closestSafeDist = Math.hypot(target.x - this.avatar.position.x, target.z - this.avatar.position.z);
-    const px = this.avatar.position.x;
-    const pz = this.avatar.position.z;
-    const dx = target.x - px;
-    const dz = target.z - pz;
-    const segLenSq = dx * dx + dz * dz;
-    if (segLenSq > 0.0001) {
-      for (const tree of this.treeColliders) {
-        const fx = px - tree.x;
-        const fz = pz - tree.z;
-        const a = segLenSq;
-        const b = 2 * (fx * dx + fz * dz);
-        const c = fx * fx + fz * fz - tree.radius * tree.radius;
-        const discriminant = b * b - 4 * a * c;
-        if (discriminant < 0) continue;
-        const sqrtDisc = Math.sqrt(discriminant);
-        const tEnter = (-b - sqrtDisc) / (2 * a);
-        if (tEnter <= 0 || tEnter >= 1) continue; // circle doesn't block this segment, or player is already inside it
-        const enterDist = tEnter * Math.sqrt(segLenSq);
-        closestSafeDist = Math.min(closestSafeDist, Math.max(enterDist - 0.6, 0.9));
-      }
-    }
-    const fullDist = Math.hypot(target.x - this.avatar.position.x, target.z - this.avatar.position.z);
-    if (closestSafeDist < fullDist - 0.001) {
-      const t = closestSafeDist / fullDist;
-      target.x = px + dx * t;
-      target.z = pz + dz * t;
-    }
+    const resolved = this.resolveCameraXZ(target.x, target.z);
+    target.x = resolved.x;
+    target.z = resolved.z;
 
-    // A dense cluster (e.g. right at a forest's edge) can have a tree that
-    // never sat exactly on the original player->camera segment but ends up
-    // close to the pulled-in point anyway — reduce the distance a few more
-    // times, this time checking the actual candidate point rather than the
-    // line, since one straight segment can't account for that.
-    for (let pass = 0; pass < 3; pass++) {
-      let violated = false;
-      for (const tree of this.treeColliders) {
-        const ox = target.x - tree.x;
-        const oz = target.z - tree.z;
-        const dist = Math.hypot(ox, oz);
-        const minDist = tree.radius + 0.3;
-        if (dist < minDist) {
-          const t = Math.hypot(target.x - px, target.z - pz);
-          const shrink = Math.max(t - 0.4, 0.9) / Math.max(t, 0.001);
-          target.x = px + (target.x - px) * shrink;
-          target.z = pz + (target.z - pz) * shrink;
-          violated = true;
-        }
-      }
-      if (!violated) break;
-    }
+    // Pathologically dense cluster (no spot within CAM_DISTANCE clears
+    // every nearby tree) — lift the camera above canopy height instead,
+    // which clears the clip regardless of how tightly packed the trees are
+    // horizontally. Tree canopies top out around 1.9 world units (see
+    // worldBuilder's lobe placement), well under this.
+    if (resolved.violated) target.y = Math.max(target.y, this.avatar.position.y + 3.6);
+
     return target;
   }
 
@@ -1072,6 +1151,18 @@ export class OverworldScreen implements Screen {
     const desired = this.desiredCameraPosition();
     const followLerp = 1 - Math.exp(-dt * 6);
     this.camera.position.lerp(desired, followLerp);
+
+    // The lerp above eases toward `desired`, which is only guaranteed clear
+    // of trees AT THE MOMENT it was computed — while walking continuously
+    // through a dense area that target shifts every frame, and the
+    // easing camera can visibly lag into a canopy it hasn't caught up past
+    // yet. Re-running the same push-away resolution directly on the actual
+    // rendered position (not just the target it's chasing) keeps every
+    // frame that's actually drawn clear, regardless of how it got there.
+    const resolvedCam = this.resolveCameraXZ(this.camera.position.x, this.camera.position.z);
+    this.camera.position.x = resolvedCam.x;
+    this.camera.position.z = resolvedCam.z;
+    if (resolvedCam.violated) this.camera.position.y = Math.max(this.camera.position.y, this.avatar.position.y + 3.6);
 
     const desiredLookAt = new THREE.Vector3().copy(this.avatar.position).add(new THREE.Vector3(0, LOOK_HEIGHT, 0));
     this.camLookAt.lerp(desiredLookAt, followLerp);
