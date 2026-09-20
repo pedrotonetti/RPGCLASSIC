@@ -21,11 +21,7 @@ import { OverworldCombat } from '../systems/OverworldCombat';
 import { ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
-import { el } from '../ui/dom';
-import { InventoryScreen } from './InventoryScreen';
-import { MainMenuScreen } from './MainMenuScreen';
-import { RankingScreen } from './RankingScreen';
-import { SkillTreeScreen } from './SkillTreeScreen';
+import { el, goToLazy } from '../ui/dom';
 
 const SLOT_LABELS: Record<EquipmentSlot, string> = { arma: 'Arma', armadura: 'Armadura', acessorio: 'Acessório' };
 
@@ -1061,7 +1057,10 @@ export class OverworldScreen implements Screen {
       text: 'Árvore de Habilidades',
       onClick: () => {
         saveGame(this.player);
-        this.game.goTo(new SkillTreeScreen(this.game, this.player));
+        goToLazy(this.game, async () => {
+          const { SkillTreeScreen } = await import('./SkillTreeScreen');
+          return new SkillTreeScreen(this.game, this.player);
+        });
       },
     });
     const inventoryBtn = el('div', {
@@ -1069,7 +1068,10 @@ export class OverworldScreen implements Screen {
       text: 'Inventário',
       onClick: () => {
         saveGame(this.player);
-        this.game.goTo(new InventoryScreen(this.game, this.player));
+        goToLazy(this.game, async () => {
+          const { InventoryScreen } = await import('./InventoryScreen');
+          return new InventoryScreen(this.game, this.player);
+        });
       },
     });
     const rankingBtn = el('div', {
@@ -1077,7 +1079,10 @@ export class OverworldScreen implements Screen {
       text: 'Ranking (estimado)',
       onClick: () => {
         saveGame(this.player);
-        this.game.goTo(new RankingScreen(this.game, this.player));
+        goToLazy(this.game, async () => {
+          const { RankingScreen } = await import('./RankingScreen');
+          return new RankingScreen(this.game, this.player);
+        });
       },
     });
     const exitBtn = el('div', {
@@ -1085,7 +1090,10 @@ export class OverworldScreen implements Screen {
       text: 'Salvar e Sair ao Menu',
       onClick: () => {
         saveGame(this.player);
-        this.game.goTo(new MainMenuScreen(this.game));
+        goToLazy(this.game, async () => {
+          const { MainMenuScreen } = await import('./MainMenuScreen');
+          return new MainMenuScreen(this.game);
+        });
       },
     });
 

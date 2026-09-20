@@ -6,8 +6,7 @@ import { buildPlayerCharacter } from '../render/characterModel';
 import { Player } from '../entities/Player';
 import { computeSkillLevelStats, ultimateLevelForCharacter, ULTIMATE_MAX_LEVEL } from '../systems/skillMath';
 import { saveGame } from '../systems/SaveSystem';
-import { el } from '../ui/dom';
-import { OverworldScreen } from './OverworldScreen';
+import { el, goToLazy } from '../ui/dom';
 
 export class SkillTreeScreen implements Screen {
   scene = new THREE.Scene();
@@ -62,7 +61,10 @@ export class SkillTreeScreen implements Screen {
       text: '< Voltar à Aventura',
       onClick: () => {
         saveGame(this.player);
-        this.game.goTo(new OverworldScreen(this.game, this.player));
+        goToLazy(this.game, async () => {
+          const { OverworldScreen } = await import('./OverworldScreen');
+          return new OverworldScreen(this.game, this.player);
+        });
       },
     });
 

@@ -4,8 +4,7 @@ import type { Screen } from '../engine/Screen';
 import { Player } from '../entities/Player';
 import { estimatePlayerRank, getTopRivals, rankPercentile, TOTAL_SIMULATED_PLAYERS } from '../data/leaderboard';
 import { computePowerScore } from '../systems/PowerScore';
-import { el } from '../ui/dom';
-import { OverworldScreen } from './OverworldScreen';
+import { el, goToLazy } from '../ui/dom';
 
 export class RankingScreen implements Screen {
   scene = new THREE.Scene();
@@ -59,7 +58,11 @@ export class RankingScreen implements Screen {
     const backBtn = el('div', {
       className: 'btn primary',
       text: '< Voltar à Aventura',
-      onClick: () => this.game.goTo(new OverworldScreen(this.game, this.player)),
+      onClick: () =>
+        goToLazy(this.game, async () => {
+          const { OverworldScreen } = await import('./OverworldScreen');
+          return new OverworldScreen(this.game, this.player);
+        }),
     });
 
     const screen = el('div', { className: 'ranking-screen screen' }, [
