@@ -5,6 +5,17 @@ import type { EnemyDefinition } from '../config/types';
  * Ordered roughly from weakest to strongest. `EncounterSystem` picks among
  * the enemies whose intended level is close to the player's level. Each
  * enemy acts on its own real-time timer (`actionInterval`, in seconds).
+ *
+ * `level` is this enemy's own difficulty tier (see the field's doc comment
+ * in `config/types.ts`) — assigned here in step with this list's existing
+ * weakest-to-strongest order and each entry's hand-tuned stats/xpReward/
+ * goldReward. It climbs roughly 1-11 across the 11 regular enemies (matching
+ * `EncounterSystem`'s own array-index-based "intended level" for this same
+ * ordering), then jumps well past that curve for the one boss: q6_dragon
+ * (see `data/quests.ts`) gates the fight behind reaching character level 10
+ * and pays out ~2.5x any regular enemy's xp/gold and a guaranteed mythic
+ * reward, so `young_dragon` is tuned here as a levels-above-the-pack spike
+ * rather than "one more step" in the regular sequence.
  */
 export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   {
@@ -16,6 +27,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     goldReward: 5,
     actionInterval: 3.2,
     skills: [],
+    level: 1,
   },
   {
     id: 'bat',
@@ -26,6 +38,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     goldReward: 6,
     actionInterval: 2.2,
     skills: [],
+    level: 2,
   },
   {
     id: 'goblin',
@@ -38,6 +51,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [
       makeSkill({ id: 'goblin_slash', name: 'Golpe Sujo', description: 'Um ataque físico rápido e traiçoeiro.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 6, baseCost: 0, basePower: 1.4 }),
     ],
+    level: 3,
   },
   {
     id: 'bandit',
@@ -50,6 +64,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [
       makeSkill({ id: 'bandit_ambush', name: 'Emboscada', description: 'Ataca de surpresa por trás.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.6 }),
     ],
+    level: 4,
   },
   {
     id: 'dark_wolf',
@@ -62,6 +77,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [
       makeSkill({ id: 'wolf_bite', name: 'Mordida Feroz', description: 'Uma mordida selvagem com dano elevado.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 6, baseCost: 0, basePower: 1.6 }),
     ],
+    level: 5,
   },
   {
     id: 'skeleton',
@@ -74,6 +90,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [
       makeSkill({ id: 'skeleton_bone_throw', name: 'Arremesso de Ossos', description: 'Arremessa fragmentos ósseos afiados.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.5 }),
     ],
+    level: 6,
   },
   {
     id: 'giant_spider',
@@ -86,6 +103,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [
       makeSkill({ id: 'spider_venom', name: 'Picada Venenosa', description: 'Injeta veneno corrosivo no alvo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.7 }),
     ],
+    level: 7,
   },
   {
     id: 'orc',
@@ -98,6 +116,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [
       makeSkill({ id: 'orc_cleave', name: 'Golpe Cortante', description: 'Um golpe pesado de machado.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 8, baseCost: 0, basePower: 1.8 }),
     ],
+    level: 8,
   },
   {
     id: 'fire_elemental',
@@ -110,6 +129,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [
       makeSkill({ id: 'elemental_flame_burst', name: 'Explosão Flamejante', description: 'Libera uma onda de fogo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.9 }),
     ],
+    level: 9,
   },
   {
     id: 'troll',
@@ -122,6 +142,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [
       makeSkill({ id: 'troll_smash', name: 'Esmagar', description: 'Um golpe brutal com os punhos.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 9, baseCost: 0, basePower: 2.0 }),
     ],
+    level: 10,
   },
   {
     id: 'stone_golem',
@@ -134,6 +155,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [
       makeSkill({ id: 'golem_slam', name: 'Impacto Sísmico', description: 'Bate no chão com força devastadora.', kind: 'physical', target: 'allEnemies', unlockLevel: 1, baseCooldown: 12, baseCost: 0, basePower: 1.6 }),
     ],
+    level: 11,
   },
   {
     id: 'young_dragon',
@@ -148,6 +170,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
       makeSkill({ id: 'dragon_claw', name: 'Garras Afiadas', description: 'Um ataque veloz com as garras.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 6, baseCost: 0, basePower: 1.8 }),
       makeSkill({ id: 'dragon_breath', name: 'Sopro Flamejante', description: 'Um sopro de fogo que atinge tudo à frente.', kind: 'magical', target: 'allEnemies', unlockLevel: 1, baseCooldown: 11, baseCost: 0, basePower: 1.9 }),
     ],
+    level: 18,
   },
 ];
 

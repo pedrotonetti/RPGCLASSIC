@@ -50,9 +50,14 @@ export function computeEquipmentBonus(instance: EquipmentInstance): Partial<Stat
   return bonus;
 }
 
-function pickWeightedRarity(luckBias = 0): ItemRarity {
-  // Base weights strongly favor common drops; luck nudges toward rarer tiers.
-  const weights = [50, 27, 14, 7, 2].map((w, i) => Math.max(1, w + luckBias * i));
+function pickWeightedRarity(bias = 0): ItemRarity {
+  // Base weights strongly favor common drops; `bias` (player luck plus, for
+  // real drops, the defeated enemy's own tier — see generateLoot) nudges
+  // toward rarer tiers. The common weight itself (index 0, multiplied by
+  // bias*0) is never touched by this bias, so even a very high bias — a
+  // tough, high-level kill with a lucky character — still leaves common a
+  // live outcome; it just stops being the overwhelming favorite.
+  const weights = [50, 27, 14, 7, 2].map((w, i) => Math.max(1, w + bias * i));
   const total = weights.reduce((a, b) => a + b, 0);
   let roll = Math.random() * total;
   for (let i = 0; i < weights.length; i++) {
@@ -68,11 +73,33 @@ function nextUid(): string {
   return `item_${Date.now().toString(36)}_${lootCounter}`;
 }
 
-/** Rolls a random equipment drop appropriate for the given character level. */
-export function generateLoot(characterLevel: number, luckBias = 0): EquipmentInstance {
+// generateLoot anchors the dropped item's level mostly to the DEFEATED
+// ENEMY's own difficulty tier (EnemyDefinition.level), not the player's
+// current level — a tough kill should drop something worth using regardless
+// of whether the player is under-leveled for it, and a trivial kill
+// shouldn't get to coast on the player's own level being high. The
+// player's level still contributes a smaller nudge on top, so a
+// high-level character stomping a low-tier enemy isn't handed pure junk
+// either, and a low-level character punching above their weight is
+// rewarded more than one who isn't.
+const ENEMY_LEVEL_WEIGHT = 0.7;
+const PLAYER_LEVEL_WEIGHT = 0.3;
+/**
+ * How much each point of the defeated enemy's level nudges rarity odds
+ * upward, on top of the player's luck stat (see pickWeightedRarity). A
+ * level-1 slime barely moves the needle; the level-18 boss shifts the table
+ * hard toward rare-and-up — "harder enemy = better loot" applies to rarity,
+ * not just item level.
+ */
+const ENEMY_TIER_RARITY_BIAS_PER_LEVEL = 0.6;
+
+/** Rolls a random equipment drop for defeating the given enemy (by its own difficulty tier), with the player's own level and luck as secondary factors. */
+export function generateLoot(enemyLevel: number, characterLevel: number, luckBias = 0): EquipmentInstance {
   const template = EQUIPMENT_TEMPLATES[Math.floor(Math.random() * EQUIPMENT_TEMPLATES.length)];
-  const rarity = pickWeightedRarity(luckBias);
-  const itemLevel = Math.max(1, characterLevel + Math.round(Math.random() * 2 - 1));
+  const rarityBias = luckBias + enemyLevel * ENEMY_TIER_RARITY_BIAS_PER_LEVEL;
+  const rarity = pickWeightedRarity(rarityBias);
+  const anchor = enemyLevel * ENEMY_LEVEL_WEIGHT + characterLevel * PLAYER_LEVEL_WEIGHT;
+  const itemLevel = Math.max(1, Math.round(anchor + (Math.random() * 2 - 1)));
   return { uid: nextUid(), templateId: template.id, rarity, itemLevel };
 }
 

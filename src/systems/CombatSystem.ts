@@ -65,7 +65,34 @@ const FLEE_COOLDOWN = 4;
 export const ITEM_COOLDOWN = 3;
 const BUFF_BASE_DURATION = 8;
 const BUFF_DURATION_PER_LEVEL = 0.5;
-const LOOT_DROP_CHANCE = 0.4;
+// Loot/material drop chance per defeated enemy scales gently with that
+// enemy's own difficulty tier (EnemyDefinition.level): a trivial low-tier
+// enemy still mostly drops nothing at all, so grinding weak monsters isn't
+// a slot machine, while a genuinely tough kill is noticeably more likely to
+// drop *something* — on top of that something already being higher-level
+// and rarer via generateLoot's own enemy-level-driven roll. Boss-tier
+// enemies (isBoss) get a large floor instead of the linear scale, so a
+// one-off major fight (there's exactly one boss in this build, gating the
+// final quest) doesn't feel like it could all be for nothing.
+const LOOT_DROP_CHANCE_BASE = 0.32;
+const LOOT_DROP_CHANCE_PER_LEVEL = 0.018;
+const LOOT_DROP_CHANCE_MAX = 0.85;
+const BOSS_LOOT_DROP_CHANCE = 0.95;
+// Materials are minor crafting fodder (see data/materials.ts), so their own
+// base chance stays as tuned there — only the enemy-tier nudge lives here,
+// smaller than the equipment scale since materials are meant to keep
+// trickling in steadily rather than tracking difficulty as tightly.
+const MATERIAL_DROP_CHANCE_PER_LEVEL = 0.01;
+const MATERIAL_DROP_CHANCE_MAX = 0.75;
+
+function lootDropChance(enemyLevel: number, isBoss: boolean | undefined): number {
+  if (isBoss) return BOSS_LOOT_DROP_CHANCE;
+  return Math.min(LOOT_DROP_CHANCE_MAX, LOOT_DROP_CHANCE_BASE + enemyLevel * LOOT_DROP_CHANCE_PER_LEVEL);
+}
+
+function materialDropChance(enemyLevel: number): number {
+  return Math.min(MATERIAL_DROP_CHANCE_MAX, MATERIAL_DROP_CHANCE + enemyLevel * MATERIAL_DROP_CHANCE_PER_LEVEL);
+}
 // Enemies can now approach and gang up on the player in the open world
 // instead of appearing in a controlled, fixed-size battle group, so their
 // per-hit damage is toned down to compensate for that added exposure.
@@ -438,11 +465,12 @@ export class CombatEngine {
     const loot: EquipmentInstance[] = [];
     const materialsGained: Record<string, number> = {};
     for (let i = 0; i < this.enemies.length; i++) {
-      if (Math.random() < LOOT_DROP_CHANCE) {
-        const item = generateLoot(this.player.level, this.player.stats.luck);
+      const enemy = this.enemies[i];
+      if (Math.random() < lootDropChance(enemy.def.level, enemy.def.isBoss)) {
+        const item = generateLoot(enemy.def.level, this.player.level, this.player.stats.luck);
         if (this.player.addLoot(item)) loot.push(item);
       }
-      if (Math.random() < MATERIAL_DROP_CHANCE) {
+      if (Math.random() < materialDropChance(enemy.def.level)) {
         const material = MATERIAL_DEFINITIONS[Math.floor(Math.random() * MATERIAL_DEFINITIONS.length)];
         materialsGained[material.id] = (materialsGained[material.id] ?? 0) + 1;
         this.player.addItem(material.id, 1);
