@@ -75,7 +75,7 @@ de ambiente necessárias.
   exibido como um preenchimento escuro sobre o ícone.
 - **ESC** — abre o menu de pausa (Inventário, Árvore de Habilidades, Ranking
   Global, Salvar e Sair).
-- Em dispositivos de toque, um D-pad aparece no canto inferior esquerdo.
+- Em dispositivos de toque, um joystick virtual aparece no canto inferior esquerdo — arraste o polegar para qualquer direção.
 - O progresso é salvo automaticamente (`localStorage`) a cada passo, batalha e
   ao pausar.
 

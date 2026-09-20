@@ -114,7 +114,9 @@ export class OverworldScreen implements Screen {
   private isMoving = false;
 
   private heldKeys = new Set<string>();
-  private touchDir: Dir | null = null;
+  /** Normalized {x,z} from the on-screen joystick, magnitude <=1; null while untouched. */
+  private joystickAxis: { x: number; z: number } | null = null;
+  private joystickPointerId: number | null = null;
   private keydownHandler = (e: KeyboardEvent) => this.onKeyDown(e);
   private keyupHandler = (e: KeyboardEvent) => this.onKeyUp(e);
 
@@ -200,7 +202,7 @@ export class OverworldScreen implements Screen {
     });
 
     this.buildHud();
-    this.buildDpad();
+    this.buildJoystick();
     this.buildDialogueOverlay();
     this.buildShopOverlay();
     this.buildPauseOverlay();
@@ -305,7 +307,7 @@ export class OverworldScreen implements Screen {
     this.heldKeys.delete(e.key.toLowerCase());
   }
 
-  /** Combines every held direction (keyboard supports diagonals; the touch D-pad contributes one axis at a time) into a single, normalized input vector. */
+  /** Combines every held keyboard direction into one normalized vector (diagonals blend naturally); the on-screen joystick is a free 2D drag, so it's used as-is (unclamped magnitude gives analog-speed movement) whenever no keyboard key is held. */
   private computeInputAxis(): { x: number; z: number } {
     const k = this.heldKeys;
     const active: Dir[] = [];
@@ -313,7 +315,6 @@ export class OverworldScreen implements Screen {
     if (k.has('arrowdown') || k.has('s')) active.push('down');
     if (k.has('arrowleft') || k.has('a')) active.push('left');
     if (k.has('arrowright') || k.has('d')) active.push('right');
-    if (this.touchDir) active.push(this.touchDir);
 
     const axis = { x: 0, z: 0 };
     for (const dir of active) {
@@ -324,8 +325,9 @@ export class OverworldScreen implements Screen {
     if (len > 0) {
       axis.x /= len;
       axis.z /= len;
+      return axis;
     }
-    return axis;
+    return this.joystickAxis ?? axis;
   }
 
   // --- mounts --------------------------------------------------------
@@ -361,7 +363,22 @@ export class OverworldScreen implements Screen {
 
       const worldPos = new THREE.Vector3();
       this.avatar.getWorldPosition(worldPos);
-      const mountGroup = buildMountModel(mountId, def.color);
+      // buildLlama/buildCondor build their creature facing local +X (body
+      // capsule rotated onto that axis, neck/head/legs placed along it), but
+      // every other facing convention in this file (the player model's own
+      // face, and the yaw math in updateMovement) treats +Z as "forward".
+      // Wrapping the built model in its own group and rotating just that
+      // inner group compensates for the mismatch, while the outer
+      // `mountGroup` — the one movement code actually spins to face the
+      // travel direction — stays in the +Z-forward convention everyone else
+      // expects. Without this, the mount was visually rotated 90° off its
+      // real heading: it read as a small, unrecognizable blob instead of a
+      // creature facing the way it walks.
+      const innerModel = buildMountModel(mountId, def.color);
+      innerModel.rotation.y = -Math.PI / 2;
+      const mountGroup = new THREE.Group();
+      mountGroup.add(innerModel);
+      if (innerModel.userData.wings) mountGroup.userData.wings = innerModel.userData.wings;
       mountGroup.position.copy(worldPos);
       if (def.kind === 'voadora') mountGroup.position.y = FLYING_HOVER_HEIGHT;
       mountGroup.rotation.y = this.avatar.rotation.y;
@@ -1015,27 +1032,54 @@ export class OverworldScreen implements Screen {
     this.questTrackerEl.textContent = questTrackerText(this.player);
   }
 
-  private buildDpad(): void {
-    const makeBtn = (className: string, dir: Dir, label: string) =>
-      el('div', {
-        className: `dpad-btn ${className}`,
-        text: label,
-        onPointerDown: (ev) => {
-          ev.preventDefault();
-          this.touchDir = dir;
-        },
-        onPointerUp: () => {
-          if (this.touchDir === dir) this.touchDir = null;
-        },
-      });
+  /**
+   * A draggable virtual joystick — replaces the old 4-button D-pad, whose
+   * touch handling broke down the moment a finger slid from one button to
+   * another (each button only released on its OWN pointerup, and touch
+   * input implicitly captures the pointer to whatever element it first
+   * landed on, so sliding across buttons never fired the new one's
+   * pointerdown at all). A single draggable base sidesteps that entirely:
+   * one pointer capture for the whole gesture, and the drag offset itself
+   * IS the direction — no per-button edges to slip between.
+   */
+  private buildJoystick(): void {
+    const RADIUS = 36; // px the knob can travel from center before clamping — tuned to the .joystick-base/.joystick-knob sizes in style.css
 
-    const dpad = el('div', { className: 'dpad' }, [
-      makeBtn('dpad-up', 'up', '▲'),
-      makeBtn('dpad-down', 'down', '▼'),
-      makeBtn('dpad-left', 'left', '◀'),
-      makeBtn('dpad-right', 'right', '▶'),
-    ]);
-    this.game.uiRoot.append(dpad);
+    const knob = el('div', { className: 'joystick-knob' });
+    const base = el('div', { className: 'joystick-base' }, [knob]);
+    const joystick = el('div', { className: 'joystick' }, [base]);
+
+    const updateFromPointer = (ev: PointerEvent) => {
+      const rect = base.getBoundingClientRect();
+      const dx = ev.clientX - (rect.left + rect.width / 2);
+      const dy = ev.clientY - (rect.top + rect.height / 2);
+      const dist = Math.hypot(dx, dy);
+      const clampedX = dist > RADIUS ? (dx / dist) * RADIUS : dx;
+      const clampedY = dist > RADIUS ? (dy / dist) * RADIUS : dy;
+      knob.style.transform = `translate(${clampedX}px, ${clampedY}px)`;
+      this.joystickAxis = { x: clampedX / RADIUS, z: clampedY / RADIUS };
+    };
+
+    const release = (ev: PointerEvent) => {
+      if (ev.pointerId !== this.joystickPointerId) return;
+      this.joystickPointerId = null;
+      this.joystickAxis = null;
+      knob.style.transform = 'translate(0, 0)';
+    };
+
+    base.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      this.joystickPointerId = ev.pointerId;
+      base.setPointerCapture(ev.pointerId);
+      updateFromPointer(ev);
+    });
+    base.addEventListener('pointermove', (ev) => {
+      if (ev.pointerId === this.joystickPointerId) updateFromPointer(ev);
+    });
+    base.addEventListener('pointerup', release);
+    base.addEventListener('pointercancel', release);
+
+    this.game.uiRoot.append(joystick);
   }
 
   private buildDialogueOverlay(): void {

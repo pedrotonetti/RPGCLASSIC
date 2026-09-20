@@ -324,47 +324,38 @@ body {
   color: var(--text-dim);
 }
 
-.dpad {
+.joystick {
   position: absolute;
   bottom: 22px;
   left: 22px;
-  width: 130px;
-  height: 130px;
+  width: 120px;
+  height: 120px;
 }
-.dpad-btn {
+.joystick-base {
   pointer-events: auto;
   position: absolute;
-  width: 42px;
-  height: 42px;
-  background: rgba(42, 32, 56, 0.6);
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(42, 32, 56, 0.55);
   border: 1px solid var(--panel-border);
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  touch-action: none;
   cursor: pointer;
 }
-.dpad-btn:active,
-.dpad-btn.pressed {
-  background: rgba(242, 193, 78, 0.35);
+.joystick-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 42px;
+  height: 42px;
+  margin: -21px 0 0 -21px;
+  border-radius: 50%;
+  background: rgba(242, 193, 78, 0.45);
+  border: 1px solid var(--accent);
+  pointer-events: none;
+  transition: background 0.1s;
 }
-.dpad-up {
-  top: 0;
-  left: 44px;
-}
-.dpad-down {
-  bottom: 0;
-  left: 44px;
-}
-.dpad-left {
-  top: 44px;
-  left: 0;
-}
-.dpad-right {
-  top: 44px;
-  right: 0;
+.joystick-base:active .joystick-knob {
+  background: rgba(242, 193, 78, 0.7);
 }
 
 .npc-label {
