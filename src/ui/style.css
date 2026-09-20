@@ -924,6 +924,29 @@ body {
 .bag-item-info {
   flex: 1;
 }
+.bag-slot-header {
+  color: var(--accent);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 4px;
+}
+.bag-slot-header:first-child {
+  margin-top: 0;
+}
+.item-compare {
+  font-size: 12px;
+  margin-top: 2px;
+}
+.item-compare.upgrade {
+  color: var(--heal);
+}
+.item-compare.downgrade {
+  color: var(--hp);
+}
+.item-compare.neutral {
+  color: var(--text-dim);
+}
 
 /* --- Intro narrativa ---------------------------------------------- */
 .intro-screen {

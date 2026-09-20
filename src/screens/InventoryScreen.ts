@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { EquipmentInstance, EquipmentSlot } from '../config/types';
-import { RARITY_LABEL, rarityToHex } from '../config/rarity';
+import { RARITY_LABEL, RARITY_SCORE_MULTIPLIER, rarityToHex } from '../config/rarity';
 import { computeEquipmentBonus, getEquipmentTemplate } from '../data/equipment';
 import { getGemById } from '../data/gems';
 import { getItemById } from '../data/items';
@@ -31,6 +31,25 @@ const SLOT_LABELS: Record<EquipmentSlot, string> = {
   armadura: 'Armadura',
   acessorio: 'Acessório',
 };
+
+/** Bag items are grouped by slot in this order, matching the "Equipado" section above them. */
+const SLOT_ORDER: EquipmentSlot[] = ['arma', 'armadura', 'acessorio'];
+
+/** Formats a stat bonus with an explicit sign — `computeEquipmentBonus` can return negative values (e.g. a weapon's speed penalty), and a bare template-literal `+` prefix used to render those as a broken "+-4.6". */
+function formatSigned(value: number): string {
+  return value >= 0 ? `+${value}` : `${value}`;
+}
+
+/**
+ * A single rough "how strong is this item" number, reusing the same
+ * rarity/level weighting as `computePowerScore`'s own gear contribution, so
+ * the comparison below tracks the same notion of strength the Power Score
+ * headline already communicates. Used only to compare like-for-like
+ * candidates for the same slot — not a substitute for reading the stat line.
+ */
+function itemPower(instance: EquipmentInstance): number {
+  return RARITY_SCORE_MULTIPLIER[instance.rarity] * instance.itemLevel;
+}
 
 export class InventoryScreen implements Screen {
   scene = new THREE.Scene();
@@ -117,9 +136,36 @@ export class InventoryScreen implements Screen {
     const template = getEquipmentTemplate(instance.templateId);
     const bonus = computeEquipmentBonus(instance);
     const statText = Object.entries(bonus)
-      .map(([stat, val]) => `${statAbbrev(stat)} +${val}`)
+      .map(([stat, val]) => `${statAbbrev(stat)} ${formatSigned(val)}`)
       .join('  ');
     return el('div', { className: 'item-stats', text: `${statText}  •  ${template.description}` });
+  }
+
+  /**
+   * Tells the player, at a glance, whether a bag item is worth equipping
+   * over whatever's already in that slot — the exact call the Power Score
+   * header and per-item stat line don't make explicit on their own. Compares
+   * the same rarity/level-weighted "power" the Power Score's own gear
+   * contribution uses, so "melhoria"/"inferior" here agrees with whether the
+   * headline number would actually go up or down.
+   */
+  private comparisonBadge(candidate: EquipmentInstance): HTMLElement {
+    const slot = getEquipmentTemplate(candidate.templateId).slot;
+    const equipped = this.player.equipment[slot];
+    if (!equipped) {
+      return el('div', { className: 'item-compare upgrade', text: `▲ Nada equipado em ${SLOT_LABELS[slot]} — equipar é ganho garantido` });
+    }
+    const delta = itemPower(candidate) - itemPower(equipped);
+    if (Math.abs(delta) < 0.5) {
+      return el('div', { className: 'item-compare neutral', text: `≈ Poder equivalente ao ${getEquipmentTemplate(equipped.templateId).name} equipado` });
+    }
+    const cls = delta > 0 ? 'upgrade' : 'downgrade';
+    const arrow = delta > 0 ? '▲' : '▼';
+    const verdict = delta > 0 ? 'Melhoria' : 'Mais fraco';
+    return el('div', {
+      className: `item-compare ${cls}`,
+      text: `${arrow} ${verdict} vs. equipado (Poder ${formatSigned(Math.round(delta))})`,
+    });
   }
 
   private render(): void {
@@ -165,11 +211,27 @@ export class InventoryScreen implements Screen {
       return;
     }
 
-    const sorted = [...this.player.bag].sort((a, b) => b.itemLevel - a.itemLevel);
-    this.bagEl.replaceChildren(
-      ...sorted.map((instance) => {
-        const template = getEquipmentTemplate(instance.templateId);
-        return el(
+    // Grouped by slot (same order as the "Equipado" section above), then by
+    // item level within each group — so every candidate for a slot sits
+    // together, right next to the comparison badge telling you whether any
+    // of them beat what's already equipped there.
+    const sorted = [...this.player.bag].sort((a, b) => {
+      const slotA = getEquipmentTemplate(a.templateId).slot;
+      const slotB = getEquipmentTemplate(b.templateId).slot;
+      if (slotA !== slotB) return SLOT_ORDER.indexOf(slotA) - SLOT_ORDER.indexOf(slotB);
+      return b.itemLevel - a.itemLevel;
+    });
+
+    const rows: HTMLElement[] = [];
+    let lastSlot: EquipmentSlot | null = null;
+    for (const instance of sorted) {
+      const template = getEquipmentTemplate(instance.templateId);
+      if (template.slot !== lastSlot) {
+        lastSlot = template.slot;
+        rows.push(el('div', { className: 'bag-slot-header', text: SLOT_LABELS[template.slot] }));
+      }
+      rows.push(
+        el(
           'div',
           { className: 'bag-item' },
           [
@@ -181,6 +243,7 @@ export class InventoryScreen implements Screen {
               }),
               el('div', { className: 'item-rarity', text: `${RARITY_LABEL[instance.rarity]} • ${SLOT_LABELS[template.slot]}` }),
               this.itemLine(instance),
+              this.comparisonBadge(instance),
             ]),
             el('div', {
               className: 'btn small',
@@ -193,9 +256,10 @@ export class InventoryScreen implements Screen {
               },
             }),
           ],
-        );
-      }),
-    );
+        ),
+      );
+    }
+    this.bagEl.replaceChildren(...rows);
   }
 
   private renderSupplies(): void {
