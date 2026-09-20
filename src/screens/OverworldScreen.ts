@@ -16,7 +16,7 @@ import { Player } from '../entities/Player';
 import { CharacterAnimator } from '../render/animation';
 import { buildHumanCharacter, buildMountModel, buildPlayerCharacter, getRig } from '../render/characterModel';
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
-import { buildOverworldMeshes, tileCenterWorld, type TreeCollider } from '../render/worldBuilder';
+import { buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
@@ -40,6 +40,8 @@ const PLAYER_RADIUS = 0.34; // collision circle, roughly the character's own gir
 const TURN_SPEED = 12; // how fast the avatar's facing catches up to its movement direction
 const CAM_DISTANCE = 4.4;
 const CAM_HEIGHT = 3.1;
+/** Fallback camera lift (above the avatar) when no spot within CAM_DISTANCE clears every nearby tree/building — see desiredCameraPosition/updateCamera. */
+const CAM_LIFT_HEIGHT = 5.0;
 const LOOK_HEIGHT = 1.1;
 const INTERACT_RANGE = TILE_SIZE * 1.3;
 const NPC_COLLISION_RADIUS = 0.4;
@@ -99,6 +101,7 @@ export class OverworldScreen implements Screen {
   private tiles: TileType[][] = [];
   private waterMaterial: THREE.MeshStandardMaterial | null = null;
   private treeColliders: TreeCollider[] = [];
+  private buildingColliders: BuildingCollider[] = [];
   private playerModel!: THREE.Group;
   private mountModel: THREE.Group | null = null;
   /** Whichever object currently moves through the world — the rider alone, or the mount carrying them. */
@@ -162,12 +165,13 @@ export class OverworldScreen implements Screen {
     this.scene.fog = new THREE.Fog(0x8ec9e8, 16, 46);
 
     this.zoneDef = getZoneById(this.player.zoneId);
-    const { tiles, playerStart } = this.zoneDef.generate();
+    const { tiles, playerStart, buildings } = this.zoneDef.generate();
     this.tiles = tiles;
     this.zoneRespawnTile = playerStart;
-    const { group, waterMaterial, treeColliders } = buildOverworldMeshes(tiles, this.zoneDef.accentColor);
+    const { group, waterMaterial, treeColliders, buildingColliders } = buildOverworldMeshes(tiles, this.zoneDef.accentColor, buildings);
     this.waterMaterial = waterMaterial;
     this.treeColliders = treeColliders;
+    this.buildingColliders = buildingColliders;
     this.scene.add(group);
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.4);
@@ -196,6 +200,20 @@ export class OverworldScreen implements Screen {
     if (this.player.activeMountId) this.setMounted(this.player.activeMountId, true);
 
     this.buildNpcs();
+
+    // Safety net: a save's stored mapX/mapY predates whatever this zone's
+    // generator produces on THIS load (a bigger map, a regenerated building
+    // layout, ...) and can now land inside or right up against a building
+    // that didn't exist there before. Rather than ever spawning the player
+    // stuck inside a wall, fall back to the zone's own safe respawn tile —
+    // the same spot handleDefeat already treats as safe.
+    if (!this.canOccupy(this.avatar.position.x, this.avatar.position.z, PLAYER_RADIUS, this.isFlyingMounted())) {
+      const safe = tileCenterWorld(this.zoneRespawnTile.x, this.zoneRespawnTile.y);
+      this.avatar.position.set(safe.x, this.avatar.position.y, safe.z);
+      this.player.mapX = safe.x;
+      this.player.mapY = safe.z;
+    }
+
     this.spawnWildlife();
     this.positionCameraImmediate();
 
@@ -508,6 +526,18 @@ export class OverworldScreen implements Screen {
       if (tile === null) return false;
       const passable = isWalkable(tile) || (flying && tile === TileType.Water);
       if (!passable) return false;
+    }
+    // Buildings sit on tiles that are still nominally walkable at the grid
+    // level (see MapGenerator's stampFootprint) — this AABB-vs-circle check
+    // against their actual footprint is what really blocks the player from
+    // walking through a wall, the same role treeColliders plays for the
+    // camera below.
+    for (const b of this.buildingColliders) {
+      const nx = Math.max(b.minX, Math.min(x, b.maxX));
+      const nz = Math.max(b.minZ, Math.min(z, b.maxZ));
+      const dx = x - nx;
+      const dz = z - nz;
+      if (dx * dx + dz * dz < r * r) return false;
     }
     for (const npc of this.npcSlots) {
       const npcPos = npc.model.position;
@@ -1064,12 +1094,59 @@ export class OverworldScreen implements Screen {
    * chasing it can visibly lag into a tree's canopy even though each
    * individual target was already clear.
    */
+  /**
+   * Pushes a candidate XZ point clear of one building's AABB, expanded by
+   * `buffer` on every side. Unlike a tree's collision circle, a building can
+   * be big enough (a 3x3-tile house, or more) that the naive "nearest point
+   * on the box, then push away from it" trick breaks down once the point is
+   * actually INSIDE the box: clamping x/z into range gives back the point
+   * itself, so the "nearest point" distance comes out zero everywhere
+   * inside, not just at the box's center — there's no single direction that
+   * distance implies. Handled separately below by pushing out through
+   * whichever wall is closest instead.
+   */
+  private pushOutOfBuildingBox(x: number, z: number, b: BuildingCollider, buffer: number): { x: number; z: number } | null {
+    const insideX = x > b.minX && x < b.maxX;
+    const insideZ = z > b.minZ && z < b.maxZ;
+    if (insideX && insideZ) {
+      const distLeft = x - b.minX;
+      const distRight = b.maxX - x;
+      const distTop = z - b.minZ;
+      const distBottom = b.maxZ - z;
+      const min = Math.min(distLeft, distRight, distTop, distBottom);
+      if (min === distLeft) return { x: b.minX - buffer, z };
+      if (min === distRight) return { x: b.maxX + buffer, z };
+      if (min === distTop) return { x, z: b.minZ - buffer };
+      return { x, z: b.maxZ + buffer };
+    }
+    const nx = Math.max(b.minX, Math.min(x, b.maxX));
+    const nz = Math.max(b.minZ, Math.min(z, b.maxZ));
+    const dx = x - nx;
+    const dz = z - nz;
+    const dist = Math.hypot(dx, dz);
+    if (dist >= buffer) return null;
+    if (dist > 0.0001) {
+      const push = buffer - dist;
+      return { x: x + (dx / dist) * push, z: z + (dz / dist) * push };
+    }
+    // On the boundary exactly — push away from the box's center instead of
+    // dividing by zero.
+    const bcx = (b.minX + b.maxX) / 2;
+    const bcz = (b.minZ + b.maxZ) / 2;
+    const toOut = Math.hypot(x - bcx, z - bcz) || 1;
+    return { x: x + ((x - bcx) / toOut) * buffer, z: z + ((z - bcz) / toOut) * buffer };
+  }
+
   private resolveCameraXZ(x: number, z: number): { x: number; z: number; violated: boolean } {
     // A generous buffer, not just "clear of the canopy's own radius": the
     // camera isn't a point, it's a wide near-plane frustum, so a tree can
     // still clip into the edge of the frame even once its center is barely
     // outside the collision circle.
     const TREE_CAM_BUFFER = 1.1;
+    // Buildings are solid walls (not translucent foliage), so a slightly
+    // smaller buffer than trees still reads fine and keeps the camera from
+    // getting shoved unnecessarily far out on a narrow street.
+    const BUILDING_CAM_BUFFER = 0.9;
     const px = this.avatar.position.x;
     const pz = this.avatar.position.z;
     let violated = false;
@@ -1093,6 +1170,13 @@ export class OverworldScreen implements Screen {
           x += ((px - tree.x) / toAvatar) * minDist;
           z += ((pz - tree.z) / toAvatar) * minDist;
         }
+      }
+      for (const b of this.buildingColliders) {
+        const pushed = this.pushOutOfBuildingBox(x, z, b, BUILDING_CAM_BUFFER);
+        if (!pushed) continue;
+        violated = true;
+        x = pushed.x;
+        z = pushed.z;
       }
       const distFromAvatar = Math.hypot(x - px, z - pz);
       if (distFromAvatar > CAM_DISTANCE) {
@@ -1132,11 +1216,14 @@ export class OverworldScreen implements Screen {
     target.z = resolved.z;
 
     // Pathologically dense cluster (no spot within CAM_DISTANCE clears
-    // every nearby tree) — lift the camera above canopy height instead,
-    // which clears the clip regardless of how tightly packed the trees are
-    // horizontally. Tree canopies top out around 1.9 world units (see
-    // worldBuilder's lobe placement), well under this.
-    if (resolved.violated) target.y = Math.max(target.y, this.avatar.position.y + 3.6);
+    // every nearby tree/building) — lift the camera above obstacle height
+    // instead, which clears the clip regardless of how tightly packed
+    // things are horizontally. Tree canopies top out around 1.9 world
+    // units and most building roofs around 3.8-4.7 (see worldBuilder's
+    // lobe/roof placement) — CAM_LIFT_HEIGHT clears both; only the rare
+    // tower landmark's roof (~5.8) can still poke through in this
+    // fallback path, an acceptable trade-off for how rarely it triggers.
+    if (resolved.violated) target.y = Math.max(target.y, this.avatar.position.y + CAM_LIFT_HEIGHT);
 
     return target;
   }
@@ -1162,7 +1249,7 @@ export class OverworldScreen implements Screen {
     const resolvedCam = this.resolveCameraXZ(this.camera.position.x, this.camera.position.z);
     this.camera.position.x = resolvedCam.x;
     this.camera.position.z = resolvedCam.z;
-    if (resolvedCam.violated) this.camera.position.y = Math.max(this.camera.position.y, this.avatar.position.y + 3.6);
+    if (resolvedCam.violated) this.camera.position.y = Math.max(this.camera.position.y, this.avatar.position.y + CAM_LIFT_HEIGHT);
 
     const desiredLookAt = new THREE.Vector3().copy(this.avatar.position).add(new THREE.Vector3(0, LOOK_HEIGHT, 0));
     this.camLookAt.lerp(desiredLookAt, followLerp);
