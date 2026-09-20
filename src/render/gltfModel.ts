@@ -66,6 +66,11 @@ export class GltfActor {
     return this.currentName;
   }
 
+  /** Length (seconds) of a named clip, or 0 if it isn't in this model's library — lets a caller time a one-shot action to the clip's own real duration instead of guessing a fixed number. */
+  duration(name: string): number {
+    return this.clips.get(name)?.duration ?? 0;
+  }
+
   play(name: string, opts: { loop?: boolean; fade?: number } = {}): void {
     if (this.currentName === name) return;
     const clip = this.clips.get(name);

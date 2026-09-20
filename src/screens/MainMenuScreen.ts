@@ -136,8 +136,9 @@ export class MainMenuScreen implements Screen {
     const player = loadSlotSave(slot);
     if (player) {
       goToLazy(this.game, async () => {
-        const { OverworldScreen } = await import('./OverworldScreen');
-        return new OverworldScreen(this.game, player);
+        const [{ OverworldScreen }, { loadPlayerAvatar }] = await Promise.all([import('./OverworldScreen'), import('../render/playerAvatar')]);
+        const avatar = await loadPlayerAvatar(player);
+        return new OverworldScreen(this.game, player, avatar);
       });
     } else {
       // Corrupted/unreadable save: don't leave the button silently doing

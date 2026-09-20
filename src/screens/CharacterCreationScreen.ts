@@ -41,6 +41,20 @@ const CLASS_ACCESSORY: Record<string, ClassAccessory> = {
 
 const HEIGHT_LABELS = ['Baixo', 'Médio-', 'Médio', 'Médio+', 'Alto'];
 
+/**
+ * NOTE on the gap between this screen and the real in-game avatar: the
+ * actual adventure now renders the player with a real rigged/textured GLTF
+ * character (one of 4 fixed models mapped by class — see
+ * `render/playerAvatar.ts`), not the procedural primitive-shape mannequin
+ * `buildHumanCharacter` still builds for the preview below. That mannequin
+ * has no home on a single pre-baked texture atlas, so skin tone, face
+ * shape, hair, facial hair, markings and garment colors picked here are
+ * preview-only — they don't carry over into the adventure. Only
+ * `heightScale` does (applied as a uniform scale on the loaded model in
+ * `loadPlayerAvatar`). This is called out to the player directly in the UI
+ * (see the subtitle added in `buildUi`) rather than left as a silent
+ * surprise the first time they see their hero in the overworld.
+ */
 export class CharacterCreationScreen implements Screen {
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
@@ -143,7 +157,22 @@ export class CharacterCreationScreen implements Screen {
     ]);
 
     const screen = el('div', { className: 'creation-screen screen' }, [
-      el('div', { className: 'creation-preview' }, [el('h1', { className: 'pixel-title', text: `Criar ${def.name}` })]),
+      el('div', { className: 'creation-preview' }, [
+        el('h1', { className: 'pixel-title', text: `Criar ${def.name}` }),
+        el('div', {
+          className: 'subtitle',
+          text: 'Este preview é ilustrativo — na aventura seu herói usa o modelo visual da classe.',
+          style: {
+            position: 'absolute',
+            top: '50px',
+            left: '20px',
+            maxWidth: '50%',
+            fontSize: '12px',
+            opacity: '0.8',
+            textShadow: '1px 1px 0 #000',
+          },
+        }),
+      ]),
       panel,
     ]);
 
@@ -235,8 +264,9 @@ export class CharacterCreationScreen implements Screen {
     const player = Player.createNew(name, this.classId);
     player.appearance = this.appearance;
     goToLazy(this.game, async () => {
-      const { OverworldScreen } = await import('./OverworldScreen');
-      return new OverworldScreen(this.game, player);
+      const [{ OverworldScreen }, { loadPlayerAvatar }] = await Promise.all([import('./OverworldScreen'), import('../render/playerAvatar')]);
+      const avatar = await loadPlayerAvatar(player);
+      return new OverworldScreen(this.game, player, avatar);
     });
   }
 }

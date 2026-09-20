@@ -13,6 +13,24 @@ import type { CharacterRig } from './characterModel';
  */
 export type ActionName = 'attack' | 'defend' | 'cast' | 'eat' | 'hit' | 'victory' | 'mount' | 'dismount' | 'dodge';
 
+/**
+ * The public shape every character animator exposes to gameplay code
+ * (`OverworldScreen`, `OverworldCombat`) — implemented both by this
+ * procedural, pivot-posing `CharacterAnimator` (still used for the old
+ * primitive rigs, e.g. any future non-player use) and by
+ * `GltfCharacterAnimator` (`render/gltfCharacterAnimator.ts`), which drives
+ * the same calls onto a real GLTF model's baked animation clips instead.
+ * Callers depend only on this interface, so the player's actual animator
+ * implementation can be swapped without touching them.
+ */
+export interface CharacterAnimatorLike {
+  setMoving(moving: boolean): void;
+  setMounted(mounted: boolean): void;
+  play(action: ActionName, onDone?: () => void): void;
+  readonly currentAction: ActionName | null;
+  update(dt: number): void;
+}
+
 interface Pose {
   armL: number;
   armR: number;
@@ -157,7 +175,7 @@ const IDLE_BREATH_SPEED = 1.6;
 const IDLE_BREATH_AMOUNT = 0.012;
 
 /** Drives one character's rig every frame: continuous locomotion plus one-shot actions layered on top. */
-export class CharacterAnimator {
+export class CharacterAnimator implements CharacterAnimatorLike {
   private time = 0;
   private moving = false;
   private mounted = false;
