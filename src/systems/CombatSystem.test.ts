@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
-import { CombatEngine } from './CombatSystem';
+import { CombatEngine, lootDropChance, materialDropChance } from './CombatSystem';
+import * as equipmentModule from '../data/equipment';
 
 function freshPlayer(classId = 'warrior'): Player {
   return Player.createNew('Testador', classId);
@@ -193,5 +194,78 @@ describe('CombatEngine block and dodge', () => {
     expect(hit?.mitigation).toBe('dodge');
     expect(hit?.amount).toBe(0);
     expect(player.currentHp).toBe(hpBefore);
+  });
+});
+
+describe('CombatEngine loot scaling by enemy tier', () => {
+  it('drop-chance helpers scale with enemy level, cap sensibly, and give bosses a large floor regardless of level', () => {
+    expect(lootDropChance(1, false)).toBeCloseTo(0.32 + 1 * 0.018, 5);
+    expect(lootDropChance(18, false)).toBeGreaterThan(lootDropChance(1, false));
+    expect(lootDropChance(18, false)).toBeLessThanOrEqual(0.85);
+    expect(lootDropChance(1, true)).toBe(0.95);
+    expect(lootDropChance(18, true)).toBe(0.95);
+
+    expect(materialDropChance(18)).toBeGreaterThan(materialDropChance(1));
+    expect(materialDropChance(1000)).toBeLessThanOrEqual(0.75);
+  });
+
+  it('a dropped item is leveled off the DEFEATED ENEMY\'s own tier, not just the (much lower) player level', () => {
+    // random()=0.5 clears the miss check (capped at 0.25) without ever
+    // crit-ing (capped at 0.5), and zeroes generateLoot's own +/-1 jitter
+    // (0.5*2-1=0), so the resulting item level is an exact, deterministic
+    // read of the enemyLevel*0.7 + characterLevel*0.3 formula. It also
+    // clears stone_golem's own loot-drop-chance roll (0.32+11*0.018=0.518).
+    mockRandom(0.5);
+    const player = freshPlayer('warrior'); // level 1
+    const enemy = new Enemy('stone_golem'); // level 11 per data/enemies.ts — far above the player's own level
+    enemy.currentHp = 1;
+    const engine = new CombatEngine(player, [enemy]);
+
+    const result = engine.useSkill('basic_attack', 0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const victoryEvent = result.events.find((e) => e.kind === 'victory');
+    expect(victoryEvent?.loot).toHaveLength(1);
+    // 11*0.7 + 1*0.3 = 8 — driven by the enemy's tier, not the level-1 player.
+    expect(victoryEvent!.loot![0].itemLevel).toBe(8);
+  });
+
+  it('statistically, defeating a high-tier enemy yields both a higher average item level and drops more often than a low-tier one, at the same player level', () => {
+    const TRIALS = 500;
+    const generateLootSpy = vi.spyOn(equipmentModule, 'generateLoot');
+
+    function farmAverages(enemyId: string): { avgItemLevel: number; dropCount: number } {
+      generateLootSpy.mockClear();
+      let levelSum = 0;
+      let dropCount = 0;
+      for (let i = 0; i < TRIALS; i++) {
+        const player = freshPlayer('warrior');
+        const enemy = new Enemy(enemyId);
+        enemy.currentHp = 1;
+        const engine = new CombatEngine(player, [enemy]);
+        let result = engine.useSkill('basic_attack', 0);
+        // A miss just means no kill this swing — retry until it connects, so
+        // the miss-chance roll doesn't add noise to the drop-rate comparison.
+        while (result.ok && engine.outcome === 'ongoing') {
+          engine.tick(1.2); // clears basic_attack's own (short) cooldown
+          result = engine.useSkill('basic_attack', 0);
+        }
+        if (!result.ok) continue;
+        const victoryEvent = result.events.find((e) => e.kind === 'victory');
+        if (victoryEvent && victoryEvent.loot && victoryEvent.loot.length > 0) {
+          dropCount += 1;
+          levelSum += victoryEvent.loot[0].itemLevel;
+        }
+      }
+      return { avgItemLevel: dropCount > 0 ? levelSum / dropCount : 0, dropCount };
+    }
+
+    const low = farmAverages('slime'); // level 1
+    const high = farmAverages('stone_golem'); // level 11
+    generateLootSpy.mockRestore();
+
+    expect(high.dropCount).toBeGreaterThan(low.dropCount);
+    expect(high.avgItemLevel).toBeGreaterThan(low.avgItemLevel + 3);
   });
 });

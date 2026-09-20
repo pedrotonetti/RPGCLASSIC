@@ -85,12 +85,14 @@ const BOSS_LOOT_DROP_CHANCE = 0.95;
 const MATERIAL_DROP_CHANCE_PER_LEVEL = 0.01;
 const MATERIAL_DROP_CHANCE_MAX = 0.75;
 
-function lootDropChance(enemyLevel: number, isBoss: boolean | undefined): number {
+/** Exported for direct (deterministic) unit testing of the tier-scaling curve — see CombatSystem.test.ts. */
+export function lootDropChance(enemyLevel: number, isBoss: boolean | undefined): number {
   if (isBoss) return BOSS_LOOT_DROP_CHANCE;
   return Math.min(LOOT_DROP_CHANCE_MAX, LOOT_DROP_CHANCE_BASE + enemyLevel * LOOT_DROP_CHANCE_PER_LEVEL);
 }
 
-function materialDropChance(enemyLevel: number): number {
+/** Exported for direct (deterministic) unit testing of the tier-scaling curve — see CombatSystem.test.ts. */
+export function materialDropChance(enemyLevel: number): number {
   return Math.min(MATERIAL_DROP_CHANCE_MAX, MATERIAL_DROP_CHANCE + enemyLevel * MATERIAL_DROP_CHANCE_PER_LEVEL);
 }
 // Enemies can now approach and gang up on the player in the open world
