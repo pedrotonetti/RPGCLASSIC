@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { CLASS_DEFINITIONS } from '../config/classes';
+import { CLASS_DEFINITIONS, getClassById } from '../config/classes';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { buildClassPreview } from '../render/characterModel';
 import { audio } from '../systems/AudioSystem';
-import { clearSave, hasSave, loadGame } from '../systems/SaveSystem';
+import { deleteSlotSave, listSaveSlots, loadSlotSave, setActiveSlot, type SaveSlotEntry } from '../systems/SaveSystem';
 import { el } from '../ui/dom';
 import { IntroScreen } from './IntroScreen';
 import { OverworldScreen } from './OverworldScreen';
@@ -128,36 +128,53 @@ export class MainMenuScreen implements Screen {
     this.musicBtn.textContent = audio.isThemePlaying() ? '♪' : '✕';
   }
 
-  private buildUi(): void {
-    const buttons: HTMLElement[] = [];
+  private startNewGame(slot: number): void {
+    setActiveSlot(slot);
+    this.game.goTo(new IntroScreen(this.game));
+  }
 
-    if (hasSave()) {
-      buttons.push(
-        el('div', {
-          className: 'btn primary',
-          text: 'Continuar',
-          onClick: () => {
-            const player = loadGame();
-            if (player) {
-              this.game.goTo(new OverworldScreen(this.game, player));
-            } else {
-              // Corrupted/unreadable save: don't leave the button silently
-              // doing nothing — clear it and let the player start fresh.
-              clearSave();
-              alert('Não foi possível carregar o jogo salvo (dados corrompidos). Iniciando um novo jogo.');
-              this.game.goTo(new IntroScreen(this.game));
-            }
-          },
-        }),
-      );
+  private continueSlot(slot: number): void {
+    const player = loadSlotSave(slot);
+    if (player) {
+      this.game.goTo(new OverworldScreen(this.game, player));
+    } else {
+      // Corrupted/unreadable save: don't leave the button silently doing
+      // nothing — clear it and let the player start a new character here.
+      deleteSlotSave(slot);
+      alert('Não foi possível carregar o jogo salvo (dados corrompidos). Iniciando um novo jogo.');
+      this.startNewGame(slot);
     }
+  }
 
-    buttons.push(
-      el('div', {
-        className: 'btn',
-        text: 'Novo Jogo',
-        onClick: () => this.game.goTo(new IntroScreen(this.game)),
-      }),
+  private deleteSlot(slot: number): void {
+    if (!confirm('Tem certeza que deseja excluir este personagem? Esta ação não pode ser desfeita.')) return;
+    deleteSlotSave(slot);
+    this.game.goTo(new MainMenuScreen(this.game));
+  }
+
+  private buildSlotCard(slot: number, entry: SaveSlotEntry): HTMLElement {
+    if (!entry) {
+      return el('div', { className: 'save-slot empty' }, [
+        el('div', { className: 'slot-info', text: `Slot ${slot + 1}: vazio` }),
+        el('div', { className: 'btn primary', text: 'Novo Jogo', onClick: () => this.startNewGame(slot) }),
+      ]);
+    }
+    const className = getClassById(entry.summary.classId).name;
+    return el('div', { className: 'save-slot' }, [
+      el('div', { className: 'slot-info', text: `Slot ${slot + 1}: ${entry.summary.name} — ${className} Nv.${entry.summary.level}` }),
+      el('div', { className: 'row' }, [
+        el('div', { className: 'btn primary', text: 'Continuar', onClick: () => this.continueSlot(slot) }),
+        el('div', { className: 'btn danger', text: 'Excluir', onClick: () => this.deleteSlot(slot) }),
+      ]),
+    ]);
+  }
+
+  private buildUi(): void {
+    const slots = listSaveSlots();
+    const slotsEl = el(
+      'div',
+      { className: 'save-slots' },
+      slots.map((entry, slot) => this.buildSlotCard(slot, entry)),
     );
 
     this.musicBtn = el('div', {
@@ -176,7 +193,7 @@ export class MainMenuScreen implements Screen {
           el('div', { className: 'subtitle', text: 'As Raízes despertam. Um Vozeiro precisa ouvi-las.' }),
         ]),
         el('div', { className: 'bottom-bar' }, [
-          el('div', { className: 'stack center' }, buttons),
+          slotsEl,
           el('div', { className: 'hint', text: 'Setas/WASD para mover · Toque na tela em dispositivos móveis' }),
         ]),
       ],
