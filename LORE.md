@@ -122,34 +122,89 @@ reportando movimentos do herói para os agentes de Ilva.
 ## O final (propositalmente sem resposta fácil)
 
 O Ato 3 não é "matar o chefe final e pronto". O Vozeiro precisa escolher como
-lidar com uma ferida de gerações:
+lidar com uma ferida de gerações — e essa escolha não só fecha a Temporada 1
+de um jeito diferente, ela **define o estado inicial da Temporada 2**. Não é
+"final A/B/C" no sentido raso de telas de crédito diferentes: é uma
+continuidade real, o mesmo mundo carregando a cicatriz específica que o
+jogador escolheu deixar.
 
-1. **Cortar Ipêra das Raízes para sempre** — seguro, mas a Florescência
-   acaba, e com ela uma parte inteira de quem Ipêra é.
-2. **Tentar curar a rede de raízes** — arriscado; pode falhar e acelerar o
-   colapso.
-3. **Abraçar o poder da Sede para controlá-la** — poderoso, e perigosamente
-   corruptor.
+### 1. O Corte — selar Ipêra das Raízes para sempre
 
-Não há final "correto" — cada escolha resolve o Capítulo 1 e deixa uma
-cicatriz diferente, exatamente como Ipêra decidiu lidar com a própria ferida
-há gerações. Isso é proposital: o mundo real também não tem respostas limpas
-para o que fazemos com o que herdamos.
+Seguro, definitivo, e o mais silencioso dos três. A Florescência não volta a
+acontecer. Os ipezais ainda existem, mas não respondem mais — visitá-los vira
+um hábito que as famílias mantêm por luto, não por convívio. Ipêra sobrevive,
+mas uma parte inteira de como o povo lida com a própria morte e memória
+desaparece com ela. Zaya, que cresceu ouvindo as Raízes de longe (sem o dom
+de Vozeiro, mas com o costume), é quem mais sente essa perda — e é ela quem,
+no epílogo, decide partir em busca de alguma raiz ainda viva em outra terra.
+**Gancho de Temporada 2**: a expedição de Zaya é literalmente o gancho —
+Ipêra do Corte é um mundo mais seguro e mais pobre, e a Temporada 2 começa
+seguindo quem se recusou a aceitar essa perda como definitiva.
+
+### 2. A Cura Tentada
+
+Arriscada, e o Vozeiro paga um preço pessoal por ela mesmo quando funciona:
+canalizar cura pela rede de raízes deixa uma marca física visível (algo como
+veios de casca de Ipê crescendo pela pele, permanente) — o corpo do herói
+literalmente começa a se tornar parte da rede que ele salvou. A Florescência
+volta, mas incompleta e instável: algumas regiões de Ipêra florescem fora de
+sincronia, um sinal de que a cura pegou, mas não por completo. Ilva, se
+sobreviver ao confronto, não é presa nem morta — ela desaparece, convencida
+de que "quase deu certo" e determinada a terminar o trabalho sozinha, em
+algum outro lugar da Florescência instável. **Gancho de Temporada 2**: Ilva
+ainda está lá fora, e a instabilidade da cura é um problema ativo, não
+resolvido — a Temporada 2 pode ser tanto uma caçada quanto uma corrida para
+estabilizar o que foi só parcialmente consertado.
+
+### 3. O Abraço da Sede
+
+O caminho mais poderoso e o mais corruptor. O Vozeiro sobrevive absorvendo
+parte da própria Sede para controlá-la — e funciona, no sentido de que Ipêra
+é salva. Mas o herói que sai desse Ato 3 não é mais totalmente humano aos
+olhos do próprio povo: poderoso o bastante para manter a Sede sob controle
+sozinho, e por isso mesmo vigiado com o mesmo misto de gratidão e medo que
+cercava o último Vozeiro antes da guerra contra o Jugo — a história se repete,
+com o jogador agora do outro lado dela. Zaya é a única que não tem medo dele;
+Tobias, que já viveu de perto o preço desse tipo de poder através da história
+de Amara, é quem insiste que essa vigilância é necessária, mesmo doendo nele
+dizer isso. **Gancho de Temporada 2**: o próprio protagonista é agora uma
+ameaça em potencial — a mesma pergunta que pairava sobre o último Vozeiro
+paira sobre ele, e a Temporada 2 pode explorar diretamente se a história vai
+se repetir ou se dessa vez é diferente.
+
+Em nenhum dos três casos há "vitória limpa" — e nos três, Ilva, Zaya ou o
+próprio Vozeiro carregam um fio solto específico para a Temporada 2, não um
+gancho genérico igual para todo mundo. Isso é proposital: o mundo real também
+não tem respostas limpas para o que fazemos com o que herdamos, e uma
+sequência de verdade deveria começar de onde a escolha do jogador realmente
+o deixou, não de um "reset" narrativo.
 
 ## Ganchos para continuação
 
-O capítulo se fecha, mas uma mensageira vinda de além-mar chega no epílogo com
-uma frase simples: *"a Sede não é só nossa."* Outras terras têm suas próprias
-feridas. Isso abre a porta para:
+Além do fio específico que cada final planta (acima), o capítulo se fecha com
+um gancho compartilhado pelos três: uma mensageira vinda de além-mar chega no
+epílogo com uma frase simples — *"a Sede não é só nossa."* Outras terras têm
+suas próprias feridas. E o mais recente conteúdo do jogo já aponta na mesma
+direção: a masmorra mais profunda que o jogador pode enfrentar guarda, no seu
+chefe final, uma Raiz corrompida que não fala a língua de Ipêra — a primeira
+prova concreta, ainda dentro do próprio Capítulo 1, de que a Sede tem uma
+origem maior do que a guerra contra o Jugo.
 
 - **Capítulo 2**: uma expedição às terras que hoje seriam o antigo Jugo — uma
   civilização tentando se reconstruir depois de também esgotar sua magia.
+  O estado em que o jogador deixou Ipêra (Corte / Cura instável / Abraço)
+  muda como essa civilização reage a um Vozeiro batendo à porta dela.
 - **Capítulo 3**: uma região de serra alta (inspirada nos Andes) com seu
   próprio povo, sua própria relação com as Raízes, e uma peça a mais do
   quebra-cabeça sobre os Zeladores originais.
 - Personagens recrutáveis adicionais, no espírito de "construir uma
   comunidade" (como em *Suikoden*): cada NPC salvo ou aliado conquistado no
   caminho pode retornar como apoio numa base/vilarejo que cresce.
+- **Nada disso está implementado ainda** — de propósito. Esta seção existe
+  para que a Temporada 2 tenha para onde crescer sem precisar contradizer o
+  que já foi escrito; o próximo passo de conteúdo real é a reviravolta do
+  Ato 2.5 (a verdade sobre a colheita das Raízes e Amara Ventura) e o
+  confronto do Ato 3 em si, ainda não escritos como quests jogáveis.
 
 ## Como isso já está implementado no jogo (Capítulo 1, início)
 
