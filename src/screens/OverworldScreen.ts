@@ -40,11 +40,30 @@ const DIR_AXIS: Record<Dir, { x: number; z: number }> = {
 const PLAYER_SPEED = 3.6; // world units/second, free-roam walking pace (not grid-snapped)
 const PLAYER_RADIUS = 0.34; // collision circle, roughly the character's own girth
 const TURN_SPEED = 12; // how fast the avatar's facing catches up to its movement direction
-const CAM_DISTANCE = 4.4;
-const CAM_HEIGHT = 3.1;
-/** Fallback camera lift (above the avatar) when no spot within CAM_DISTANCE clears every nearby tree/building — see desiredCameraPosition/updateCamera. */
-const CAM_LIFT_HEIGHT = 5.0;
-const LOOK_HEIGHT = 1.1;
+
+/**
+ * The default third-person camera rig: behind and above the avatar, angled
+ * down at it. Grouped here (rather than as separate scattered constants) so
+ * future work on camera positioning — a player-adjustable angle, a zoom
+ * level, a different rig for boss fights, whatever comes next — has one
+ * place to add to instead of hunting down every related number.
+ *
+ * Pulled back and raised well above the previous close, near-eye-level
+ * chase-cam (distance 4.4 / height 3.1) into a more elevated overview,
+ * closer to how Diablo/PW-style ARPGs frame the character: enough of the
+ * surrounding ground stays in frame to actually read a scene (nearby NPCs,
+ * a monster corridor, a room's layout) instead of mostly sky and whatever
+ * is directly ahead. Still genuinely third-person and behind the avatar —
+ * not a top-down/isometric switch — just angled further down.
+ */
+const CAMERA_RIG = {
+  distance: 6.0,
+  height: 6.5,
+  /** World-Y the camera looks at, relative to the avatar's own position — just above the feet, not the chest, so the steeper downward angle keeps the avatar centered instead of looking past their head. */
+  lookHeight: 0.9,
+};
+/** Fallback camera lift (above the avatar) when no spot within CAMERA_RIG.distance clears every nearby tree/building — see desiredCameraPosition/updateCamera. Derived from the rig height (not an independent constant) so raising the default height can't accidentally leave this lower than normal. */
+const CAM_LIFT_HEIGHT = CAMERA_RIG.height + 2.0;
 const INTERACT_RANGE = TILE_SIZE * 1.3;
 const NPC_COLLISION_RADIUS = 0.4;
 // The player model's local origin is at its feet, but its hip pivot (where a
@@ -1070,15 +1089,15 @@ export class OverworldScreen implements Screen {
   /**
    * Pushes a candidate XZ point directly away from any tree canopy it
    * overlaps, and re-clamps it to the avatar's normal orbit distance
-   * (CAM_DISTANCE) every pass — not just once at the end. Doing the clamp
-   * only after de-penetration was itself a bug: shrinking a resolved point
-   * straight back toward the avatar can walk it right back into the same
-   * tree it was just pushed clear of (worse the more clearance the push
-   * needed), so both constraints have to be satisfied together, iterating
-   * until neither moves anything. Returns whether a violation still
-   * remained after all passes (a pathologically tight cluster with no spot
-   * inside CAM_DISTANCE that's clear of everything) so the caller can fall
-   * back to lifting the camera above canopy height instead.
+   * (CAMERA_RIG.distance) every pass — not just once at the end. Doing the
+   * clamp only after de-penetration was itself a bug: shrinking a resolved
+   * point straight back toward the avatar can walk it right back into the
+   * same tree it was just pushed clear of (worse the more clearance the
+   * push needed), so both constraints have to be satisfied together,
+   * iterating until neither moves anything. Returns whether a violation
+   * still remained after all passes (a pathologically tight cluster with
+   * no spot inside CAMERA_RIG.distance that's clear of everything) so the
+   * caller can fall back to lifting the camera above canopy height instead.
    *
    * Used on BOTH the freshly-computed ideal camera target AND the actual
    * rendered camera.position after it lerps toward that target — the lerp
@@ -1172,8 +1191,8 @@ export class OverworldScreen implements Screen {
         z = pushed.z;
       }
       const distFromAvatar = Math.hypot(x - px, z - pz);
-      if (distFromAvatar > CAM_DISTANCE) {
-        const t = CAM_DISTANCE / distFromAvatar;
+      if (distFromAvatar > CAMERA_RIG.distance) {
+        const t = CAMERA_RIG.distance / distFromAvatar;
         x = px + (x - px) * t;
         z = pz + (z - pz) * t;
       }
@@ -1201,14 +1220,14 @@ export class OverworldScreen implements Screen {
     const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
     target
       .copy(this.avatar.position)
-      .addScaledVector(forward, -CAM_DISTANCE)
-      .add(new THREE.Vector3(0, CAM_HEIGHT, 0));
+      .addScaledVector(forward, -CAMERA_RIG.distance)
+      .add(new THREE.Vector3(0, CAMERA_RIG.height, 0));
 
     const resolved = this.resolveCameraXZ(target.x, target.z);
     target.x = resolved.x;
     target.z = resolved.z;
 
-    // Pathologically dense cluster (no spot within CAM_DISTANCE clears
+    // Pathologically dense cluster (no spot within CAMERA_RIG.distance clears
     // every nearby tree/building) — lift the camera above obstacle height
     // instead, which clears the clip regardless of how tightly packed
     // things are horizontally. Tree canopies top out around 1.9 world
@@ -1223,7 +1242,7 @@ export class OverworldScreen implements Screen {
 
   private positionCameraImmediate(): void {
     this.desiredCameraPosition(this.camera.position);
-    this.camLookAt.copy(this.avatar.position).add(new THREE.Vector3(0, LOOK_HEIGHT, 0));
+    this.camLookAt.copy(this.avatar.position).add(new THREE.Vector3(0, CAMERA_RIG.lookHeight, 0));
     this.camera.lookAt(this.camLookAt);
   }
 
@@ -1244,7 +1263,7 @@ export class OverworldScreen implements Screen {
     this.camera.position.z = resolvedCam.z;
     if (resolvedCam.violated) this.camera.position.y = Math.max(this.camera.position.y, this.avatar.position.y + CAM_LIFT_HEIGHT);
 
-    const desiredLookAt = new THREE.Vector3().copy(this.avatar.position).add(new THREE.Vector3(0, LOOK_HEIGHT, 0));
+    const desiredLookAt = new THREE.Vector3().copy(this.avatar.position).add(new THREE.Vector3(0, CAMERA_RIG.lookHeight, 0));
     this.camLookAt.lerp(desiredLookAt, followLerp);
     this.camera.lookAt(this.camLookAt);
 
