@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { CLASS_DEFINITIONS, getClassById } from '../config/classes';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
-import { buildClassPreview } from '../render/characterModel';
+import { GltfActor } from '../render/gltfModel';
+import { loadPreviewAvatar } from '../render/playerAvatar';
 import { audio } from '../systems/AudioSystem';
 import { deleteSlotSave, listSaveSlots, loadSlotSave, setActiveSlot, type SaveSlotEntry } from '../systems/SaveSystem';
 import { el, goToLazy } from '../ui/dom';
@@ -17,7 +18,8 @@ function musicPreferredOn(): boolean {
 export class MainMenuScreen implements Screen {
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
-  private showcase!: THREE.Group;
+  private showcase = new THREE.Group();
+  private showcaseActor: GltfActor | null = null;
   private motes!: THREE.Points;
   private moteVelocities: Float32Array = new Float32Array();
   private time = 0;
@@ -53,8 +55,15 @@ export class MainMenuScreen implements Screen {
     this.camera.lookAt(0, 0.85, 0);
 
     const def = CLASS_DEFINITIONS[0];
-    this.showcase = buildClassPreview(def.id);
     this.scene.add(this.showcase);
+    loadPreviewAvatar(def.id)
+      .then((avatar) => {
+        this.scene.remove(this.showcase);
+        this.showcase = avatar.scene;
+        this.showcaseActor = avatar.actor;
+        this.scene.add(this.showcase);
+      })
+      .catch((err) => console.error('Falha ao carregar modelo da classe', err));
 
     this.buildMotes();
     this.buildUi();
@@ -74,6 +83,7 @@ export class MainMenuScreen implements Screen {
   update(dt: number): void {
     this.time += dt;
     this.showcase.rotation.y = this.time * 0.6;
+    this.showcaseActor?.update(dt);
 
     // Slow drifting motes — a common "mysterious fantasy title screen"
     // touch (fireflies/dust catching the rim light). Each rises gently and

@@ -141,24 +141,27 @@ function hideAlternateMeshes(scene: THREE.Group, classId: string): void {
  * `goToLazy` call sites in `OverworldScreen`/`CharacterCreationScreen`/etc.)
  * so the model is a plain, already-resolved object by the time a
  * screen's synchronous `mount()` runs — no mid-mount await, no T-pose frame.
+ *
+ * `heightScale` is the only piece of character-creation customization that
+ * still carries over onto the real model — the rest (skin tone, face, hair,
+ * markings, garment colors...) has no home on a single pre-baked texture
+ * atlas, so `CharacterCreationScreen` no longer even offers UI for those.
  */
-export async function loadPlayerAvatar(player: Player): Promise<PlayerAvatar> {
-  const classId = player.classId;
+export async function loadPreviewAvatar(classId: string, heightScale = 1): Promise<PlayerAvatar> {
   const modelFile = CLASS_MODEL_FILE[classId] ?? CLASS_MODEL_FILE[DEFAULT_CLASS];
   const loaded = await loadSkinnedInstance(`characters/${modelFile}.glb`);
   hideAlternateMeshes(loaded.scene, classId);
   applyMeshScaleFixups(loaded.scene);
-
-  // The only piece of character-creation customization that still carries
-  // over onto the real model (see CharacterCreationScreen's comment) — the
-  // rest (skin tone, face, hair, markings, garment colors...) has no home on
-  // a single pre-baked texture atlas, so the creation screen's preview is
-  // now cosmetic-only for those.
-  loaded.scene.scale.setScalar(player.appearance.heightScale * MODEL_SCALE_CORRECTION);
+  loaded.scene.scale.setScalar(heightScale * MODEL_SCALE_CORRECTION);
 
   const actor = new GltfActor(loaded);
   actor.play('Idle');
-  const avatar: PlayerAvatar = { scene: loaded.scene, actor, weaponKind: WEAPON_KIND[classId] ?? WEAPON_KIND[DEFAULT_CLASS], classId };
+  return { scene: loaded.scene, actor, weaponKind: WEAPON_KIND[classId] ?? WEAPON_KIND[DEFAULT_CLASS], classId };
+}
+
+/** Same loader as `loadPreviewAvatar`, plus the player-specific bits (their actual height pick, socketed weapon gem) a bare class/appearance preview doesn't have. */
+export async function loadPlayerAvatar(player: Player): Promise<PlayerAvatar> {
+  const avatar = await loadPreviewAvatar(player.classId, player.appearance.heightScale);
   applyWeaponGem(avatar, player);
   return avatar;
 }
