@@ -37,8 +37,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icons/icon.svg'],
       manifest: {
-        name: 'Vozeiro',
-        short_name: 'Vozeiro',
+        name: 'Sede',
+        short_name: 'Sede',
         description: 'Um RPG 3D de Ipêra, jogável no navegador e instalável como app.',
         start_url: '.',
         display: 'fullscreen',

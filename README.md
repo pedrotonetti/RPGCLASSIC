@@ -1,4 +1,4 @@
-# Vozeiro
+# Sede
 
 Um RPG 3D de ação (estilo ARPG mobile) ambientado em Ipêra, que roda no navegador e pode ser
 instalado como app (PWA): criação de personagem com dezenas de opções de
