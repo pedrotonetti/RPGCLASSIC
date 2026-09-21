@@ -118,7 +118,12 @@ export default defineConfig({
   // Real-time combat (cooldowns, chase AI, wandering monsters, GLTF
   // avatar/model loading) is genuinely slower than typical UI-only e2e
   // flows — generous timeouts here are deliberate, not slack test authoring.
-  timeout: 90_000,
+  // Mounting the main city zone alone (30 monsters + buildings + wildlife,
+  // rendered through headless software WebGL — see the chromium project's
+  // `--enable-unsafe-swiftshader`) has been observed taking 30-45s on this
+  // environment; a test doing more than one fresh mount raises its own
+  // timeout further with `test.setTimeout(...)`.
+  timeout: 120_000,
   expect: { timeout: 15_000 },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
