@@ -15,13 +15,14 @@
  * HOW TO RUN IT
  *   npm run test:e2e
  * (equivalent to `npx playwright test`). It boots its own disposable Vite dev
- * server on a freshly-picked free port (see `findFreePort` below) — you do
- * NOT need a dev server already running, and it will never collide with one
- * you (or another agent) already have up on :5173 or any other port, since it
- * always starts a brand new instance scoped to THIS checkout/worktree.
- * Chromium must be the one preinstalled for this environment at
- * `/opt/pw-browsers/chromium` (see the `chromium` project's `launchOptions`
- * below) — never run `playwright install`.
+ * server on a fixed port (5199 by default — see "ON THE DEV SERVER / PORT"
+ * below) — you do NOT need a dev server already running, and it will never
+ * attach to one you (or another agent) already have up on :5173 or anywhere
+ * else, since it always starts a brand new instance scoped to THIS
+ * checkout/worktree. Chromium must be the one preinstalled for this
+ * environment at `/opt/pw-browsers/chromium` (see the `chromium` project's
+ * `launchOptions` below) — never run `playwright install`. The suite runs
+ * serially (`workers: 1`) by design — see that setting's own comment.
  *
  * WHO SHOULD RUN IT, AND WHEN
  * Multiple agents work on this codebase in parallel (feature work, bug
@@ -128,7 +129,17 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  workers: 2,
+  // This environment's headless Chromium renders through software WebGL
+  // (SwiftShader — see the chromium project's launchOptions below), which is
+  // CPU-heavy, and this host also runs other agents' own dev
+  // servers/browsers concurrently (observed while building this suite: two
+  // parallel workers under real host CPU pressure was enough to make one
+  // browser instance stall out and never recover, failing tests that were
+  // otherwise correct). Running the suite serially is slower in isolation
+  // but far more reliable as a shared regression gate under real-world load
+  // — pass `--workers=N` on the command line to try more if your environment
+  // is under lighter load.
+  workers: 1,
   reporter: [['list']],
   use: {
     baseURL: BASE_URL,

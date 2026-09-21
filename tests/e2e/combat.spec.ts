@@ -62,7 +62,7 @@ test('walking up to a dungeon monster engages combat; basic attacks drop its HP 
   // automatically once in range — engagement isn't gated on player input.
   const hotbar = page.locator('.hotbar');
   await hotbar.waitFor({ state: 'visible', timeout: 15_000 });
-  await expect(page.locator('.enemy-label.world').first()).toBeVisible();
+  await expect(page.locator('.enemy-label.world:visible').first()).toBeVisible();
 
   const hpFill = page.locator('.enemy-hpbar-fg').first();
 
@@ -81,7 +81,11 @@ test('walking up to a dungeon monster engages combat; basic attacks drop its HP 
     // firing immediately (see OverworldCombat.onHotbarClicked).
     const prompt = await page.locator('.battle-message-bar').textContent().catch(() => null);
     if (prompt?.includes('Escolha o alvo')) {
-      await page.locator('.enemy-label.world').first().click();
+      // `:visible` matters here: a defeated monster's label stays in the DOM
+      // (just `hidden`, see OverworldCombat.killMonster) — without this, once
+      // one of the two is dead, a plain `.first()` can lock onto its hidden
+      // label and hang forever waiting for it to become visible.
+      await page.locator('.enemy-label.world:visible').first().click();
     }
     await page.waitForTimeout(1200);
 

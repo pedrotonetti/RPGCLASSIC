@@ -12,13 +12,12 @@
 import { test, expect } from '@playwright/test';
 import { clearAllSaves, confirmCharacterCreation, selectClass, skipIntro, startNewGameFromSlot, waitForOverworld } from './helpers';
 
-const CLASSES_TO_TRY = [
-  { name: 'Guerreiro', hotbarHint: 'Golpe Poderoso' }, // warrior -> Barbarian.glb
-  { name: 'Mago', hotbarHint: 'Bola de Fogo' }, // mage -> Mage.glb
-  { name: 'Arqueiro', hotbarHint: 'Tiro Certeiro' }, // archer -> Rogue.glb
-];
+// warrior -> Barbarian.glb, mage -> Mage.glb, archer -> Rogue.glb (see
+// CLASS_MODEL_FILE) — the 4th distinct model (Knight, paladin) is left for
+// another spec/agent to add if this suite's coverage grows.
+const CLASSES_TO_TRY = ['Guerreiro', 'Mago', 'Arqueiro'];
 
-for (const { name } of CLASSES_TO_TRY) {
+for (const name of CLASSES_TO_TRY) {
   test(`new game through character creation reaches the overworld — ${name}`, async ({ page }) => {
     const pageErrors: string[] = [];
     page.on('pageerror', (err) => pageErrors.push(err.message));
