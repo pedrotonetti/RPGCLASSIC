@@ -19,3 +19,8 @@ yarn-error.log*
 # Build cache
 .vite
 node_modules/.tmp
+
+# Playwright e2e suite artifacts (tests/e2e/README in playwright.config.ts)
+/test-results/
+/playwright-report/
+/blob-report/

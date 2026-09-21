@@ -30,7 +30,13 @@ export default defineConfig({
     // for isolated parallel-agent checkouts) — without this, a worktree
     // sitting inside the repo tree gets its own copy of every *.test.ts
     // picked up too, double-counting (or worse, stale-counting) results.
-    exclude: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/.claude/**'],
+    //
+    // tests/e2e/**: the Playwright browser regression suite (see
+    // playwright.config.ts) — its files are also named *.spec.ts (vitest's
+    // own default include pattern), but they import `test`/`expect` from
+    // `@playwright/test`, not vitest, and need a live browser + dev server.
+    // Without this exclusion vitest would try (and fail) to run them itself.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/.claude/**', 'tests/e2e/**'],
   },
   plugins: [
     VitePWA({
