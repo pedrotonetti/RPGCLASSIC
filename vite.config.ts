@@ -37,9 +37,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icons/icon.svg'],
       manifest: {
-        name: 'RPG Classic',
-        short_name: 'RPG Classic',
-        description: 'Um RPG 2D jogável no navegador e instalável como app.',
+        name: 'Vozeiro',
+        short_name: 'Vozeiro',
+        description: 'Um RPG 3D de Ipêra, jogável no navegador e instalável como app.',
         start_url: '.',
         display: 'fullscreen',
         orientation: 'landscape',

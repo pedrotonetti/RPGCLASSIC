@@ -192,8 +192,8 @@ export class MainMenuScreen implements Screen {
       [
         this.musicBtn,
         el('div', { className: 'top-bar' }, [
-          el('h1', { className: 'title-logo', text: 'IPÊRA' }),
-          el('div', { className: 'subtitle', text: 'As Raízes despertam. Um Vozeiro precisa ouvi-las.' }),
+          el('h1', { className: 'title-logo', text: 'VOZEIRO' }),
+          el('div', { className: 'subtitle', text: 'As Raízes de Ipêra despertam. Só um Vozeiro pode ouvi-las.' }),
         ]),
         el('div', { className: 'bottom-bar' }, [
           slotsEl,

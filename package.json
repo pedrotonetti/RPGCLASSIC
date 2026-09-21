@@ -1,7 +1,7 @@
 {
   "name": "rpgclassic",
   "version": "0.1.0",
-  "description": "RPG Classic - um RPG 3D web/app feito com Three.js, TypeScript e Vite, com sistema de classes extensível.",
+  "description": "Vozeiro - um RPG 3D de Ipêra, feito com Three.js, TypeScript e Vite, com sistema de classes extensível.",
   "type": "module",
   "private": true,
   "scripts": {

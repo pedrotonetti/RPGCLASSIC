@@ -1,6 +1,6 @@
-# RPG Classic
+# Vozeiro
 
-Um RPG 3D de ação (estilo ARPG mobile) que roda no navegador e pode ser
+Um RPG 3D de ação (estilo ARPG mobile) ambientado em Ipêra, que roda no navegador e pode ser
 instalado como app (PWA): criação de personagem com dezenas de opções de
 aparência, 8 classes com árvore de habilidades própria, combate em tempo real
 direto no mundo (sem tela de batalha separada), um mundo com uma vila e uma
