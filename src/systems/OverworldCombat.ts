@@ -6,7 +6,7 @@ import type { SkillDefinition } from '../config/types';
 import type { Game } from '../engine/Game';
 import { Enemy } from '../entities/Enemy';
 import type { Player } from '../entities/Player';
-import { getItemById } from '../data/items';
+import { getItemById, ITEM_DEFINITIONS } from '../data/items';
 import { buildEnemyModel } from '../render/characterModel';
 import type { CharacterAnimatorLike, ActionName } from '../render/animation';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from './CombatSystem';
@@ -515,7 +515,12 @@ export class OverworldCombat {
   }
 
   private buildItemBar(): void {
-    const itemIds = Object.keys(this.player.inventory).filter((id) => (this.player.inventory[id] ?? 0) > 0);
+    // player.inventory is a shared bag for consumables AND crafting
+    // materials/gems (see the vendor.craftMaterialId debit sites in
+    // OverworldScreen.ts) — only real ITEM_DEFINITIONS entries belong in the
+    // combat item hotbar, so a picked-up material can't crash getItemById.
+    const consumableIds = new Set(ITEM_DEFINITIONS.map((i) => i.id));
+    const itemIds = Object.keys(this.player.inventory).filter((id) => (this.player.inventory[id] ?? 0) > 0 && consumableIds.has(id));
     if (itemIds.length === 0) return;
 
     const slotEls: HTMLElement[] = [];
