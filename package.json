@@ -31,6 +31,7 @@
   "homepage": "https://github.com/pedrotonetti/RPGCLASSIC#readme",
   "devDependencies": {
     "@playwright/test": "^1.56.1",
+    "@types/node": "^26.6.2",
     "@types/three": "^0.185.4",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
