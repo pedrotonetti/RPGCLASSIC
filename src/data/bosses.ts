@@ -23,6 +23,7 @@ export const BOSS_DEFINITIONS: EnemyDefinition[] = [
     name: 'Matriarca-Geleia',
     color: 0x4b1f5e,
     isBoss: true,
+    level: 9, // clearly above the early-game monster curve (goblin=3..troll=10) it's fought alongside, matching a boss's step up over wandering enemies at the same recommended character level
     stats: { maxHp: 100, maxMp: 20, attack: 12, magicAttack: 7, defense: 6, magicDefense: 5, speed: 4, luck: 4 },
     xpReward: 70,
     goldReward: 55,
@@ -57,6 +58,7 @@ export const BOSS_DEFINITIONS: EnemyDefinition[] = [
     name: 'Guardiã de Casca',
     color: 0x6a5a3a,
     isBoss: true,
+    level: 13, // above stone_golem (11), the toughest regular enemy near this dungeon's recommended level
     stats: { maxHp: 170, maxMp: 30, attack: 16, magicAttack: 8, defense: 12, magicDefense: 9, speed: 3, luck: 4 },
     xpReward: 110,
     goldReward: 90,
@@ -102,6 +104,7 @@ export const BOSS_DEFINITIONS: EnemyDefinition[] = [
     name: 'A Raiz Sem Voz',
     color: 0x2a2f28,
     isBoss: true,
+    level: 20, // above young_dragon (18, the base story's own final boss) — this dungeon is framed as content beyond that climax, and its loot should say so too
     stats: { maxHp: 340, maxMp: 60, attack: 24, magicAttack: 22, defense: 14, magicDefense: 14, speed: 6, luck: 6 },
     xpReward: 260,
     goldReward: 220,
