@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { Player } from '../entities/Player';
-import { firstCallingQuestIdForClass, firstQuestIdForClass, getQuestById } from '../data/quests';
-import { ensureClassCallingStarted, ensureQuestStarted, notifyEnemyDefeated, notifyLevelChanged, notifyTalkedTo } from './QuestSystem';
+import { firstCallingQuestIdForClass, firstQuestIdForClass, getQuestById, lastCallingQuestIdForClass } from '../data/quests';
+import {
+  ensureAmaraRevealStarted,
+  ensureClassCallingStarted,
+  ensureQuestStarted,
+  notifyEnemyDefeated,
+  notifyLevelChanged,
+  notifyTalkedTo,
+} from './QuestSystem';
 
 function freshPlayer(classId = 'warrior'): Player {
   return Player.createNew('Testador', classId);
@@ -229,5 +236,64 @@ describe('CLASS_CALLING_QUESTS chains', () => {
 
     expect(finalMessage).not.toBeNull();
     expect(player.activeQuestId).toBeNull();
+  });
+});
+
+describe('ensureAmaraRevealStarted', () => {
+  it('does nothing before the class\'s own calling chain is complete', () => {
+    const player = freshPlayer('warrior');
+    player.completedQuestIds.push('q6_dragon', 'warrior_pc1_convoy');
+    ensureAmaraRevealStarted(player);
+    expect(player.activeQuestId).toBeNull();
+  });
+
+  it('does not override an already-active quest', () => {
+    const player = freshPlayer('warrior');
+    player.completedQuestIds.push('q6_dragon', lastCallingQuestIdForClass('warrior'));
+    player.activeQuestId = 'q1_awaken';
+    ensureAmaraRevealStarted(player);
+    expect(player.activeQuestId).toBe('q1_awaken');
+  });
+
+  it('does not restart the chain once its first quest is already completed', () => {
+    const player = freshPlayer('warrior');
+    player.completedQuestIds.push('q6_dragon', lastCallingQuestIdForClass('warrior'), 'amara_r1_evasion');
+    ensureAmaraRevealStarted(player);
+    expect(player.activeQuestId).toBeNull();
+  });
+
+  it.each(ALL_CLASS_IDS)('starts the class-agnostic reveal chain once %s\'s own calling chain is complete', (classId) => {
+    const player = freshPlayer(classId);
+    player.completedQuestIds.push('q6_dragon', lastCallingQuestIdForClass(classId));
+
+    ensureAmaraRevealStarted(player);
+
+    expect(player.activeQuestId).toBe('amara_r1_evasion');
+  });
+});
+
+describe('AMARA_REVEAL_QUESTS chain', () => {
+  it('walks the reveal chain end to end: evasion -> archives -> proof -> confession', () => {
+    const player = freshPlayer('warrior');
+    player.completedQuestIds.push('q6_dragon', lastCallingQuestIdForClass('warrior'));
+    ensureAmaraRevealStarted(player);
+    expect(player.activeQuestId).toBe('amara_r1_evasion');
+
+    expect(notifyTalkedTo(player, 'tobias')).not.toBeNull();
+    expect(player.activeQuestId).toBe('amara_r2_archives');
+
+    expect(notifyTalkedTo(player, 'escrivao_aldo')).not.toBeNull();
+    expect(player.activeQuestId).toBe('amara_r3_proof');
+
+    for (let i = 0; i < 3; i++) {
+      expect(notifyEnemyDefeated(player, 'skeleton')).toBeNull();
+    }
+    expect(notifyEnemyDefeated(player, 'skeleton')).not.toBeNull();
+    expect(player.activeQuestId).toBe('amara_r4_confession');
+
+    const finalMessage = notifyTalkedTo(player, 'tobias');
+    expect(finalMessage).not.toBeNull();
+    expect(player.activeQuestId).toBeNull();
+    expect(player.completedQuestIds).toEqual(expect.arrayContaining(['amara_r1_evasion', 'amara_r2_archives', 'amara_r3_proof', 'amara_r4_confession']));
   });
 });

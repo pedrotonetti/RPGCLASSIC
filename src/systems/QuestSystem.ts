@@ -1,6 +1,12 @@
 import { createStarterItem } from '../data/equipment';
 import { getNpcById } from '../data/npcs';
-import { firstCallingQuestIdForClass, firstQuestIdForClass, getQuestById, type QuestDefinition } from '../data/quests';
+import {
+  firstCallingQuestIdForClass,
+  firstQuestIdForClass,
+  getQuestById,
+  lastCallingQuestIdForClass,
+  type QuestDefinition,
+} from '../data/quests';
 import type { Player } from '../entities/Player';
 
 /** Activates the very first quest the first time a fresh character enters the world — that class's own village prelude, not the shared main-city story. */
@@ -21,6 +27,22 @@ export function ensureClassCallingStarted(player: Player): void {
   if (player.activeQuestId) return;
   if (!player.completedQuestIds.includes('q6_dragon')) return;
   const firstId = firstCallingQuestIdForClass(player.classId);
+  if (player.completedQuestIds.includes(firstId)) return;
+  player.activeQuestId = firstId;
+}
+
+/**
+ * Once a player's own class's "calling" chain (CLASS_CALLING_QUESTS) is fully
+ * behind them and no other quest is active, hands them the first quest of
+ * "A Sombra de Amara" (AMARA_REVEAL_QUESTS) — the class-agnostic Ato 2.5
+ * reveal chain every calling chain was built to converge on. Same idempotent,
+ * call-it-every-mount shape as ensureClassCallingStarted.
+ */
+export function ensureAmaraRevealStarted(player: Player): void {
+  if (player.activeQuestId) return;
+  const lastCallingId = lastCallingQuestIdForClass(player.classId);
+  if (!player.completedQuestIds.includes(lastCallingId)) return;
+  const firstId = 'amara_r1_evasion';
   if (player.completedQuestIds.includes(firstId)) return;
   player.activeQuestId = firstId;
 }

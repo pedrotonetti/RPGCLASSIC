@@ -436,7 +436,71 @@ export const CLASS_CALLING_QUESTS: QuestDefinition[] = [
   },
 ];
 
-const ALL_QUESTS: QuestDefinition[] = [...CLASS_PRELUDE_QUESTS, ...QUEST_CHAIN, ...CLASS_CALLING_QUESTS];
+/**
+ * "A Sombra de Amara" — Ato 2.5's opening reveal chain: the convergence point
+ * all eight CLASS_CALLING_QUESTS chains above were built to gesture at (see
+ * that constant's own doc-comment). Unlike CLASS_CALLING_QUESTS, this is a
+ * SINGLE class-agnostic chain — every class converges on the same plot once
+ * their own calling chain is done, so there is no per-class branching here.
+ * See LORE.md's "A reviravolta (Ato 2/3)" for the truth this pays off (Tobias's
+ * ancestor Amara Ventura was one of the seven Zeladores da Raiz who sealed,
+ * not healed, the wound) and QuestSystem.ensureAmaraRevealStarted for how the
+ * chain is triggered. Deliberately ends on a cliffhanger, not a resolution —
+ * the Ato 3 confrontation/branching endings are a future pass (see LORE.md).
+ */
+export const AMARA_REVEAL_QUESTS: QuestDefinition[] = [
+  {
+    id: 'amara_r1_evasion',
+    title: 'As Perguntas que Tobias Evita',
+    description:
+      'Depois de tudo que já ouviu — de tanta gente diferente, em tantos cantos de Pedravale — chegou a hora de perguntar direto ao Ancião Tobias o que ele sabe sobre os Zeladores da Raiz.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'talkTo', targetId: 'tobias', amount: 1 },
+    rewardXp: 80,
+    rewardGold: 50,
+    nextQuestId: 'amara_r2_archives',
+  },
+  {
+    id: 'amara_r2_archives',
+    title: 'O Arquivo de Aldo',
+    description:
+      'Tobias desviou do assunto rápido demais para ser esquecimento. Se ele não vai falar, talvez os registros mais velhos da vila falem por ele — procure o Escrivão Aldo nos arquivos de Pedravale.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'talkTo', targetId: 'escrivao_aldo', amount: 1 },
+    rewardXp: 120,
+    rewardGold: 70,
+    nextQuestId: 'amara_r3_proof',
+  },
+  {
+    id: 'amara_r3_proof',
+    title: 'O Nome nas Vigas',
+    description:
+      'Aldo achou um nome, mas não uma prova que se segure sozinha. As vigas mais antigas da casa de Tobias guardam símbolos entalhados que ninguém mais decifrou — e algo corrompido ainda vigia o que resta deles.',
+    giverNpcId: 'escrivao_aldo',
+    objective: { kind: 'defeat', targetId: 'skeleton', amount: 4 },
+    rewardXp: 180,
+    rewardGold: 110,
+    nextQuestId: 'amara_r4_confession',
+  },
+  {
+    id: 'amara_r4_confession',
+    title: 'A Confissão do Ancião',
+    description:
+      'De posse da prova, é hora de confrontar Tobias — não para acusá-lo, mas para finalmente ouvir a verdade inteira, custe o que custar a ele e a você.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'talkTo', targetId: 'tobias', amount: 1 },
+    rewardXp: 320,
+    rewardGold: 200,
+    rewardItem: { templateId: 'talisma_velocidade', rarity: 'vermelho' },
+  },
+];
+
+const ALL_QUESTS: QuestDefinition[] = [
+  ...CLASS_PRELUDE_QUESTS,
+  ...QUEST_CHAIN,
+  ...CLASS_CALLING_QUESTS,
+  ...AMARA_REVEAL_QUESTS,
+];
 
 export function getQuestById(id: string): QuestDefinition | undefined {
   return ALL_QUESTS.find((q) => q.id === id);
@@ -462,6 +526,30 @@ const CALLING_FIRST_QUEST_ID: Record<string, string> = {
 /** The first quest of a class's personal Pedravale "calling" chain — see CLASS_CALLING_QUESTS. */
 export function firstCallingQuestIdForClass(classId: string): string {
   const id = CALLING_FIRST_QUEST_ID[classId];
+  if (!id) throw new Error(`Sem missão de chamado definida para a classe: ${classId}`);
+  return id;
+}
+
+/** Last quest id of each class's personal Pedravale "calling" chain — see CLASS_CALLING_QUESTS. */
+const CALLING_LAST_QUEST_ID: Record<string, string> = {
+  warrior: 'warrior_pc3_first_line',
+  mage: 'mage_pc3_seal_broken',
+  archer: 'archer_pc3_source',
+  cleric: 'cleric_pc3_warning',
+  paladin: 'paladin_pc3_reactivate',
+  assassin: 'assassin_pc3_mask',
+  necromancer: 'necromancer_pc3_trust',
+  monk: 'monk_pc3_alarm',
+};
+
+/**
+ * The last quest of a class's personal Pedravale "calling" chain — see
+ * CLASS_CALLING_QUESTS. Used to gate AMARA_REVEAL_QUESTS (the class-agnostic
+ * chain every calling chain converges into) on that class's own chain being
+ * fully complete, regardless of which class the player picked.
+ */
+export function lastCallingQuestIdForClass(classId: string): string {
+  const id = CALLING_LAST_QUEST_ID[classId];
   if (!id) throw new Error(`Sem missão de chamado definida para a classe: ${classId}`);
   return id;
 }

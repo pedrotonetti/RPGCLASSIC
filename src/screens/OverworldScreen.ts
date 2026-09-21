@@ -8,7 +8,7 @@ import { getGemById } from '../data/gems';
 import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
-import { NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
+import { dialogueLinesFor, NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
 import { arriveWorldPosition, getZoneById, type ZoneDefinition, type ZoneExit } from '../data/zones';
 import { dungeonsInHostZone, getDungeonById, type DungeonDefinition } from '../data/dungeons';
 import { rarityTier, rarityToHex } from '../config/rarity';
@@ -24,7 +24,13 @@ import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
-import { ensureClassCallingStarted, ensureQuestStarted, notifyTalkedTo, questTrackerText } from '../systems/QuestSystem';
+import {
+  ensureAmaraRevealStarted,
+  ensureClassCallingStarted,
+  ensureQuestStarted,
+  notifyTalkedTo,
+  questTrackerText,
+} from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
 import { el, goToLazy } from '../ui/dom';
@@ -180,6 +186,8 @@ export class OverworldScreen implements Screen {
   private paused = false;
   private dialogueNpc: NpcDefinition | null = null;
   private dialogueLineIndex = 0;
+  /** The lines actually shown for this conversation — captured at open time via dialogueLinesFor, before notifyTalkedTo can mutate quest state out from under them. */
+  private dialogueLines: string[] = [];
   private nearbyNpc: NpcDefinition | null = null;
   private shopNpc: NpcDefinition | null = null;
 
@@ -210,6 +218,7 @@ export class OverworldScreen implements Screen {
   mount(): void {
     ensureQuestStarted(this.player);
     ensureClassCallingStarted(this.player);
+    ensureAmaraRevealStarted(this.player);
 
     this.scene.background = new THREE.Color(0x8ec9e8);
     this.scene.fog = new THREE.Fog(0x8ec9e8, 16, 46);
@@ -837,6 +846,11 @@ export class OverworldScreen implements Screen {
   private openDialogue(npc: NpcDefinition): void {
     this.dialogueNpc = npc;
     this.dialogueLineIndex = 0;
+    // Captured BEFORE notifyTalkedTo, which can complete the active quest and
+    // change activeQuestId out from under us — the lines a quest-conditioned
+    // NPC shows for this conversation reflect the state the player walked up
+    // with, not whatever quest they're handed immediately after.
+    this.dialogueLines = dialogueLinesFor(npc, this.player.activeQuestId, this.player.completedQuestIds);
     this.dialogueOverlay.hidden = false;
     this.promptEl.hidden = true;
     this.renderDialogueLine();
@@ -853,13 +867,13 @@ export class OverworldScreen implements Screen {
   private renderDialogueLine(): void {
     if (!this.dialogueNpc) return;
     this.dialogueNameEl.textContent = this.dialogueNpc.name;
-    this.dialogueLineEl.textContent = this.dialogueNpc.dialogue[this.dialogueLineIndex];
+    this.dialogueLineEl.textContent = this.dialogueLines[this.dialogueLineIndex];
   }
 
   private advanceDialogue(): void {
     if (!this.dialogueNpc) return;
     this.dialogueLineIndex += 1;
-    if (this.dialogueLineIndex >= this.dialogueNpc.dialogue.length) {
+    if (this.dialogueLineIndex >= this.dialogueLines.length) {
       this.closeDialogue();
       return;
     }

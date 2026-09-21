@@ -16,6 +16,22 @@ export interface VendorInfo {
   craftMaterialId: string;
 }
 
+/**
+ * A quest-state-conditioned override of an NPC's default `dialogue` lines.
+ * Checked in the order they appear in `NpcDefinition.questDialogue` — put the
+ * most specific/latest state first. `when: 'active'` (the default) matches
+ * while `questId` is the player's current `activeQuestId`; `when: 'completed'`
+ * matches once `questId` is in `completedQuestIds` (and no earlier, more
+ * specific entry matched) — handy for a persistent line that should stick
+ * around after a chain's last quest, once there's no longer an active quest
+ * to key off of.
+ */
+export interface NpcQuestDialogue {
+  questId: string;
+  when?: 'active' | 'completed';
+  lines: string[];
+}
+
 export interface NpcDefinition {
   id: string;
   name: string;
@@ -25,6 +41,8 @@ export interface NpcDefinition {
   mapX: number;
   mapY: number;
   dialogue: string[];
+  /** Optional quest-conditioned dialogue overrides — see NpcQuestDialogue. */
+  questDialogue?: NpcQuestDialogue[];
   appearance: CharacterAppearance;
   vendor?: VendorInfo;
   /**
@@ -104,6 +122,50 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'As Raízes estão inquietas. A Florescência deveria vir em breve, mas as Ipê-árvores não florescem — estão sendo drenadas por algo que chamamos de Sede.',
       'Você é um Vozeiro. Consegue ouvir os ancestrais diretamente. É um dom que se acreditava extinto.',
       'Vá até os ipezais além da vila e ouça por si mesmo o que as Raízes têm a dizer. Eu... preciso pensar em como te contar o resto.',
+    ],
+    questDialogue: [
+      {
+        questId: 'amara_r4_confession',
+        when: 'completed',
+        lines: [
+          '(Tobias ainda está sentado onde você o deixou, olhando para as próprias mãos.)',
+          'Eu devia ter contado antes de você precisar arrancar de mim. Isso também é minha culpa, não só a de Amara.',
+          'Se Ilva já sabe o que eu sei — e algo me diz que sabe — ela não vai esperar educadamente que você decida o que fazer com isso.',
+        ],
+      },
+      {
+        questId: 'amara_r4_confession',
+        lines: [
+          '(Tobias respira fundo, como quem carrega esse fôlego há décadas.)',
+          'Amara Ventura era minha bisavó. Uma das sete. Não uma heroína de história de ninar — uma pessoa que fez uma escolha e depois passou o resto da vida com medo de que alguém a repetisse.',
+          'Eles não curaram a ferida, filho(a). Selaram. Empurraram o problema para quem viesse depois — para nós. E eu soube disso a vida inteira e escolhi ficar calado, porque achei que estava te poupando de um peso grande demais.',
+          'Estava errado. Não em me preocupar — em decidir sozinho o que você merecia carregar.',
+          'Tem gente lá fora que já chegou perto demais dessa mesma verdade, do jeito errado. Ilva. Se o nome já chegou até você por outros lábios, agora sabe por quê.',
+          '(Ele hesita, olhando para a porta, como se tivesse mais uma coisa a dizer e não conseguisse.) Vá com cuidado. Isso não termina com uma confissão — está só começando.',
+        ],
+      },
+      {
+        questId: 'amara_r3_proof',
+        lines: [
+          '(Tobias vê o que você carrega e o rosto dele perde a cor por um instante, antes de se recompor.)',
+          'Onde você conseguiu... não. Não me responda aqui, na rua. Venha até minha casa quando puder falar sem que meio Pedravale escute.',
+        ],
+      },
+      {
+        questId: 'amara_r2_archives',
+        lines: [
+          'O Escrivão Aldo mexe demais nesses arquivos velhos. Um dia desses ele vai desenterrar algo que era melhor deixar enterrado.',
+          '(Ele diz isso sorrindo, mas os olhos não sorriem junto.)',
+        ],
+      },
+      {
+        questId: 'amara_r1_evasion',
+        lines: [
+          'Zeladores da Raiz? Isso é história de avó, para assustar criança antes de dormir. Não perca seu tempo com fantasma de guerra antiga.',
+          '(Ele desvia o olhar ao dizer isso — a primeira vez que você o vê, de verdade, mentir.)',
+          'Vá descansar. Amanhã tem trabalho de verdade te esperando.',
+        ],
+      },
     ],
   },
   {
@@ -198,6 +260,17 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Você deve ser o Vozeiro de quem todos falam. Eu sou Zaya — vim de um vilarejo três serras a leste.',
       'Andei seguindo o rastro da Sede até aqui. Prometo te ajudar no que precisar lá fora.',
       '(Zaya sorri, mas por um instante seus olhos pesam, como quem carrega um recado que ainda não entregou.)',
+    ],
+    questDialogue: [
+      {
+        questId: 'amara_r4_confession',
+        when: 'completed',
+        lines: [
+          '(Zaya ouve você contar o que Tobias confessou e fica quieta por tempo demais antes de responder.)',
+          'Amara Ventura. Os Zeladores. Ilva.',
+          '(Ela repete os nomes baixinho, como quem já os ouviu antes em algum lugar que não devia — e então força um sorriso rápido demais para ser sincero.) Isso muda tudo, não é? Vamos com calma, então.',
+        ],
+      },
     ],
   },
   {
@@ -369,6 +442,17 @@ NPC_DEFINITIONS.push(
       'É um voto de guarda, não de guerra. Promete vigilância eterna contra algo que o texto nunca nomeia — só chama de "a ferida".',
       'Um documento desses não devia ficar esquecido numa prateleira. Mas reativar um juramento assim não é decisão de escrivão — é decisão de quem carrega honra o bastante pra jurá-lo de novo.',
     ],
+    questDialogue: [
+      {
+        questId: 'amara_r2_archives',
+        lines: [
+          'Já ia te procurar. Achei um registro de nascimento arquivado junto do juramento dos Zeladores — um sobrenome que ainda existe em Pedravale.',
+          'Ventura. Amara Ventura. E olhando de novo os riscos entalhados nas vigas mais velhas da casa do Ancião Tobias, o mesmo traço de letra aparece nos dois lugares.',
+          'Não estou dizendo que Tobias é ela. Estou dizendo que ele é filho de quem foi — e isso ele nunca contou a ninguém, nem à própria vila que lidera.',
+          'Se quiser algo mais firme que minha palavra, essas vigas ainda estão de pé. Alguma coisa corrompida anda rondando lá embaixo, como se ainda montasse guarda sobre o que resta delas.',
+        ],
+      },
+    ],
   },
   {
     id: 'vigia_talma',
@@ -475,4 +559,19 @@ export function getNpcById(id: string): NpcDefinition {
   const found = NPC_DEFINITIONS.find((n) => n.id === id);
   if (!found) throw new Error(`NPC desconhecido: ${id}`);
   return found;
+}
+
+/**
+ * The dialogue lines to actually show for this NPC right now — the first
+ * matching entry in `npc.questDialogue` (see NpcQuestDialogue), falling back
+ * to `npc.dialogue` when none match. Takes primitives rather than a `Player`
+ * so this data module has no dependency on the entities layer.
+ */
+export function dialogueLinesFor(npc: NpcDefinition, activeQuestId: string | null, completedQuestIds: string[]): string[] {
+  for (const entry of npc.questDialogue ?? []) {
+    const when = entry.when ?? 'active';
+    if (when === 'active' && activeQuestId === entry.questId) return entry.lines;
+    if (when === 'completed' && completedQuestIds.includes(entry.questId)) return entry.lines;
+  }
+  return npc.dialogue;
 }
