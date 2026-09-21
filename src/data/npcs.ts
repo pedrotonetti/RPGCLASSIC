@@ -27,6 +27,16 @@ export interface NpcDefinition {
   dialogue: string[];
   appearance: CharacterAppearance;
   vendor?: VendorInfo;
+  /**
+   * Which playable class's rigged GLTF model (see `render/playerAvatar.ts`'s
+   * `CLASS_MODEL_FILE`/`HELD_MESHES`) this NPC renders as in `OverworldScreen`
+   * — chosen as the closest visual/role analog, not a claim the NPC actually
+   * plays that class. Every hand-authored NPC below sets this explicitly; the
+   * generated elder/mentor loop at the bottom of this file sets it to the
+   * theme's own `classId` (an elder/mentor IS that class, so it reuses that
+   * class's exact loadout instead of guessing an analog).
+   */
+  classAnalogId: string;
 }
 
 function npcAppearance(overrides: Partial<CharacterAppearance>): CharacterAppearance {
@@ -74,6 +84,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     id: 'tobias',
     name: 'Ancião Tobias',
     role: 'Líder de Pedravale',
+    // Wise mystic elder who "hears the ancestors" — reads as an arcane sage.
+    classAnalogId: 'mage',
     zoneId: MAIN_CITY_ID,
     mapX: 5,
     mapY: 4,
@@ -98,6 +110,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     id: 'elira',
     name: 'Ferreira Elira',
     role: 'Ferreira',
+    // Blacksmith — rugged, hammer-and-axe worker, the Barbarian rig's vibe.
+    classAnalogId: 'warrior',
     zoneId: MAIN_CITY_ID,
     mapX: 3,
     mapY: 6,
@@ -120,6 +134,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     id: 'bram',
     name: 'Guarda Bram',
     role: 'Guarda da Vila',
+    // Armored village guard — sword-and-shield Knight rig.
+    classAnalogId: 'paladin',
     zoneId: MAIN_CITY_ID,
     mapX: 8,
     mapY: 3,
@@ -140,6 +156,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     id: 'mira',
     name: 'Curandeira Mira',
     role: 'Boticária',
+    // Healer/apothecary — staff-carrying cleric reads right for a curandeira.
+    classAnalogId: 'cleric',
     zoneId: MAIN_CITY_ID,
     mapX: 7,
     mapY: 6,
@@ -161,6 +179,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     id: 'zaya',
     name: 'Zaya',
     role: 'Batedora Viajante',
+    // Traveling scout — bow-carrying Rogue rig fits a scout's ranged, mobile vibe.
+    classAnalogId: 'archer',
     zoneId: MAIN_CITY_ID,
     mapX: 4,
     mapY: 7,
@@ -184,6 +204,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     id: 'artesa_bina',
     name: 'Artesã Bina',
     role: 'Artesã',
+    // Hand-craft artisan — unarmed monk loadout (no weapon shown) suits a non-combatant.
+    classAnalogId: 'monk',
     zoneId: MAIN_CITY_ID,
     mapX: 6,
     mapY: 4,
@@ -205,6 +227,10 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     id: 'joalheiro_nemo',
     name: 'Joalheiro Nemo',
     role: 'Joalheiro',
+    // Precise gem-cutter — necromancer's Mage-file wand+spellbook loadout
+    // (small tool-in-hand, book of notes) reads as fine handiwork, and keeps
+    // him visually distinct from Tobias/Aldo's own Mage-file variants.
+    classAnalogId: 'necromancer',
     zoneId: MAIN_CITY_ID,
     mapX: 8,
     mapY: 6,
@@ -235,6 +261,8 @@ NPC_DEFINITIONS.push(
     id: 'doroteia_comboio',
     name: 'Doroteia',
     role: 'Líder do Comboio de Refugiados',
+    // Leader who protected her people fleeing Forte de Ferro — armored Knight rig.
+    classAnalogId: 'paladin',
     zoneId: MAIN_CITY_ID,
     mapX: 3,
     mapY: 3,
@@ -256,6 +284,8 @@ NPC_DEFINITIONS.push(
     id: 'correio_bento',
     name: 'Correio Bento',
     role: 'Mensageiro de Pedravale',
+    // Fast, light courier — agile dagger-carrying Rogue rig.
+    classAnalogId: 'assassin',
     zoneId: MAIN_CITY_ID,
     mapX: 4,
     mapY: 3,
@@ -276,6 +306,8 @@ NPC_DEFINITIONS.push(
     id: 'cacador_ren',
     name: 'Caçador Ren',
     role: 'Batedor das Trilhas',
+    // Literal bow-carrying hunter/tracker.
+    classAnalogId: 'archer',
     zoneId: MAIN_CITY_ID,
     mapX: 5,
     mapY: 3,
@@ -296,6 +328,8 @@ NPC_DEFINITIONS.push(
     id: 'zeladora_sable',
     name: 'Zeladora Sable',
     role: 'Guardiã do Ipezal de Pedravale',
+    // Shrine/grove guardian who feels the Raízes — staff-carrying cleric.
+    classAnalogId: 'cleric',
     zoneId: MAIN_CITY_ID,
     mapX: 6,
     mapY: 3,
@@ -317,6 +351,8 @@ NPC_DEFINITIONS.push(
     id: 'escrivao_aldo',
     name: 'Escrivão Aldo',
     role: 'Guardião dos Arquivos de Pedravale',
+    // Bookish archivist/scholar — staff-and-open-spellbook mage reads studious.
+    classAnalogId: 'mage',
     zoneId: MAIN_CITY_ID,
     mapX: 7,
     mapY: 3,
@@ -338,6 +374,8 @@ NPC_DEFINITIONS.push(
     id: 'vigia_talma',
     name: 'Vigia Talma',
     role: 'Chefe da Guarda de Pedravale',
+    // Head of the guard — armored sword-and-shield Knight rig, same as Bram.
+    classAnalogId: 'paladin',
     zoneId: MAIN_CITY_ID,
     mapX: 3,
     mapY: 4,
@@ -359,6 +397,8 @@ NPC_DEFINITIONS.push(
     id: 'dona_ilma',
     name: 'Dona Ilma',
     role: 'Moradora de Pedravale',
+    // Ordinary townsperson, no reason to be armed — unarmed monk loadout.
+    classAnalogId: 'monk',
     zoneId: MAIN_CITY_ID,
     mapX: 4,
     mapY: 4,
@@ -380,6 +420,8 @@ NPC_DEFINITIONS.push(
     id: 'andarilho_ossian',
     name: 'Andarilho Ossian',
     role: 'Monge Peregrino',
+    // Literally a wandering monk — unarmed monk loadout.
+    classAnalogId: 'monk',
     zoneId: MAIN_CITY_ID,
     mapX: 7,
     mapY: 4,
@@ -407,6 +449,9 @@ for (const theme of CLASS_ZONE_THEMES) {
     id: `${theme.classId}_elder`,
     name: theme.elderName,
     role: theme.elderTitle,
+    // An elder/mentor of this class's own village IS that class, so it
+    // reuses that exact class's model/loadout instead of an analog guess.
+    classAnalogId: theme.classId,
     zoneId: theme.startVillageId,
     mapX: 8,
     mapY: 7,
@@ -417,6 +462,7 @@ for (const theme of CLASS_ZONE_THEMES) {
     id: `${theme.classId}_mentor`,
     name: theme.mentorName,
     role: theme.mentorTitle,
+    classAnalogId: theme.classId,
     zoneId: theme.secondaryVillageId,
     mapX: 11,
     mapY: 8,

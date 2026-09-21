@@ -16,9 +16,10 @@ import type { EquipmentSlot, ItemRarity } from '../config/types';
 import { Player } from '../entities/Player';
 import type { CharacterAnimatorLike } from '../render/animation';
 import { GltfCharacterAnimator } from '../render/gltfCharacterAnimator';
-import { buildHumanCharacter, buildMountModel } from '../render/characterModel';
+import { buildMountModel } from '../render/characterModel';
 import { animateDungeonPortal, buildDungeonPortalMesh } from '../render/dungeonPortal';
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
+import { loadNpcAvatar } from '../render/npcAvatar';
 import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
 import { OverworldCombat } from '../systems/OverworldCombat';
@@ -78,8 +79,11 @@ const FLYING_HOVER_HEIGHT = 0.9;
 
 interface NpcSlot {
   def: NpcDefinition;
+  /** An invisible placeholder `THREE.Group` at first (see `buildNpcs`), swapped for the real loaded GLTF scene once `loadNpcAvatar` resolves — every distance/position read elsewhere (`updateInteraction`, `updateNpcLabels`, `canOccupy`) just reads `.position`, which is valid on either. */
   model: THREE.Group;
   labelEl: HTMLElement;
+  /** Null until the real avatar loads in (see `buildNpcs`) — nothing to drive an Idle clip on before then. */
+  actor: GltfActor | null;
 }
 
 interface DungeonPortalSlot {
@@ -334,6 +338,7 @@ export class OverworldScreen implements Screen {
     this.animateMount(dt);
     this.animateWater();
     this.updateWildlife(dt);
+    this.updateNpcActors(dt);
     this.updateCamera(dt);
     this.updateNpcLabels();
     this.updateDungeonPortals();
@@ -670,12 +675,25 @@ export class OverworldScreen implements Screen {
 
   // --- NPCs & dialogue --------------------------------------------------
 
+  /**
+   * NPCs render as the same rigged GLTF characters as the player (see
+   * `render/npcAvatar.ts`), but loading one is async while `mount()` must
+   * stay synchronous. So every NPC's slot/label/position bookkeeping is set
+   * up immediately with a plain invisible placeholder standing in for
+   * `.model` — every other place that reads `npcSlots[i].model.position`
+   * (movement collision, interaction range, label tracking) works correctly
+   * from frame one — and the placeholder is swapped for the real loaded
+   * scene once its promise resolves. A one-frame (or one-network-roundtrip)
+   * pop-in for a background NPC is fine; this isn't the player's own avatar,
+   * which has to be fully loaded before its screen ever mounts.
+   */
   private buildNpcs(): void {
     for (const def of NPC_DEFINITIONS.filter((n) => n.zoneId === this.player.zoneId)) {
-      const model = buildHumanCharacter(def.appearance, 'none');
-      tileCenterWorld(def.mapX, def.mapY, model.position);
-      model.rotation.y = Math.PI;
-      this.scene.add(model);
+      const placeholder = new THREE.Group();
+      placeholder.visible = false;
+      tileCenterWorld(def.mapX, def.mapY, placeholder.position);
+      placeholder.rotation.y = Math.PI;
+      this.scene.add(placeholder);
 
       // The label already tracks the NPC's exact screen position every frame
       // (updateNpcLabels), so it doubles as a tap target sitting right over
@@ -691,7 +709,22 @@ export class OverworldScreen implements Screen {
         },
       });
       this.game.uiRoot.append(labelEl);
-      this.npcSlots.push({ def, model, labelEl });
+      const slot: NpcSlot = { def, model: placeholder, labelEl, actor: null };
+      this.npcSlots.push(slot);
+
+      loadNpcAvatar(def)
+        .then((avatar) => {
+          avatar.scene.position.copy(placeholder.position);
+          avatar.scene.rotation.y = Math.PI;
+          this.scene.add(avatar.scene);
+          this.scene.remove(placeholder);
+          disposeGroup(placeholder);
+          slot.model = avatar.scene;
+          slot.actor = avatar.actor;
+        })
+        .catch((err) => {
+          console.error(`Falha ao carregar avatar do NPC "${def.id}"`, err);
+        });
     }
   }
 
@@ -759,6 +792,13 @@ export class OverworldScreen implements Screen {
         fox.model.rotation.y = Math.atan2(fox.to.x - fox.from.x, fox.to.z - fox.from.z);
         fox.actor.play('Walk');
       }
+    }
+  }
+
+  /** Drives each loaded NPC's Idle clip — cheap even at the ~15-per-zone high end, same per-instance AnimationMixer.update the ambient foxes use (see updateWildlife). Skips NPCs whose avatar hasn't finished loading yet (still on the placeholder, no actor). */
+  private updateNpcActors(dt: number): void {
+    for (const slot of this.npcSlots) {
+      slot.actor?.update(dt);
     }
   }
 

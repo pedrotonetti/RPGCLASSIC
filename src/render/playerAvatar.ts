@@ -46,7 +46,7 @@ const WEAPON_KIND: Record<string, WeaponKind> = {
   monk: 'fists',
 };
 
-interface HeldMeshConfig {
+export interface HeldMeshConfig {
   /** Mesh node name(s) left visible (already the default — listed for readability/traceability, not applied). */
   show: string[];
   /** Sibling mesh node names under the same character's handslot.l/handslot.r hidden so only `show`'s pick renders. */
@@ -55,7 +55,14 @@ interface HeldMeshConfig {
   gemAnchor: string | null;
 }
 
-const HELD_MESHES: Record<string, HeldMeshConfig> = {
+/**
+ * Exported (alongside `MODEL_SCALE_CORRECTION`, `MESH_SCALE_FIXUP`,
+ * `applyMeshScaleFixups` and `hideAlternateMeshes` below, and `DEFAULT_CLASS`)
+ * so `npcAvatar.ts` can reuse the exact same held-item/scale tables for NPCs
+ * instead of duplicating them — every NPC picks a class-analog id from this
+ * same set (see `NpcDefinition.classAnalogId` in `data/npcs.ts`).
+ */
+export const HELD_MESHES: Record<string, HeldMeshConfig> = {
   // Barbarian.glb: right hand {1H_Axe, 2H_Axe, Mug}, left hand {1H_Axe_Offhand, Barbarian_Round_Shield}.
   // Barbarian_Hat and Barbarian_Cape are also hidden (unlike Knight_Helmet/
   // Knight_Cape and Mage_Hat/Mage_Cape, which read fine left visible): this
@@ -85,7 +92,7 @@ const HELD_MESHES: Record<string, HeldMeshConfig> = {
   monk: { show: [], hide: ['1H_Crossbow', '2H_Crossbow', 'Knife', 'Throwable', 'Knife_Offhand'], gemAnchor: null },
 };
 
-const DEFAULT_CLASS = 'paladin';
+export const DEFAULT_CLASS = 'paladin';
 
 /**
  * Per-mesh visual corrections for individual accessory meshes that read as
@@ -95,11 +102,11 @@ const DEFAULT_CLASS = 'paladin';
  * visually dwarf the character wearing it (and any NPC standing nearby),
  * unlike the other 3 models' headwear.
  */
-const MESH_SCALE_FIXUP: Record<string, number> = {
+export const MESH_SCALE_FIXUP: Record<string, number> = {
   Mage_Hat: 0.6,
 };
 
-function applyMeshScaleFixups(scene: THREE.Group): void {
+export function applyMeshScaleFixups(scene: THREE.Group): void {
   for (const [name, scale] of Object.entries(MESH_SCALE_FIXUP)) {
     const node = scene.getObjectByName(name);
     if (node) node.scale.setScalar(scale);
@@ -117,7 +124,7 @@ function applyMeshScaleFixups(scene: THREE.Group): void {
  * multiplier under `heightScale` so the class-creation height slider still
  * scales relative to a correctly-sized baseline instead of an oversized one.
  */
-const MODEL_SCALE_CORRECTION = 0.72;
+export const MODEL_SCALE_CORRECTION = 0.72;
 
 export interface PlayerAvatar {
   scene: THREE.Group;
@@ -126,7 +133,7 @@ export interface PlayerAvatar {
   classId: string;
 }
 
-function hideAlternateMeshes(scene: THREE.Group, classId: string): void {
+export function hideAlternateMeshes(scene: THREE.Group, classId: string): void {
   const config = HELD_MESHES[classId] ?? HELD_MESHES[DEFAULT_CLASS];
   for (const name of config.hide) {
     const node = scene.getObjectByName(name);
