@@ -3,7 +3,8 @@ import { CLASS_DEFINITIONS } from '../config/classes';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import type { CharacterClassDefinition } from '../config/types';
-import { buildClassPreview } from '../render/characterModel';
+import { GltfActor } from '../render/gltfModel';
+import { loadPreviewAvatar } from '../render/playerAvatar';
 import { el } from '../ui/dom';
 import { CharacterCreationScreen } from './CharacterCreationScreen';
 import { MainMenuScreen } from './MainMenuScreen';
@@ -14,6 +15,9 @@ export class CharacterSelectScreen implements Screen {
 
   private selectedIndex = 0;
   private showcase: THREE.Group | null = null;
+  private showcaseActor: GltfActor | null = null;
+  /** Bumped on every class switch so a slower, superseded load can't clobber a newer one that already resolved (rapid card clicks). */
+  private showcaseGen = 0;
   private time = 0;
 
   private cardEls: HTMLElement[] = [];
@@ -62,6 +66,7 @@ export class CharacterSelectScreen implements Screen {
   update(dt: number): void {
     this.time += dt;
     if (this.showcase) this.showcase.rotation.y = this.time * 0.6;
+    this.showcaseActor?.update(dt);
   }
 
   private buildUi(): void {
@@ -123,12 +128,20 @@ export class CharacterSelectScreen implements Screen {
     const def = CLASS_DEFINITIONS[index];
     this.renderDetails(def);
 
-    if (this.showcase) {
-      this.scene.remove(this.showcase);
-      disposeGroup(this.showcase);
-    }
-    this.showcase = buildClassPreview(def.id);
-    this.scene.add(this.showcase);
+    // Only remove the outgoing showcase from the scene — never dispose its
+    // geometry/materials: `loadSkinnedInstance` clones share those by
+    // reference (three's `SkeletonUtils.clone`), so a still-cached class
+    // model would break for the next pedestal that loads it.
+    const gen = ++this.showcaseGen;
+    loadPreviewAvatar(def.id)
+      .then((avatar) => {
+        if (gen !== this.showcaseGen) return; // superseded by a newer class pick
+        if (this.showcase) this.scene.remove(this.showcase);
+        this.showcase = avatar.scene;
+        this.showcaseActor = avatar.actor;
+        this.scene.add(this.showcase);
+      })
+      .catch((err) => console.error('Falha ao carregar modelo da classe', err));
   }
 
   private renderDetails(def: CharacterClassDefinition): void {
@@ -150,14 +163,4 @@ export class CharacterSelectScreen implements Screen {
     const def = CLASS_DEFINITIONS[this.selectedIndex];
     this.game.goTo(new CharacterCreationScreen(this.game, def.id));
   }
-}
-
-function disposeGroup(group: THREE.Group): void {
-  group.traverse((obj) => {
-    if (obj instanceof THREE.Mesh) {
-      obj.geometry.dispose();
-      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      for (const m of mats) m.dispose();
-    }
-  });
 }

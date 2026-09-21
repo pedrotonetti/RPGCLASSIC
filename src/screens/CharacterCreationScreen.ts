@@ -1,59 +1,26 @@
 import * as THREE from 'three';
 import { getClassById } from '../config/classes';
-import {
-  BODY_TYPES,
-  EYEBROW_STYLES,
-  EYE_COLORS,
-  FACE_SHAPES,
-  FACIAL_HAIR_STYLES,
-  GARMENT_COLORS,
-  GENDERS,
-  HAIR_COLORS,
-  HAIR_STYLES,
-  HEAD_ACCESSORIES,
-  HEIGHT_NOTCHES,
-  SCAR_STYLES,
-  SKIN_TONES,
-  TATTOO_STYLES,
-  defaultAppearance,
-  randomizeAppearance,
-  type CharacterAppearance,
-  type ChoiceOption,
-  type SwatchOption,
-} from '../config/customization';
+import { HEIGHT_NOTCHES, defaultAppearance, type CharacterAppearance, type ChoiceOption } from '../config/customization';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { Player } from '../entities/Player';
-import { buildHumanCharacter, type ClassAccessory } from '../render/characterModel';
+import { GltfActor } from '../render/gltfModel';
+import { loadPreviewAvatar } from '../render/playerAvatar';
 import { el, goToLazy } from '../ui/dom';
 import { CharacterSelectScreen } from './CharacterSelectScreen';
-
-const CLASS_ACCESSORY: Record<string, ClassAccessory> = {
-  warrior: 'sword',
-  mage: 'staff',
-  archer: 'bow',
-  cleric: 'cross',
-  paladin: 'shield',
-  assassin: 'dagger',
-  necromancer: 'grimoire',
-  monk: 'fists',
-};
 
 const HEIGHT_LABELS = ['Baixo', 'Médio-', 'Médio', 'Médio+', 'Alto'];
 
 /**
- * NOTE on the gap between this screen and the real in-game avatar: the
- * actual adventure now renders the player with a real rigged/textured GLTF
- * character (one of 4 fixed models mapped by class — see
- * `render/playerAvatar.ts`), not the procedural primitive-shape mannequin
- * `buildHumanCharacter` still builds for the preview below. That mannequin
- * has no home on a single pre-baked texture atlas, so skin tone, face
- * shape, hair, facial hair, markings and garment colors picked here are
- * preview-only — they don't carry over into the adventure. Only
- * `heightScale` does (applied as a uniform scale on the loaded model in
- * `loadPlayerAvatar`). This is called out to the player directly in the UI
- * (see the subtitle added in `buildUi`) rather than left as a silent
- * surprise the first time they see their hero in the overworld.
+ * The preview here is the same real rigged GLTF model the adventure itself
+ * uses (`render/playerAvatar.ts`), not a stand-in — except it loads
+ * asynchronously (see `loadShowcase`), so `mount()` adds an empty placeholder
+ * group first and swaps the real model in once its file resolves. Of every
+ * `CharacterAppearance` field, only `heightScale` has anywhere to go on the
+ * model (a uniform scale) — skin tone, face, hair, markings and garment
+ * colors have no home on the class's single pre-baked texture atlas, so this
+ * screen no longer offers controls for them at all (see `defaultAppearance`
+ * for what the rest quietly default to instead).
  */
 export class CharacterCreationScreen implements Screen {
   scene = new THREE.Scene();
@@ -61,7 +28,10 @@ export class CharacterCreationScreen implements Screen {
 
   private appearance: CharacterAppearance;
   private heroName = 'Herói';
-  private showcase!: THREE.Group;
+  private showcase: THREE.Group = new THREE.Group();
+  private showcaseActor: GltfActor | null = null;
+  /** Bumped on every (re)load so a slower, superseded load can't clobber a newer one that already resolved (rapid height clicks). */
+  private showcaseGen = 0;
   private time = 0;
   private scrollEl!: HTMLElement;
 
@@ -99,7 +69,8 @@ export class CharacterCreationScreen implements Screen {
     this.camera.position.set(0, 0.9, 3.6);
     this.camera.lookAt(0, 0.75, 0);
 
-    this.rebuildShowcase();
+    this.scene.add(this.showcase);
+    this.loadShowcase();
     this.buildUi();
   }
 
@@ -113,25 +84,33 @@ export class CharacterCreationScreen implements Screen {
   update(dt: number): void {
     this.time += dt;
     this.showcase.rotation.y = Math.sin(this.time * 0.4) * 0.5;
+    this.showcaseActor?.update(dt);
   }
 
-  private rebuildShowcase(): void {
-    if (this.showcase) {
-      this.scene.remove(this.showcase);
-      this.showcase.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry.dispose();
-          const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-          for (const m of mats) m.dispose();
-        }
-      });
-    }
-    this.showcase = buildHumanCharacter(this.appearance, CLASS_ACCESSORY[this.classId] ?? 'none');
-    this.scene.add(this.showcase);
+  /**
+   * Loads the real class model async and swaps it in once ready — a brief
+   * pop-in from the empty placeholder `mount()` starts with, same tradeoff
+   * `OverworldScreen.spawnFoxAt` makes for ambient wildlife. Never disposes
+   * the outgoing showcase's geometry/materials: `loadSkinnedInstance` clones
+   * share those by reference (see three's `SkeletonUtils.clone`), so this
+   * class's other loaded instances (or a subsequent reload here) still need
+   * them alive.
+   */
+  private loadShowcase(): void {
+    const gen = ++this.showcaseGen;
+    loadPreviewAvatar(this.classId, this.appearance.heightScale)
+      .then((avatar) => {
+        if (gen !== this.showcaseGen) return; // superseded by a newer height change
+        this.scene.remove(this.showcase);
+        this.showcase = avatar.scene;
+        this.showcaseActor = avatar.actor;
+        this.scene.add(this.showcase);
+      })
+      .catch((err) => console.error('Falha ao carregar modelo do herói', err));
   }
 
-  private onAppearanceChanged(): void {
-    this.rebuildShowcase();
+  private onHeightChanged(): void {
+    this.loadShowcase();
     this.renderPanel();
   }
 
@@ -141,19 +120,11 @@ export class CharacterCreationScreen implements Screen {
     this.scrollEl = el('div', { className: 'creation-scroll' });
 
     const backBtn = el('div', { className: 'btn', text: '< Voltar', onClick: () => this.game.goTo(new CharacterSelectScreen(this.game)) });
-    const randomBtn = el('div', {
-      className: 'btn',
-      text: 'Aleatorizar',
-      onClick: () => {
-        this.appearance = randomizeAppearance(this.appearance);
-        this.onAppearanceChanged();
-      },
-    });
     const confirmBtn = el('div', { className: 'btn primary', text: 'Começar Aventura >', onClick: () => this.confirm() });
 
     const panel = el('div', { className: 'creation-panel' }, [
       this.scrollEl,
-      el('div', { className: 'creation-footer' }, [backBtn, randomBtn, confirmBtn]),
+      el('div', { className: 'creation-footer' }, [backBtn, confirmBtn]),
     ]);
 
     const screen = el('div', { className: 'creation-screen screen' }, [
@@ -161,7 +132,7 @@ export class CharacterCreationScreen implements Screen {
         el('h1', { className: 'pixel-title', text: `Criar ${def.name}` }),
         el('div', {
           className: 'subtitle',
-          text: 'Este preview é ilustrativo — na aventura seu herói usa o modelo visual da classe.',
+          text: 'Este é o modelo do seu herói na aventura.',
           style: {
             position: 'absolute',
             top: '50px',
@@ -180,40 +151,21 @@ export class CharacterCreationScreen implements Screen {
     this.renderPanel();
   }
 
-  private swatchCategory(label: string, options: SwatchOption[], get: () => number, set: (v: number) => void): HTMLElement {
-    return el('div', { className: 'creation-category' }, [
-      el('div', { className: 'cat-label', text: label }),
+  private heightCategory(): HTMLElement {
+    const a = this.appearance;
+    const heightOptions: ChoiceOption[] = HEIGHT_NOTCHES.map((v, i) => ({ id: String(v), label: HEIGHT_LABELS[i] }));
+    return el('div', { className: 'creation-category height-category' }, [
+      el('div', { className: 'cat-label', text: 'Altura' }),
       el(
         'div',
         { className: 'creation-options' },
-        options.map((opt) =>
+        heightOptions.map((opt) =>
           el('div', {
-            className: `swatch ${get() === opt.value ? 'selected' : ''}`,
-            style: { background: `#${opt.value.toString(16).padStart(6, '0')}` },
-            attrs: { title: opt.label },
-            onClick: () => {
-              set(opt.value);
-              this.onAppearanceChanged();
-            },
-          }),
-        ),
-      ),
-    ]);
-  }
-
-  private choiceCategory(label: string, options: ChoiceOption[], get: () => string, set: (v: string) => void): HTMLElement {
-    return el('div', { className: 'creation-category' }, [
-      el('div', { className: 'cat-label', text: label }),
-      el(
-        'div',
-        { className: 'creation-options' },
-        options.map((opt) =>
-          el('div', {
-            className: `choice-btn ${get() === opt.id ? 'selected' : ''}`,
+            className: `choice-btn height-btn ${String(a.heightScale) === opt.id ? 'selected' : ''}`,
             text: opt.label,
             onClick: () => {
-              set(opt.id);
-              this.onAppearanceChanged();
+              a.heightScale = Number(opt.id);
+              this.onHeightChanged();
             },
           }),
         ),
@@ -222,7 +174,6 @@ export class CharacterCreationScreen implements Screen {
   }
 
   private renderPanel(): void {
-    const a = this.appearance;
     const nameInput = el('input', {
       className: 'btn creation-name-input',
       attrs: { type: 'text', value: this.heroName, maxlength: '16', placeholder: 'Nome do herói' },
@@ -232,30 +183,13 @@ export class CharacterCreationScreen implements Screen {
       this.heroName = nameInput.value;
     });
 
-    const heightOptions: ChoiceOption[] = HEIGHT_NOTCHES.map((v, i) => ({ id: String(v), label: HEIGHT_LABELS[i] }));
-
     this.scrollEl.replaceChildren(
       nameInput,
-      this.choiceCategory('Gênero', GENDERS, () => a.gender, (v) => (a.gender = v as CharacterAppearance['gender'])),
-      this.swatchCategory('Tom de Pele', SKIN_TONES, () => a.skinTone, (v) => (a.skinTone = v)),
-      this.choiceCategory('Compleição', BODY_TYPES, () => a.bodyType, (v) => (a.bodyType = v as CharacterAppearance['bodyType'])),
-      this.choiceCategory(
-        'Altura',
-        heightOptions,
-        () => String(a.heightScale),
-        (v) => (a.heightScale = Number(v)),
-      ),
-      this.choiceCategory('Formato do Rosto', FACE_SHAPES, () => a.faceShape, (v) => (a.faceShape = v as CharacterAppearance['faceShape'])),
-      this.swatchCategory('Cor dos Olhos', EYE_COLORS, () => a.eyeColor, (v) => (a.eyeColor = v)),
-      this.choiceCategory('Sobrancelhas', EYEBROW_STYLES, () => a.eyebrowStyle, (v) => (a.eyebrowStyle = v as CharacterAppearance['eyebrowStyle'])),
-      this.choiceCategory('Estilo de Cabelo', HAIR_STYLES, () => a.hairStyle, (v) => (a.hairStyle = v as CharacterAppearance['hairStyle'])),
-      this.swatchCategory('Cor do Cabelo', HAIR_COLORS, () => a.hairColor, (v) => (a.hairColor = v)),
-      this.choiceCategory('Pelos Faciais', FACIAL_HAIR_STYLES, () => a.facialHair, (v) => (a.facialHair = v as CharacterAppearance['facialHair'])),
-      this.choiceCategory('Acessório de Cabeça', HEAD_ACCESSORIES, () => a.headAccessory, (v) => (a.headAccessory = v as CharacterAppearance['headAccessory'])),
-      this.swatchCategory('Cor Primária', GARMENT_COLORS, () => a.primaryColor, (v) => (a.primaryColor = v)),
-      this.swatchCategory('Cor Secundária', GARMENT_COLORS, () => a.secondaryColor, (v) => (a.secondaryColor = v)),
-      this.choiceCategory('Cicatriz', SCAR_STYLES, () => a.scarStyle, (v) => (a.scarStyle = v as CharacterAppearance['scarStyle'])),
-      this.choiceCategory('Tatuagem', TATTOO_STYLES, () => a.tattooStyle, (v) => (a.tattooStyle = v as CharacterAppearance['tattooStyle'])),
+      el('div', {
+        className: 'creation-note',
+        text: 'A aparência do herói segue o modelo da classe — só a altura é ajustável.',
+      }),
+      this.heightCategory(),
     );
   }
 
