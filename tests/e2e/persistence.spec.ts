@@ -48,8 +48,10 @@ test('progress survives a full page reload and "Continuar"', async ({ page }) =>
     const prompt = await battleMessage.textContent().catch(() => null);
     if (prompt?.includes('Escolha o alvo')) {
       // `:visible` matters here: a defeated monster's label stays in the DOM
-      // (just `hidden`) — see combat.spec.ts's identical note.
-      await page.locator('.enemy-label.world:visible').first().click();
+      // (just `hidden`) — see combat.spec.ts's identical note. `force: true`:
+      // see combat.spec.ts's note on the `.ename` child intercepting the
+      // computed click point.
+      await page.locator('.enemy-label.world:visible').first().click({ force: true });
     }
     await page.waitForTimeout(1200);
     const msg = await battleMessage.textContent().catch(() => null);

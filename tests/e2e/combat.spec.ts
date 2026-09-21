@@ -85,7 +85,12 @@ test('walking up to a dungeon monster engages combat; basic attacks drop its HP 
       // (just `hidden`, see OverworldCombat.killMonster) — without this, once
       // one of the two is dead, a plain `.first()` can lock onto its hidden
       // label and hang forever waiting for it to become visible.
-      await page.locator('.enemy-label.world:visible').first().click();
+      // `force: true`: the label's `.ename` child text often sits exactly at
+      // the computed click point and fails Playwright's strict actionability
+      // check ("intercepts pointer events") even though a real click there
+      // bubbles to the same parent `.enemy-label` click handler — there's no
+      // `pointer-events` override in style.css separating them.
+      await page.locator('.enemy-label.world:visible').first().click({ force: true });
     }
     await page.waitForTimeout(1200);
 
