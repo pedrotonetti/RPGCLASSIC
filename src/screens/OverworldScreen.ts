@@ -74,6 +74,21 @@ const CAMERA_RIG = {
 };
 /** Fallback camera lift (above the avatar) when no spot within CAMERA_RIG.distance clears every nearby tree/building — see desiredCameraPosition/updateCamera. Derived from the rig height (not an independent constant) so raising the default height can't accidentally leave this lower than normal. */
 const CAM_LIFT_HEIGHT = CAMERA_RIG.height + 2.0;
+/**
+ * The camera's azimuth (radians) around the avatar — a genuine constant,
+ * never read from the avatar's own rotation. Earlier, desiredCameraPosition
+ * derived its facing straight from avatar.rotation.y, which the avatar's
+ * own turn-to-face-movement animation (updateMovement's turnToward) keeps
+ * changing continuously — so the camera re-orbited behind the avatar's
+ * new facing on every direction change/reversal instead of holding one
+ * fixed viewing angle, which is what "a fixed third-person camera" (the
+ * owner's own explicit ask) actually means: it translates to follow the
+ * avatar's position, but never rotates with it. computeInputAxis keys off
+ * this exact same constant (not the avatar's yaw) for the same reason.
+ * Free to retune to a different fixed angle later (e.g. a more isometric
+ * default) — just never wire it back to avatar.rotation.y.
+ */
+const CAMERA_YAW = 0;
 const INTERACT_RANGE = TILE_SIZE * 1.3;
 const NPC_COLLISION_RADIUS = 0.4;
 // The player model's local origin is at its feet, but its hip pivot (where a
@@ -169,10 +184,8 @@ export class OverworldScreen implements Screen {
   private dungeonCompleteMessageEl: HTMLElement | null = null;
 
   private isMoving = false;
-  /** Whether input was active last frame — used only to detect the idle→active edge that re-snapshots movementRefYaw (see computeInputAxis). */
-  private wasInputActive = false;
-  /** Camera yaw snapshotted at the start of the current continuous input gesture — see computeInputAxis for why this can't just re-read avatar.rotation.y every frame. */
-  private movementRefYaw = 0;
+  /** Eases toward 1 when the camera is squeezed by a dense obstacle cluster (resolveCameraXZ can't find a clear spot), toward 0 otherwise — see updateCamera. Replaces a direct Math.max height snap, which was a visible one-frame lurch. */
+  private cameraLiftBlend = 0;
 
   private heldKeys = new Set<string>();
   /** Normalized {x,z} from the on-screen joystick, magnitude <=1; null while untouched. */
@@ -465,7 +478,7 @@ export class OverworldScreen implements Screen {
    * Before this, the raw {x, z} from DIR_AXIS was used directly as a
    * WORLD-space vector. That happened to look right only for whichever
    * facing DIR_AXIS.right's sign was tuned against, because the chase
-   * camera (desiredCameraPosition) re-derives its own forward from
+   * camera (desiredCameraPosition) used to re-derive its own forward from
    * avatar.rotation.y every frame. At the default yaw (0, facing +Z), the
    * camera's real right-hand side works out to world -X (the same
    * right-hand rotation math desiredCameraPosition uses), but
@@ -474,28 +487,23 @@ export class OverworldScreen implements Screen {
    * what looked like the wrong side of the screen depending on whatever
    * direction it last happened to be facing.
    *
-   * The reference yaw used for this conversion is a SNAPSHOT
-   * (movementRefYaw), taken once when input goes from idle to active, not
-   * avatar.rotation.y read fresh every frame. Reading it fresh would feed
-   * the avatar's own turn-to-face-target rotation back into the very
-   * vector deciding that target: for pure "right", the resulting target is
-   * always exactly 90° behind whatever the current yaw already is (proven
-   * out — there's no fixed point), so the avatar would spin in place for
-   * as long as the key was held instead of turning once and walking.
-   * Freezing the reference for the gesture's duration removes the
-   * feedback loop; it only updates again once input drops to zero and a
-   * new gesture begins.
+   * The reference yaw is CAMERA_YAW — a fixed constant, not the avatar's
+   * own rotation. It used to be a snapshot of avatar.rotation.y taken at
+   * the start of each input gesture, specifically to avoid a feedback loop
+   * (reading the avatar's own turn-to-face-target rotation back into the
+   * very vector deciding that target spins the avatar in place forever for
+   * pure "right" — proven out, there's no fixed point). Once the camera
+   * itself stopped rotating with the avatar's facing (see CAMERA_YAW's own
+   * comment), that whole snapshot dance became unnecessary: the reference
+   * this function needs to match is the camera's fixed azimuth, which
+   * never changes, so it can just be read directly.
    */
   private computeInputAxis(): { x: number; z: number } {
     const local = this.computeLocalInputAxis();
-    const active = local.x !== 0 || local.z !== 0;
-    if (active && !this.wasInputActive) this.movementRefYaw = this.avatar.rotation.y;
-    this.wasInputActive = active;
-    if (!active) return local;
+    if (local.x === 0 && local.z === 0) return local;
 
-    const yaw = this.movementRefYaw;
-    const forward = { x: Math.sin(yaw), z: Math.cos(yaw) }; // camera-forward at gesture start (see desiredCameraPosition)
-    const right = { x: -Math.cos(yaw), z: Math.sin(yaw) }; // camera-right at gesture start
+    const forward = { x: Math.sin(CAMERA_YAW), z: Math.cos(CAMERA_YAW) };
+    const right = { x: -Math.cos(CAMERA_YAW), z: Math.sin(CAMERA_YAW) };
     const inputForward = -local.z;
     const inputRight = local.x;
     return {
@@ -1451,9 +1459,13 @@ export class OverworldScreen implements Screen {
    * past a facet that the camera's own body (and its wide near-plane
    * frustum) would still clip straight through.
    */
+  /**
+   * XZ + the rig's normal (unlifted) height only — the obstacle-lift
+   * height is applied separately (see cameraLiftBlend) so it can be eased
+   * in smoothly instead of snapped, both here and by every caller.
+   */
   private desiredCameraPosition(target = new THREE.Vector3()): THREE.Vector3 {
-    const yaw = this.avatar.rotation.y;
-    const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    const forward = new THREE.Vector3(Math.sin(CAMERA_YAW), 0, Math.cos(CAMERA_YAW));
     target
       .copy(this.avatar.position)
       .addScaledVector(forward, -CAMERA_RIG.distance)
@@ -1462,22 +1474,21 @@ export class OverworldScreen implements Screen {
     const resolved = this.resolveCameraXZ(target.x, target.z);
     target.x = resolved.x;
     target.z = resolved.z;
-
-    // Pathologically dense cluster (no spot within CAMERA_RIG.distance clears
-    // every nearby tree/building) — lift the camera above obstacle height
-    // instead, which clears the clip regardless of how tightly packed
-    // things are horizontally. Tree canopies top out around 1.9 world
-    // units and most building roofs around 3.8-4.7 (see worldBuilder's
-    // lobe/roof placement) — CAM_LIFT_HEIGHT clears both; only the rare
-    // tower landmark's roof (~5.8) can still poke through in this
-    // fallback path, an acceptable trade-off for how rarely it triggers.
-    if (resolved.violated) target.y = Math.max(target.y, this.avatar.position.y + CAM_LIFT_HEIGHT);
-
     return target;
+  }
+
+  /** this.avatar.position.y + the rig height, lifted by however much of CAM_LIFT_HEIGHT's extra clearance `blend` (0..1) currently calls for. */
+  private cameraHeightFor(blend: number): number {
+    return this.avatar.position.y + CAMERA_RIG.height + blend * (CAM_LIFT_HEIGHT - CAMERA_RIG.height);
   }
 
   private positionCameraImmediate(): void {
     this.desiredCameraPosition(this.camera.position);
+    // No previous frame to ease the lift blend from at mount time — resolve
+    // once and snap it straight to its correct value instead of easing in.
+    const resolved = this.resolveCameraXZ(this.camera.position.x, this.camera.position.z);
+    this.cameraLiftBlend = resolved.violated ? 1 : 0;
+    this.camera.position.y = this.cameraHeightFor(this.cameraLiftBlend);
     this.camLookAt.copy(this.avatar.position).add(new THREE.Vector3(0, CAMERA_RIG.lookHeight, 0));
     this.camera.lookAt(this.camLookAt);
   }
@@ -1485,7 +1496,8 @@ export class OverworldScreen implements Screen {
   private updateCamera(dt: number): void {
     const desired = this.desiredCameraPosition();
     const followLerp = 1 - Math.exp(-dt * 6);
-    this.camera.position.lerp(desired, followLerp);
+    this.camera.position.x += (desired.x - this.camera.position.x) * followLerp;
+    this.camera.position.z += (desired.z - this.camera.position.z) * followLerp;
 
     // The lerp above eases toward `desired`, which is only guaranteed clear
     // of trees AT THE MOMENT it was computed — while walking continuously
@@ -1497,7 +1509,25 @@ export class OverworldScreen implements Screen {
     const resolvedCam = this.resolveCameraXZ(this.camera.position.x, this.camera.position.z);
     this.camera.position.x = resolvedCam.x;
     this.camera.position.z = resolvedCam.z;
-    if (resolvedCam.violated) this.camera.position.y = Math.max(this.camera.position.y, this.avatar.position.y + CAM_LIFT_HEIGHT);
+
+    // Pathologically dense cluster (no spot within CAMERA_RIG.distance
+    // clears every nearby tree/building) — lift the camera above obstacle
+    // height instead, which clears the clip regardless of how tightly
+    // packed things are horizontally. Tree canopies top out around 1.9
+    // world units and most building roofs around 3.8-4.7 (see
+    // worldBuilder's lobe/roof placement) — CAM_LIFT_HEIGHT clears both;
+    // only the rare tower landmark's roof (~5.8) can still poke through in
+    // this fallback path, an acceptable trade-off for how rarely it
+    // triggers. Eased toward its target instead of snapped directly onto
+    // camera.position.y (what this used to do): that hard jump was a
+    // visible one-frame lurch — combined with a nearby tree/building's own
+    // shadow, easy to mistake for something flashing into view — exactly
+    // when squeezed by a dense cluster. Slower than the XZ followLerp on
+    // purpose so the lift settles in on its own instead of fighting the
+    // XZ chase in the same instant.
+    const liftTarget = resolvedCam.violated ? 1 : 0;
+    this.cameraLiftBlend += (liftTarget - this.cameraLiftBlend) * (1 - Math.exp(-dt * 4));
+    this.camera.position.y = this.cameraHeightFor(this.cameraLiftBlend);
 
     const desiredLookAt = new THREE.Vector3().copy(this.avatar.position).add(new THREE.Vector3(0, CAMERA_RIG.lookHeight, 0));
     this.camLookAt.lerp(desiredLookAt, followLerp);
