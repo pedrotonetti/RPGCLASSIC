@@ -4,8 +4,50 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { VignetteShader } from 'three/examples/jsm/shaders/VignetteShader.js';
 import type { Screen } from './Screen';
+
+/**
+ * Aspect-ratio-corrected vignette — three.js's own stock VignetteShader
+ * computes `dot(uv, uv)` straight off `vUv` (0..1 on both axes regardless
+ * of the screen's actual pixel aspect ratio), so its "circular" darkening
+ * is only actually circular on a square viewport. On a tall phone screen
+ * (portrait, height >> width) that turns into a lopsided ellipse: each
+ * axis reaches the same darkness at the same UV distance, but a UV unit
+ * covers far fewer physical pixels on the narrow axis than the long one,
+ * so the short (horizontal) edges darken sharply within a small band while
+ * the long (vertical) edges stay clear until much closer to the very top/
+ * bottom — an uneven, harder-edged shape rather than the intended soft,
+ * even corner darkening. Multiplying uv.x by the aspect ratio (width/
+ * height) before the dot product restores a true circle in physical
+ * screen space on any viewport.
+ */
+const AspectCorrectedVignetteShader = {
+  name: 'AspectCorrectedVignetteShader',
+  uniforms: {
+    tDiffuse: { value: null },
+    offset: { value: 1.0 },
+    darkness: { value: 1.0 },
+    aspect: { value: 1.0 },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+    }`,
+  fragmentShader: /* glsl */ `
+    uniform float offset;
+    uniform float darkness;
+    uniform float aspect;
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+      vec4 texel = texture2D( tDiffuse, vUv );
+      vec2 uv = ( vUv - vec2( 0.5 ) ) * vec2( offset );
+      uv.x *= aspect;
+      gl_FragColor = vec4( mix( texel.rgb, vec3( 1.0 - darkness ), dot( uv, uv ) ), texel.a );
+    }`,
+};
 
 export class Game {
   readonly renderer: THREE.WebGLRenderer;
@@ -16,6 +58,7 @@ export class Game {
 
   private composer: EffectComposer;
   private renderPass: RenderPass;
+  private vignettePass: ShaderPass;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.uiRoot = uiRoot;
@@ -37,14 +80,14 @@ export class Game {
     // toward the center, another cheap trick real engines lean on to avoid
     // a flat, uniformly-lit "cartoon" frame. Kept light — this isn't meant
     // to be noticed, just felt.
-    const vignettePass = new ShaderPass(VignetteShader);
-    vignettePass.uniforms.offset.value = 0.9;
-    vignettePass.uniforms.darkness.value = 1.15;
+    this.vignettePass = new ShaderPass(AspectCorrectedVignetteShader);
+    this.vignettePass.uniforms.offset.value = 0.9;
+    this.vignettePass.uniforms.darkness.value = 1.15;
     const outputPass = new OutputPass();
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(this.renderPass);
     this.composer.addPass(bloomPass);
-    this.composer.addPass(vignettePass);
+    this.composer.addPass(this.vignettePass);
     this.composer.addPass(outputPass);
 
     this.resize();
@@ -68,6 +111,7 @@ export class Game {
     const height = window.innerHeight;
     this.renderer.setSize(width, height);
     this.composer.setSize(width, height);
+    this.vignettePass.uniforms.aspect.value = width / height;
     this.current?.onResize?.(width, height);
   }
 

@@ -240,12 +240,24 @@ export class OverworldScreen implements Screen {
 
     this.dirLight = new THREE.DirectionalLight(0xfff4e0, 1.0);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.set(1024, 1024);
+    this.dirLight.shadow.mapSize.set(2048, 2048);
     const cam = this.dirLight.shadow.camera as THREE.OrthographicCamera;
-    cam.left = -9;
-    cam.right = 9;
-    cam.top = 9;
-    cam.bottom = -9;
+    // The shadow frustum recenters on the avatar every frame (see
+    // updateCamera below), but buildings/trees are static — a house's roof
+    // alone spans up to ~8.5 units (ConeGeometry radius 4.24 in
+    // worldBuilder.ts), so the previous ±9 bound only fully contained one
+    // if the avatar stood almost directly under it. Anywhere else nearby
+    // (a very normal distance to be at while walking past one), the roof's
+    // shadow got clipped by the frustum edge and re-clipped differently
+    // every frame as the avatar moved — producing a stray, hard-edged dark
+    // shape that appeared and shifted with movement, easy to mistake for a
+    // moving creature. Widened to comfortably contain any building within
+    // a much larger radius of the avatar; mapSize doubled to keep shadow
+    // crispness at the larger area.
+    cam.left = -16;
+    cam.right = 16;
+    cam.top = 16;
+    cam.bottom = -16;
     cam.near = 1;
     cam.far = 30;
     this.scene.add(this.dirLight);
