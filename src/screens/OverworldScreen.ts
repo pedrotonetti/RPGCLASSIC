@@ -68,7 +68,14 @@ const TURN_SPEED = 12; // how fast the avatar's facing catches up to its movemen
  * not a top-down/isometric switch — just angled further down.
  */
 const CAMERA_RIG = {
-  distance: 6.0,
+  // Was 6.0 — roadside buildings (huts/houses placed right along a path,
+  // see MapGenerator's placeBuildingsAlongPaths) loomed into frame at that
+  // distance: their roofs are low-poly cones (a hut roof is literally a
+  // 4-sided pyramid), so a few flat, mostly-unlit facets filling the edges
+  // of a close frame reads as a huge dark wedge, not "oh, a rooftop".
+  // Pulling the whole rig back gives every nearby object more headroom
+  // before it dominates the frame, on top of the buffer fix below.
+  distance: 7.5,
   height: 6.5,
   /** World-Y the camera looks at, relative to the avatar's own position — just above the feet, not the chest, so the steeper downward angle keeps the avatar centered instead of looking past their head. */
   lookHeight: 0.9,
@@ -1421,10 +1428,18 @@ export class OverworldScreen implements Screen {
     // still clip into the edge of the frame even once its center is barely
     // outside the collision circle.
     const TREE_CAM_BUFFER = 1.1;
-    // Buildings are solid walls (not translucent foliage), so a slightly
-    // smaller buffer than trees still reads fine and keeps the camera from
-    // getting shoved unnecessarily far out on a narrow street.
-    const BUILDING_CAM_BUFFER = 0.9;
+    // This is measured from the building's AABB — its WALLS' footprint —
+    // but the roof overhangs past that: a hut's roof is a 4-sided cone of
+    // radius 2.83 (worldBuilder.ts) sitting on a 2-tile (4-unit-wide) body,
+    // so its corners stick out ~0.8 units past the collider; a house's
+    // roof overhangs by ~1.2. A buffer measured only against the walls
+    // and smaller than that overhang let the camera end up close enough
+    // for the roof's own flat, mostly-unlit facets (low-poly cones, so a
+    // few huge triangles, not a smooth dome) to fill much of the frame as
+    // a giant dark wedge — reported as a "shadow bug" but it was the roof
+    // geometry itself, not a shadow. Sized to clear the worst overhang
+    // (house, ~1.2) plus the same near-plane-frustum margin as trees.
+    const BUILDING_CAM_BUFFER = 2.2;
     const px = this.avatar.position.x;
     const pz = this.avatar.position.z;
     let violated = false;
