@@ -124,7 +124,7 @@ export const DUNGEON_DEFINITIONS: DungeonDefinition[] = [
     id: 'root_hollow',
     name: 'Toca das Raízes Sussurrantes',
     description:
-      'Uma fenda recém-aberta na borda de Pedravale, de onde vêm sussurros que ninguém consegue traduzir. Perfeita para um Vozeiro ainda novo provar sua voz.',
+      'Uma fenda recém-aberta na borda de Pedravale, de onde vêm sussurros que ninguém consegue traduzir. Perfeita para um Escolhido Verde ainda novo provar sua voz.',
     tier: 'early',
     recommendedLevel: 6,
     portalAtTile: { x: 24, y: 6 },

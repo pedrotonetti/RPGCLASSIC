@@ -120,7 +120,7 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Você ouviu, não ouviu? Quando as criaturas atacaram ontem à noite... você as ouviu antes de vê-las.',
       'Isso não é normal. Ninguém em Pedravale devia ser capaz disso. Ninguém... desde a guerra.',
       'As Raízes estão inquietas. A Florescência deveria vir em breve, mas as Ipê-árvores não florescem — estão sendo drenadas por algo que chamamos de Sede.',
-      'Você é um Vozeiro. Consegue ouvir os ancestrais diretamente. É um dom que se acreditava extinto.',
+      'Você é um Escolhido Verde. Consegue ouvir os ancestrais diretamente. É um dom que se acreditava extinto.',
       'Vá até os ipezais além da vila e ouça por si mesmo o que as Raízes têm a dizer. Eu... preciso pensar em como te contar o resto.',
     ],
     questDialogue: [
@@ -257,7 +257,7 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       tattooStyle: 'braco',
     }),
     dialogue: [
-      'Você deve ser o Vozeiro de quem todos falam. Eu sou Zaya — vim de um vilarejo três serras a leste.',
+      'Você deve ser o Escolhido Verde de quem todos falam. Eu sou Zaya — vim de um vilarejo três serras a leste.',
       'Andei seguindo o rastro da Sede até aqui. Prometo te ajudar no que precisar lá fora.',
       '(Zaya sorri, mas por um instante seus olhos pesam, como quem carrega um recado que ainda não entregou.)',
     ],
@@ -348,7 +348,7 @@ NPC_DEFINITIONS.push(
       bodyType: 'magro',
     }),
     dialogue: [
-      'Comandante Gael me mandou correndo à frente do comboio — disse que você era forte o bastante pra isso, Vozeiro.',
+      'Comandante Gael me mandou correndo à frente do comboio — disse que você era forte o bastante pra isso, Escolhido Verde.',
       'Fugimos do Forte de Ferro com o que coube nas costas. As trilhas atrás de nós não estão seguras como antes.',
       'Se Pedravale não aguentar esse tanto de gente com fome e sem teto... o Comandante teme que a cidade vire um problema antes de virar um lar.',
     ],
@@ -372,7 +372,7 @@ NPC_DEFINITIONS.push(
     dialogue: [
       'Vim correndo desde a Torre dos Arcanos — o Magíster Orin jurou que isso não podia esperar pelo carteiro de sempre.',
       'É um pergaminho selado. Ele disse que tentou abri-lo com toda a mana da Torre, e nada aconteceu.',
-      'Orin acha que só reage a um Vozeiro. Não sei bem o que isso quer dizer — só sei que ele parecia mais assustado que curioso.',
+      'Orin acha que só reage a um Escolhido Verde. Não sei bem o que isso quer dizer — só sei que ele parecia mais assustado que curioso.',
     ],
   },
   {

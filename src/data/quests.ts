@@ -24,7 +24,7 @@ export interface QuestDefinition {
 }
 
 /**
- * Capítulo 1 de Ipêra — "O Vozeiro de Pedravale". A ameaça (a Sede) e a
+ * Capítulo 1 de Ipêra — "O Escolhido Verde de Pedravale". A ameaça (a Sede) e a
  * verdade sobre o passado de Ipêra são apresentadas aos poucos; ver
  * LORE.md para a bíblia completa, incluindo a reviravolta e os ganchos
  * para os próximos capítulos. Completar uma missão libera a próxima.
@@ -52,7 +52,7 @@ export const QUEST_CHAIN: QuestDefinition[] = [
   },
   {
     id: 'q3_new_blood',
-    title: 'Sangue de Vozeiro',
+    title: 'Sangue de Escolhido Verde',
     description: 'Seu dom ainda é fraco. Continue treinando até alcançar o nível 5.',
     giverNpcId: 'tobias',
     objective: { kind: 'reachLevel', amount: 5 },
@@ -190,12 +190,12 @@ export const CLASS_CALLING_QUESTS: QuestDefinition[] = [
     rewardGold: 220,
   },
 
-  // --- Mago: o pergaminho que só reage a um Vozeiro ---------------------
+  // --- Mago: o pergaminho que só reage a um Escolhido Verde ---------------------
   {
     id: 'mage_pc1_scroll',
     title: 'O Pergaminho Selado',
     description:
-      'Um mensageiro da Torre dos Arcanos chegou com um pergaminho que nenhuma mana consegue abrir. O Magíster Orin suspeita que só reage a um Vozeiro.',
+      'Um mensageiro da Torre dos Arcanos chegou com um pergaminho que nenhuma mana consegue abrir. O Magíster Orin suspeita que só reage a um Escolhido Verde.',
     giverNpcId: 'correio_bento',
     objective: { kind: 'talkTo', targetId: 'correio_bento', amount: 1 },
     rewardXp: 60,
@@ -206,7 +206,7 @@ export const CLASS_CALLING_QUESTS: QuestDefinition[] = [
     id: 'mage_pc2_attune',
     title: 'Afinar a Própria Voz',
     description:
-      'O selo do pergaminho não cede à magia comum. Aprofunde seu próprio dom de Vozeiro até que ele reconheça sua voz.',
+      'O selo do pergaminho não cede à magia comum. Aprofunde seu próprio dom de Escolhido Verde até que ele reconheça sua voz.',
     giverNpcId: 'correio_bento',
     objective: { kind: 'reachLevel', amount: 14 },
     rewardXp: 220,

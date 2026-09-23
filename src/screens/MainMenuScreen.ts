@@ -203,7 +203,7 @@ export class MainMenuScreen implements Screen {
         this.musicBtn,
         el('div', { className: 'top-bar' }, [
           el('h1', { className: 'title-logo', text: 'SEDE' }),
-          el('div', { className: 'subtitle', text: 'As Raízes de Ipêra apodrecem. Só um Vozeiro pode salvá-las.' }),
+          el('div', { className: 'subtitle', text: 'As Raízes de Ipêra apodrecem. Só um Escolhido Verde pode salvá-las.' }),
         ]),
         el('div', { className: 'bottom-bar' }, [
           slotsEl,

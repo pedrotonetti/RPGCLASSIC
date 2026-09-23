@@ -77,24 +77,24 @@ distorcidas: bestas, sombras e criaturas corrompidas (os monstros que o
 jogador enfrenta não são "monstros aleatórios" — são ancestrais e criaturas
 que a Sede virou do avesso).
 
-## O herói: um Vozeiro
+## O herói: um Escolhido Verde
 
 O protagonista cresce em **Pedravale**, um vilarejo na borda do
 **Verdegal** (a grande mata de Ipêra), criado sob os cuidados do
 **Ancião Tobias**. Na noite em que as primeiras criaturas corrompidas atacam
 o vilarejo, o herói descobre algo impossível: consegue *ouvir* as Raízes
 diretamente — um dom que se acreditava extinto desde a guerra contra o Jugo.
-Isso faz dele um **Vozeiro**.
+Isso faz dele um **Escolhido Verde**.
 
-Ser Vozeiro é bênção e fardo: é a fonte do poder que cresce com o jogador
+Ser Escolhido Verde é bênção e fardo: é a fonte do poder que cresce com o jogador
 (mecanicamente, a árvore de habilidades e o nível de personagem *são* essa
-voz ficando mais forte) — mas também motivo de medo. O último Vozeiro
+voz ficando mais forte) — mas também motivo de medo. O último Escolhido Verde
 conhecido tinha um papel na guerra contra o Jugo, e ninguém fala muito sobre
 isso.
 
 ## A reviravolta (Ato 2/3)
 
-Conforme o Vozeiro aprende a ouvir as Raízes mais fundo, visões do passado
+Conforme o Escolhido Verde aprende a ouvir as Raízes mais fundo, visões do passado
 começam a se revelar — e a verdade é pior do que "o Jugo nos invadiu":
 
 **O Jugo não foi só um agressor.** Gerações atrás, diante de uma seca que
@@ -121,7 +121,7 @@ reportando movimentos do herói para os agentes de Ilva.
 
 ## O final (propositalmente sem resposta fácil)
 
-O Ato 3 não é "matar o chefe final e pronto". O Vozeiro precisa escolher como
+O Ato 3 não é "matar o chefe final e pronto". O Escolhido Verde precisa escolher como
 lidar com uma ferida de gerações — e essa escolha não só fecha a Temporada 1
 de um jeito diferente, ela **define o estado inicial da Temporada 2**. Não é
 "final A/B/C" no sentido raso de telas de crédito diferentes: é uma
@@ -135,7 +135,7 @@ acontecer. Os ipezais ainda existem, mas não respondem mais — visitá-los vir
 um hábito que as famílias mantêm por luto, não por convívio. Ipêra sobrevive,
 mas uma parte inteira de como o povo lida com a própria morte e memória
 desaparece com ela. Zaya, que cresceu ouvindo as Raízes de longe (sem o dom
-de Vozeiro, mas com o costume), é quem mais sente essa perda — e é ela quem,
+de Escolhido Verde, mas com o costume), é quem mais sente essa perda — e é ela quem,
 no epílogo, decide partir em busca de alguma raiz ainda viva em outra terra.
 **Gancho de Temporada 2**: a expedição de Zaya é literalmente o gancho —
 Ipêra do Corte é um mundo mais seguro e mais pobre, e a Temporada 2 começa
@@ -143,7 +143,7 @@ seguindo quem se recusou a aceitar essa perda como definitiva.
 
 ### 2. A Cura Tentada
 
-Arriscada, e o Vozeiro paga um preço pessoal por ela mesmo quando funciona:
+Arriscada, e o Escolhido Verde paga um preço pessoal por ela mesmo quando funciona:
 canalizar cura pela rede de raízes deixa uma marca física visível (algo como
 veios de casca de Ipê crescendo pela pele, permanente) — o corpo do herói
 literalmente começa a se tornar parte da rede que ele salvou. A Florescência
@@ -158,22 +158,22 @@ estabilizar o que foi só parcialmente consertado.
 
 ### 3. O Abraço da Sede
 
-O caminho mais poderoso e o mais corruptor. O Vozeiro sobrevive absorvendo
+O caminho mais poderoso e o mais corruptor. O Escolhido Verde sobrevive absorvendo
 parte da própria Sede para controlá-la — e funciona, no sentido de que Ipêra
 é salva. Mas o herói que sai desse Ato 3 não é mais totalmente humano aos
 olhos do próprio povo: poderoso o bastante para manter a Sede sob controle
 sozinho, e por isso mesmo vigiado com o mesmo misto de gratidão e medo que
-cercava o último Vozeiro antes da guerra contra o Jugo — a história se repete,
+cercava o último Escolhido Verde antes da guerra contra o Jugo — a história se repete,
 com o jogador agora do outro lado dela. Zaya é a única que não tem medo dele;
 Tobias, que já viveu de perto o preço desse tipo de poder através da história
 de Amara, é quem insiste que essa vigilância é necessária, mesmo doendo nele
 dizer isso. **Gancho de Temporada 2**: o próprio protagonista é agora uma
-ameaça em potencial — a mesma pergunta que pairava sobre o último Vozeiro
+ameaça em potencial — a mesma pergunta que pairava sobre o último Escolhido Verde
 paira sobre ele, e a Temporada 2 pode explorar diretamente se a história vai
 se repetir ou se dessa vez é diferente.
 
 Em nenhum dos três casos há "vitória limpa" — e nos três, Ilva, Zaya ou o
-próprio Vozeiro carregam um fio solto específico para a Temporada 2, não um
+próprio Escolhido Verde carregam um fio solto específico para a Temporada 2, não um
 gancho genérico igual para todo mundo. Isso é proposital: o mundo real também
 não tem respostas limpas para o que fazemos com o que herdamos, e uma
 sequência de verdade deveria começar de onde a escolha do jogador realmente
@@ -193,7 +193,7 @@ origem maior do que a guerra contra o Jugo.
 - **Capítulo 2**: uma expedição às terras que hoje seriam o antigo Jugo — uma
   civilização tentando se reconstruir depois de também esgotar sua magia.
   O estado em que o jogador deixou Ipêra (Corte / Cura instável / Abraço)
-  muda como essa civilização reage a um Vozeiro batendo à porta dela.
+  muda como essa civilização reage a um Escolhido Verde batendo à porta dela.
 - **Capítulo 3**: uma região de serra alta (inspirada nos Andes) com seu
   próprio povo, sua própria relação com as Raízes, e uma peça a mais do
   quebra-cabeça sobre os Zeladores originais.

@@ -66,7 +66,7 @@ export const CLASS_ZONE_THEMES: ClassZoneTheme[] = [
     mentorTitle: 'Guardião da Torre dos Arcanos',
     mentorGreeting: [
       'A Torre sente talento à distância. O seu já acende as pedras arcanas do saguão.',
-      'Pedravale fica a sul. O Ancião Tobias vai querer saber de um Vozeiro capaz de manejar magia.',
+      'Pedravale fica a sul. O Ancião Tobias vai querer saber de um Escolhido Verde capaz de manejar magia.',
     ],
     startMonsters: ['slime', 'bat'],
     secondaryMonsters: ['goblin', 'giant_spider', 'skeleton'],
