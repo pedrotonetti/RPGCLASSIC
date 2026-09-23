@@ -75,8 +75,6 @@ const CAMERA_RIG = {
 };
 /** Fallback camera lift (above the avatar) when no spot within CAMERA_RIG.distance clears every nearby tree/building — see desiredCameraPosition/updateCamera. Derived from the rig height (not an independent constant) so raising the default height can't accidentally leave this lower than normal. */
 const CAM_LIFT_HEIGHT = CAMERA_RIG.height + 2.0;
-/** How much cumulative resolveCameraXZ push (world units) counts as a "fully squeezed" cluster — see updateCamera's liftTarget. Small enough that a real dense cluster still ramps to full lift, large enough that one grazing nudge against a single tree doesn't. */
-const CAM_LIFT_RAMP_RANGE = 1.5;
 /**
  * The camera's azimuth (radians) around the avatar — a genuine constant,
  * never read from the avatar's own rotation. Earlier, desiredCameraPosition
@@ -1401,21 +1399,7 @@ export class OverworldScreen implements Screen {
     return { x: x + ((x - bcx) / toOut) * buffer, z: z + ((z - bcz) / toOut) * buffer };
   }
 
-  /**
-   * `pushMagnitude` is the total distance every pass had to shove the point
-   * to clear obstacles — 0 when nothing was in the way, growing with how
-   * deep the squeeze is. This exists (instead of just the boolean
-   * `violated`) because a tight, irregular space like a dungeon
-   * corridor/chamber doorway can flip `violated` true/false on literally
-   * every single frame as the avatar (and the camera trailing it) crosses
-   * the seam — driving the obstacle-lift straight off that boolean made the
-   * lift height itself flicker between clear and fully-lifted several times
-   * a second, a visibly janky "bug de tela" distinct from (and found after)
-   * the earlier fixed-yaw fix. A continuous magnitude lets the caller ramp
-   * the lift in proportional to how squeezed the camera actually is, so it
-   * settles instead of flickering.
-   */
-  private resolveCameraXZ(x: number, z: number): { x: number; z: number; violated: boolean; pushMagnitude: number } {
+  private resolveCameraXZ(x: number, z: number): { x: number; z: number; violated: boolean } {
     // A generous buffer, not just "clear of the canopy's own radius": the
     // camera isn't a point, it's a wide near-plane frustum, so a tree can
     // still clip into the edge of the frame even once its center is barely
@@ -1428,7 +1412,6 @@ export class OverworldScreen implements Screen {
     const px = this.avatar.position.x;
     const pz = this.avatar.position.z;
     let violated = false;
-    let pushMagnitude = 0;
     for (let pass = 0; pass < 8; pass++) {
       violated = false;
       for (const tree of this.treeColliders) {
@@ -1439,7 +1422,6 @@ export class OverworldScreen implements Screen {
         if (dist >= minDist) continue;
         violated = true;
         const pushDist = minDist - dist;
-        pushMagnitude += pushDist;
         if (dist > 0.0001) {
           x += (ox / dist) * pushDist;
           z += (oz / dist) * pushDist;
@@ -1455,7 +1437,6 @@ export class OverworldScreen implements Screen {
         const pushed = this.pushOutOfBuildingBox(x, z, b, BUILDING_CAM_BUFFER);
         if (!pushed) continue;
         violated = true;
-        pushMagnitude += Math.hypot(pushed.x - x, pushed.z - z);
         x = pushed.x;
         z = pushed.z;
       }
@@ -1467,7 +1448,7 @@ export class OverworldScreen implements Screen {
       }
       if (!violated) break;
     }
-    return { x, z, violated, pushMagnitude };
+    return { x, z, violated };
   }
 
   /**
@@ -1512,7 +1493,7 @@ export class OverworldScreen implements Screen {
     // No previous frame to ease the lift blend from at mount time — resolve
     // once and snap it straight to its correct value instead of easing in.
     const resolved = this.resolveCameraXZ(this.camera.position.x, this.camera.position.z);
-    this.cameraLiftBlend = Math.min(1, resolved.pushMagnitude / CAM_LIFT_RAMP_RANGE);
+    this.cameraLiftBlend = resolved.violated ? 1 : 0;
     this.camera.position.y = this.cameraHeightFor(this.cameraLiftBlend);
     this.camLookAt.copy(this.avatar.position).add(new THREE.Vector3(0, CAMERA_RIG.lookHeight, 0));
     this.camera.lookAt(this.camLookAt);
@@ -1531,19 +1512,9 @@ export class OverworldScreen implements Screen {
     // yet. Re-running the same push-away resolution directly on the actual
     // rendered position (not just the target it's chasing) keeps every
     // frame that's actually drawn clear, regardless of how it got there.
-    //
-    // The correction itself is eased, not snapped straight onto
-    // camera.position — an irregular space (a dungeon chamber/corridor
-    // doorway, reproduced via a scripted walk-through) can flip whether a
-    // given point is "clear" or "inside a wall" on near-enough every frame
-    // as the avatar crosses the seam, and snapping the FULL correction each
-    // time turned that into a visible lateral jitter. A fast ease still
-    // clears real clipping within a couple of frames without chasing every
-    // one of those flickers to its full distance.
     const resolvedCam = this.resolveCameraXZ(this.camera.position.x, this.camera.position.z);
-    const correctionLerp = 1 - Math.exp(-dt * 10);
-    this.camera.position.x += (resolvedCam.x - this.camera.position.x) * correctionLerp;
-    this.camera.position.z += (resolvedCam.z - this.camera.position.z) * correctionLerp;
+    this.camera.position.x = resolvedCam.x;
+    this.camera.position.z = resolvedCam.z;
 
     // Pathologically dense cluster (no spot within CAMERA_RIG.distance
     // clears every nearby tree/building) — lift the camera above obstacle
@@ -1560,16 +1531,7 @@ export class OverworldScreen implements Screen {
     // when squeezed by a dense cluster. Slower than the XZ followLerp on
     // purpose so the lift settles in on its own instead of fighting the
     // XZ chase in the same instant.
-    //
-    // Driven by the continuous pushMagnitude, not the boolean `violated` —
-    // right at a chamber/corridor doorway `violated` itself can flip
-    // true/false every single frame, which drove this ramp from 0 to 1 and
-    // back over and over within a couple of seconds even WITH the easing
-    // below (easing dampens a jittering target, it doesn't stop it from
-    // being a jittering target). A magnitude that grows with how deep the
-    // squeeze actually is only ramps up when there's a real, sustained
-    // obstruction to clear.
-    const liftTarget = Math.min(1, resolvedCam.pushMagnitude / CAM_LIFT_RAMP_RANGE);
+    const liftTarget = resolvedCam.violated ? 1 : 0;
     this.cameraLiftBlend += (liftTarget - this.cameraLiftBlend) * (1 - Math.exp(-dt * 4));
     this.camera.position.y = this.cameraHeightFor(this.cameraLiftBlend);
 
