@@ -274,6 +274,48 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     ],
   },
   {
+    id: 'ilva',
+    name: 'Ilva, a Semeadora',
+    role: 'A que acelera a Sede',
+    // Wields the Sede's own corrupted root-magic on purpose — the necromancer analog fits better than any "villain in armor" cliché.
+    classAnalogId: 'necromancer',
+    zoneId: MAIN_CITY_ID,
+    // Standing apart from the plaza's usual cluster (x3-8,y3-7) near the
+    // deepest dungeon's own portal (silent_root_rift, 45,30) — she's been
+    // close to the worst of the Sede the whole time, not hiding across town.
+    mapX: 48,
+    mapY: 32,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'longo',
+      hairColor: 0x8a8378,
+      eyeColor: 0x9acb6e,
+      primaryColor: 0x2e2a24,
+      secondaryColor: 0x5c6b3f,
+      bodyType: 'magro',
+      faceShape: 'anguloso',
+      scarStyle: 'bochecha',
+      headAccessory: 'nenhum',
+    }),
+    // Before act3_q2_confront is even active, she's just an unreadable
+    // stranger nobody has a reason yet to talk to at length.
+    dialogue: [
+      '(Ela observa de longe, quieta demais para ser só mais um rosto de Pedravale. Ainda não é hora de perguntar quem é.)',
+    ],
+    questDialogue: [
+      {
+        questId: 'act3_q2_confront',
+        lines: [
+          'Então é você. O Escolhido Verde que Tobias escondeu de si mesmo por tanto tempo quanto pôde.',
+          'Sei o que veio perguntar: se eu sou o mal, ou se a Sede é. A resposta não vai te agradar — não escolhi isso por prazer. Escolhi porque ninguém mais estava disposto a fazer a escolha difícil.',
+          'As Raízes já estavam apodrecendo antes de mim. Os Zeladores as colheram. Seus ancestrais esconderam isso. Cada geração empurrou o problema pra frente, com medo de encará-lo. Eu só parei de empurrar.',
+          'Queimar tudo até a raiz e forçar uma Segunda Florescência do zero. É cruel. Também é a única cura que não depende de mais uma geração inteira fingindo que a ferida vai sarar sozinha.',
+          'Posso estar errada sobre o preço. Mas alguém tinha que decidir — e agora essa escolha é sua, não minha.',
+        ],
+      },
+    ],
+  },
+  {
     id: 'artesa_bina',
     name: 'Artesã Bina',
     role: 'Artesã',

@@ -13,7 +13,7 @@ import { arriveWorldPosition, getZoneById, type ZoneDefinition, type ZoneExit } 
 import { dungeonsInHostZone, getDungeonById, type DungeonDefinition } from '../data/dungeons';
 import { rarityTier, rarityToHex } from '../config/rarity';
 import type { EquipmentSlot, ItemRarity } from '../config/types';
-import { Player } from '../entities/Player';
+import { Player, type Act3Ending } from '../entities/Player';
 import type { CharacterAnimatorLike } from '../render/animation';
 import { GltfCharacterAnimator } from '../render/gltfCharacterAnimator';
 import { buildMountModel } from '../render/characterModel';
@@ -25,6 +25,7 @@ import { buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type Tree
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
 import {
+  ensureAct3Started,
   ensureAmaraRevealStarted,
   ensureClassCallingStarted,
   ensureQuestStarted,
@@ -99,6 +100,17 @@ const CAM_LIFT_RAMP_RANGE = 1.5;
  * default) — just never wire it back to avatar.rotation.y.
  */
 const CAMERA_YAW = 0;
+
+/** Condensed in-game epilogue text for each of Ato 3's three endings — see LORE.md's "O final" for the full versions this summarizes. */
+const ACT3_EPILOGUE_TEXT: Record<Act3Ending, string> = {
+  corte:
+    'Você sela Ipêra das Raízes para sempre. A Florescência não volta a acontecer, e os ipezais ficam em silêncio — visitá-los agora é luto, não convívio. Ipêra sobrevive, mais segura e mais pobre por isso. Zaya, que cresceu ouvindo as Raízes de longe, é quem mais sente essa perda — e parte em busca de alguma raiz ainda viva em outra terra, além-mar.',
+  cura:
+    'Você canaliza cura pela rede de raízes, e ela pega — mas não por completo, e não sem preço: veios de casca de Ipê começam a crescer pela sua própria pele. A Florescência volta, incompleta e instável. Ilva desaparece, convencida de que "quase deu certo" e determinada a terminar o trabalho sozinha, em algum lugar da Florescência ainda irregular.',
+  abraco:
+    'Você absorve parte da própria Sede para controlá-la — e funciona: Ipêra é salva. Mas você não sai dessa escolha totalmente humano aos olhos do seu povo: poderoso o bastante para manter a Sede sob controle sozinho(a), e por isso mesmo vigiado(a) com o mesmo misto de gratidão e medo que cercava o último Escolhido Verde antes da guerra contra o Jugo. Zaya é a única que não tem medo de você.',
+};
+
 const INTERACT_RANGE = TILE_SIZE * 1.3;
 const NPC_COLLISION_RADIUS = 0.4;
 // The player model's local origin is at its feet, but its hip pivot (where a
@@ -192,6 +204,9 @@ export class OverworldScreen implements Screen {
   private dungeonProgressEl: HTMLElement | null = null;
   private dungeonCompleteEl: HTMLElement | null = null;
   private dungeonCompleteMessageEl: HTMLElement | null = null;
+  private act3ChoiceEl!: HTMLElement;
+  private act3EpilogueEl!: HTMLElement;
+  private act3EpilogueTextEl!: HTMLElement;
 
   private isMoving = false;
   /** Eases toward 1 when the camera is squeezed by a dense obstacle cluster (resolveCameraXZ can't find a clear spot), toward 0 otherwise — see updateCamera. Replaces a direct Math.max height snap, which was a visible one-frame lurch. */
@@ -242,6 +257,7 @@ export class OverworldScreen implements Screen {
     ensureQuestStarted(this.player);
     ensureClassCallingStarted(this.player);
     ensureAmaraRevealStarted(this.player);
+    ensureAct3Started(this.player);
 
     this.scene.background = new THREE.Color(0x8ec9e8);
     this.scene.fog = new THREE.Fog(0x8ec9e8, 16, 46);
@@ -339,6 +355,7 @@ export class OverworldScreen implements Screen {
     this.buildDialogueOverlay();
     this.buildShopOverlay();
     this.buildPauseOverlay();
+    this.buildAct3Overlays();
     if (this.activeDungeon) {
       this.buildDungeonHud();
       this.buildDungeonCompleteOverlay();
@@ -921,6 +938,51 @@ export class OverworldScreen implements Screen {
     this.dialogueOverlay.hidden = true;
     this.refreshQuestTracker();
     if (npc?.vendor) this.openShop(npc);
+    // The confrontation itself (talking to Ilva) already completed
+    // act3_q2_confront via notifyTalkedTo above; the branching choice isn't
+    // a quest objective (this schema has no branching mechanism) — it's
+    // handed off here, once the player has actually read what she has to
+    // say, rather than the instant the dialogue opens.
+    if (npc?.id === 'ilva' && this.player.completedQuestIds.includes('act3_q2_confront') && !this.player.act3Ending) {
+      this.openAct3Choice();
+    }
+  }
+
+  // --- Ato 3: the branching choice (O Corte / A Cura Tentada / O Abraço) -
+
+  private openAct3Choice(): void {
+    this.act3ChoiceEl.hidden = false;
+  }
+
+  private resolveAct3Ending(ending: Act3Ending): void {
+    this.player.act3Ending = ending;
+    saveGame(this.player);
+    this.act3ChoiceEl.hidden = true;
+    this.act3EpilogueTextEl.textContent = ACT3_EPILOGUE_TEXT[ending];
+    this.act3EpilogueEl.hidden = false;
+  }
+
+  private buildAct3Overlays(): void {
+    const corteBtn = el('div', { className: 'btn', text: 'O Corte', onClick: () => this.resolveAct3Ending('corte') });
+    const curaBtn = el('div', { className: 'btn', text: 'A Cura Tentada', onClick: () => this.resolveAct3Ending('cura') });
+    const abracoBtn = el('div', { className: 'btn', text: 'O Abraço da Sede', onClick: () => this.resolveAct3Ending('abraco') });
+    this.act3ChoiceEl = el('div', { className: 'panel act3-choice-overlay' }, [
+      el('h2', { text: 'Uma ferida de gerações' }),
+      el('p', { text: 'Ilva terminou de falar. A escolha de como lidar com a Sede — e com o que os Zeladores esconderam — agora é sua.' }),
+      el('div', { className: 'stack' }, [corteBtn, curaBtn, abracoBtn]),
+    ]);
+    this.act3ChoiceEl.hidden = true;
+
+    this.act3EpilogueTextEl = el('p', { text: '' });
+    const closeEpilogueBtn = el('div', { className: 'btn primary', text: 'Continuar', onClick: () => { this.act3EpilogueEl.hidden = true; } });
+    this.act3EpilogueEl = el('div', { className: 'panel act3-epilogue-overlay' }, [
+      el('h2', { text: 'Ipêra, depois' }),
+      this.act3EpilogueTextEl,
+      closeEpilogueBtn,
+    ]);
+    this.act3EpilogueEl.hidden = true;
+
+    this.game.uiRoot.append(this.act3ChoiceEl, this.act3EpilogueEl);
   }
 
   // --- dungeon instances (fixed entrance portals + the run itself) -------

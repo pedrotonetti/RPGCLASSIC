@@ -495,11 +495,48 @@ export const AMARA_REVEAL_QUESTS: QuestDefinition[] = [
   },
 ];
 
+/**
+ * Ato 3 — the confrontation and branching choice LORE.md's "O final"
+ * describes (O Corte / A Cura Tentada / O Abraço da Sede). Two lead-in
+ * quests (a gauntlet, then the confrontation itself), class-agnostic like
+ * AMARA_REVEAL_QUESTS. The choice of ENDING itself is deliberately NOT a
+ * QuestObjective — this schema has no branching mechanism, and picking an
+ * ending isn't something to "complete" so much as something to decide.
+ * completing act3_q2_confront (talking to Ilva) instead hands off to
+ * OverworldScreen's Act3ChoiceOverlay (see closeDialogue), which sets
+ * Player.act3Ending and shows that ending's own epilogue text. See
+ * QuestSystem.ensureAct3Started for how this chain is triggered.
+ */
+export const ACT3_QUESTS: QuestDefinition[] = [
+  {
+    id: 'act3_q1_trail',
+    title: 'O Rastro da Semeadora',
+    description:
+      'O nome que Tobias temia dizer é real: Ilva, a Semeadora, está por trás de como a Sede se acelerou. Os guardiões que ela corrompeu vigiam os caminhos ao redor de Pedravale — e é por eles que a estrada até ela passa.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'defeat', targetId: 'stone_golem', amount: 5 },
+    rewardXp: 420,
+    rewardGold: 260,
+    nextQuestId: 'act3_q2_confront',
+  },
+  {
+    id: 'act3_q2_confront',
+    title: 'A Semeadora',
+    description:
+      'Os guardiões de Ilva caíram. Ela sabe que você está vindo — e, pelo visto, não pretende fugir. É hora de ouvir o que ela tem a dizer, e decidir o que fazer com isso.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'talkTo', targetId: 'ilva', amount: 1 },
+    rewardXp: 600,
+    rewardGold: 400,
+  },
+];
+
 const ALL_QUESTS: QuestDefinition[] = [
   ...CLASS_PRELUDE_QUESTS,
   ...QUEST_CHAIN,
   ...CLASS_CALLING_QUESTS,
   ...AMARA_REVEAL_QUESTS,
+  ...ACT3_QUESTS,
 ];
 
 export function getQuestById(id: string): QuestDefinition | undefined {

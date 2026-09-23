@@ -606,6 +606,29 @@ body {
   font-size: 18px;
 }
 
+.act3-choice-overlay,
+.act3-epilogue-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 24px 32px;
+  text-align: center;
+  min-width: 300px;
+  max-width: min(560px, 90vw);
+}
+.act3-choice-overlay h2,
+.act3-epilogue-overlay h2 {
+  margin: 0 0 10px;
+  color: var(--accent);
+}
+.act3-choice-overlay p,
+.act3-epilogue-overlay p {
+  margin: 0 0 16px;
+  font-size: 18px;
+  line-height: 1.4;
+}
+
 /* Feedback for the current fight lives top-center — the bottom strip is
    already busy with the movement d-pad and the combat hotbar now that both
    are on screen together. */

@@ -47,6 +47,22 @@ export function ensureAmaraRevealStarted(player: Player): void {
   player.activeQuestId = firstId;
 }
 
+/**
+ * Once "A Sombra de Amara" (AMARA_REVEAL_QUESTS) is fully behind the player
+ * and no other quest is active, hands them the first quest of Ato 3 (see
+ * ACT3_QUESTS) — unless they've already made their final choice
+ * (act3Ending set) or already have this quest behind them. Same idempotent,
+ * call-it-every-mount shape as ensureAmaraRevealStarted.
+ */
+export function ensureAct3Started(player: Player): void {
+  if (player.activeQuestId) return;
+  if (player.act3Ending) return;
+  if (!player.completedQuestIds.includes('amara_r4_confession')) return;
+  const firstId = 'act3_q1_trail';
+  if (player.completedQuestIds.includes(firstId)) return;
+  player.activeQuestId = firstId;
+}
+
 export function currentQuest(player: Player): QuestDefinition | null {
   if (!player.activeQuestId) return null;
   return getQuestById(player.activeQuestId) ?? null;
