@@ -64,18 +64,23 @@ de ambiente necessárias.
 
 - **Setas / WASD** — mover livremente pelo mapa (movimento contínuo, não em
   grade, câmera em terceira pessoa acompanhando o personagem).
-- **E** — falar com um NPC próximo (aparece um aviso na tela quando há um por
-  perto) — inclui NPCs comuns (diálogo) e vendedores (abre a loja ao fim do
-  diálogo).
+- **E** (ou toque no aviso na tela, em dispositivos sem teclado) — falar com
+  um NPC próximo, ou entrar em uma dungeon — inclui NPCs comuns (diálogo) e
+  vendedores (abre a loja ao fim do diálogo). Durante o diálogo, um botão
+  "Pular »" fecha a conversa sem precisar ler linha por linha.
 - Os monstros ficam visíveis andando pelo mapa, com sua própria IA
   (perseguem ao se aproximar); encostar neles inicia o combate diretamente
   no mundo, sem trocar de tela.
 - Durante o combate, clique num ícone da barra de habilidades (ou tecle 1-6)
   para usá-la — cada uma tem seu próprio custo de mana e tempo de recarga,
   exibido como um preenchimento escuro sobre o ícone.
-- **ESC** — abre o menu de pausa (Inventário, Árvore de Habilidades, Ranking
-  Global, Salvar e Sair).
-- Em dispositivos de toque, um joystick virtual aparece no canto inferior esquerdo — arraste o polegar para qualquer direção.
+- **ESC** (ou o botão ☰ no canto superior direito, em dispositivos de toque)
+  — abre o menu de pausa (Inventário, Árvore de Habilidades, Ranking Global,
+  Salvar e Sair).
+- Em dispositivos de toque, um joystick virtual aparece no canto inferior
+  esquerdo — arraste o polegar para qualquer direção. A interface detecta
+  automaticamente um dispositivo de toque (sem teclado/mouse) e adapta
+  textos e controles a ele.
 - O progresso é salvo automaticamente (`localStorage`) a cada passo, batalha e
   ao pausar.
 

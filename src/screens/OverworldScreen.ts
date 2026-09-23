@@ -34,6 +34,7 @@ import {
 import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
 import { el, goToLazy } from '../ui/dom';
+import { isTouchDevice } from '../ui/device';
 
 const SLOT_LABELS: Record<EquipmentSlot, string> = { arma: 'Arma', armadura: 'Armadura', acessorio: 'Acessório' };
 
@@ -424,13 +425,17 @@ export class OverworldScreen implements Screen {
       return;
     }
 
-    if (e.key === 'e' || e.key === 'E') {
-      if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
-      else if (this.nearbyDungeon) this.enterDungeon(this.nearbyDungeon);
-    }
+    if (e.key === 'e' || e.key === 'E') this.tryInteract();
     if (e.key === 'm' || e.key === 'M') {
       this.cycleMount();
     }
+  }
+
+  /** Shared by the [E] key and the on-screen interact-prompt tap — the only two ways to talk to an NPC or enter a dungeon, on keyboard and touch respectively. */
+  private tryInteract(): void {
+    if (this.shopNpc || this.dialogueNpc || this.paused) return;
+    if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
+    else if (this.nearbyDungeon) this.enterDungeon(this.nearbyDungeon);
   }
 
   private cycleMount(): void {
@@ -852,12 +857,13 @@ export class OverworldScreen implements Screen {
     const foundPortal = this.dungeonPortals.find((p) => p.group.position.distanceTo(this.avatar.position) <= INTERACT_RANGE);
     this.nearbyDungeon = foundPortal?.def ?? null;
 
+    const touch = isTouchDevice();
     if (this.nearbyNpc) {
       this.promptEl.hidden = false;
-      this.promptEl.textContent = `[E] Falar com ${this.nearbyNpc.name}`;
+      this.promptEl.textContent = touch ? `Toque para falar com ${this.nearbyNpc.name}` : `[E] Falar com ${this.nearbyNpc.name}`;
     } else if (this.nearbyDungeon) {
       this.promptEl.hidden = false;
-      this.promptEl.textContent = `[E] Entrar em ${this.nearbyDungeon.name}`;
+      this.promptEl.textContent = touch ? `Toque para entrar em ${this.nearbyDungeon.name}` : `[E] Entrar em ${this.nearbyDungeon.name}`;
     } else {
       this.promptEl.hidden = true;
     }
@@ -1554,10 +1560,15 @@ export class OverworldScreen implements Screen {
     this.refreshHud();
 
     const hint = el('div', { className: 'hud-hint', text: 'ESC: menu · M: montaria' });
-    this.promptEl = el('div', { className: 'interact-prompt', text: '' });
+    this.promptEl = el('div', { className: 'interact-prompt', text: '', onClick: () => this.tryInteract() });
     this.promptEl.hidden = true;
 
-    this.game.uiRoot.append(panel, hint, this.questTrackerEl, this.promptEl);
+    // Escape opens the pause menu (Inventário/Habilidades/Ranking) on a
+    // keyboard, but a touchscreen has no Escape key at all — without this
+    // button those screens were completely unreachable on mobile.
+    const menuBtn = el('div', { className: 'menu-btn', text: '☰', onClick: () => this.togglePause() });
+
+    this.game.uiRoot.append(panel, hint, menuBtn, this.questTrackerEl, this.promptEl);
   }
 
   /** Keeps the always-visible HP/MP/gold readout live now that combat happens in-place instead of in a separate screen with its own status bar. */
@@ -1625,10 +1636,26 @@ export class OverworldScreen implements Screen {
   private buildDialogueOverlay(): void {
     this.dialogueNameEl = el('div', { className: 'dialogue-name' });
     this.dialogueLineEl = el('div', { className: 'dialogue-line' });
+    // Its own click handler must stop the event from bubbling to the
+    // dialogue-box's — otherwise a tap on "Pular" would also count as the
+    // box's own "advance one line" click, firing both in the same gesture.
+    const skipBtn = el('div', {
+      className: 'dialogue-skip',
+      text: 'Pular »',
+      onClick: (ev) => {
+        ev.stopPropagation();
+        this.closeDialogue();
+      },
+    });
     this.dialogueOverlay = el(
       'div',
       { className: 'panel dialogue-box', onClick: () => this.advanceDialogue() },
-      [this.dialogueNameEl, this.dialogueLineEl, el('div', { className: 'dialogue-hint', text: '(clique, E ou Enter para continuar)' })],
+      [
+        this.dialogueNameEl,
+        this.dialogueLineEl,
+        el('div', { className: 'dialogue-hint', text: '(toque, E ou Enter para continuar)' }),
+        skipBtn,
+      ],
     );
     this.dialogueOverlay.hidden = true;
     this.game.uiRoot.append(this.dialogueOverlay);

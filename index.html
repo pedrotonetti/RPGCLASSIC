@@ -7,6 +7,14 @@
     <meta name="description" content="Sede - um RPG 3D de Ipêra, jogável no navegador e como app instalável." />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <!-- iOS Safari ignores the web manifest entirely for "Add to Home
+         Screen" — without these, the saved icon is a screenshot thumbnail
+         and the app opens back inside Safari's own chrome instead of
+         fullscreen standalone. -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Sede" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@400;600&display=swap" rel="stylesheet" />

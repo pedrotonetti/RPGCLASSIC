@@ -41,14 +41,18 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons/icon.svg'],
+      includeAssets: ['icons/icon.svg', 'icons/apple-touch-icon.png'],
       manifest: {
         name: 'Sede',
         short_name: 'Sede',
         description: 'Um RPG 3D de Ipêra, jogável no navegador e instalável como app.',
         start_url: '.',
         display: 'fullscreen',
-        orientation: 'landscape',
+        // Every mobile control (joystick, interact prompt, HUD) is laid out
+        // and tested in portrait — the actual orientation players hold the
+        // phone in. 'landscape' here would fight that in standalone/PWA
+        // mode, locking to an orientation the UI was never built for.
+        orientation: 'any',
         background_color: '#1a1423',
         theme_color: '#1a1423',
         icons: [
@@ -57,6 +61,11 @@ export default defineConfig({
             sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any maskable',
+          },
+          {
+            src: 'icons/apple-touch-icon.png',
+            sizes: '180x180',
+            type: 'image/png',
           },
         ],
       },
