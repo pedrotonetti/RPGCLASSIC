@@ -31,7 +31,12 @@ export interface PlayerSaveData {
   questProgress: Record<string, number>;
   unlockedMounts: string[];
   activeMountId: string | null;
+  /** Which of Ato 3's three branching endings (see LORE.md) the player chose — null until OverworldScreen's Act3ChoiceOverlay resolves one. Also doubles as "has the player finished the main story" for anything that should only apply post-ending. */
+  act3Ending: Act3Ending | null;
 }
+
+/** The three closures Ato 3 branches into — see LORE.md's "O final". */
+export type Act3Ending = 'corte' | 'cura' | 'abraco';
 
 const MAX_BAG_SIZE = 40;
 
@@ -61,6 +66,7 @@ export class Player {
   questProgress: Record<string, number>;
   unlockedMounts: string[];
   activeMountId: string | null;
+  act3Ending: Act3Ending | null;
 
   private constructor(name: string, classId: string, data?: Partial<PlayerSaveData>) {
     this.name = name;
@@ -87,6 +93,7 @@ export class Player {
     // Both mounts are unlocked by default in this build (see data/mounts.ts).
     this.unlockedMounts = data?.unlockedMounts ?? ['llama', 'condor'];
     this.activeMountId = data?.activeMountId ?? null;
+    this.act3Ending = data?.act3Ending ?? null;
     this.currentHp = data?.currentHp ?? this.stats.maxHp;
     this.currentMp = data?.currentMp ?? this.stats.maxMp;
   }
@@ -311,6 +318,7 @@ export class Player {
       questProgress: { ...this.questProgress },
       unlockedMounts: [...this.unlockedMounts],
       activeMountId: this.activeMountId,
+      act3Ending: this.act3Ending,
     };
   }
 }
