@@ -5,6 +5,7 @@ import {
   firstQuestIdForClass,
   getQuestById,
   lastCallingQuestIdForClass,
+  SIDE_QUEST_STARTERS,
   type QuestDefinition,
 } from '../data/quests';
 import type { Player } from '../entities/Player';
@@ -88,6 +89,33 @@ function completeQuest(player: Player, quest: QuestDefinition): string {
     player.addLoot(createStarterItem(quest.rewardItem.templateId, quest.rewardItem.rarity, Math.max(1, player.level)));
   }
   return `Missão concluída: ${quest.title}! +${quest.rewardXp} XP, +${quest.rewardGold} ouro${quest.rewardItem ? ', 1 item recebido' : ''}.`;
+}
+
+/**
+ * Side/optional content (lost NPCs, bounty hunts — see data/quests.ts's
+ * SIDE_QUESTS/SIDE_QUEST_STARTERS) doesn't get its own ensure*Started gate
+ * the way the main chain does: nothing marches the player into it
+ * automatically. Instead, talking to that quest's own giver NPC hands it out
+ * directly — the same activeQuestId/completedQuestIds idiom notifyTalkedTo
+ * (below) already uses to COMPLETE a quest, just applied to STARTING a
+ * brand-new, unrelated one. Only ever takes effect while activeQuestId is
+ * free, so a side quest can never bump whatever the main chain currently has
+ * active out of the single-quest tracker. Call this BEFORE dialogueLinesFor
+ * (see OverworldScreen.openDialogue) so a chain that starts on this exact
+ * conversation shows its own briefing line immediately instead of the NPC's
+ * generic default dialogue.
+ */
+export function offerSideQuest(player: Player, npcId: string): string | null {
+  if (player.activeQuestId) return null;
+  for (const starter of SIDE_QUEST_STARTERS) {
+    if (player.completedQuestIds.includes(starter.questId)) continue;
+    if (!player.completedQuestIds.includes(starter.prerequisiteQuestId)) continue;
+    const quest = getQuestById(starter.questId);
+    if (!quest || quest.giverNpcId !== npcId) continue;
+    player.activeQuestId = quest.id;
+    return `Nova missão: ${quest.title}`;
+  }
+  return null;
 }
 
 export function notifyTalkedTo(player: Player, npcId: string): string | null {

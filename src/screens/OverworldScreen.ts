@@ -9,7 +9,7 @@ import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
 import { dialogueLinesFor, NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
-import { arriveWorldPosition, getZoneById, type ZoneDefinition, type ZoneExit } from '../data/zones';
+import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, type ZoneDefinition, type ZoneExit } from '../data/zones';
 import { dungeonsInHostZone, getDungeonById, type DungeonDefinition } from '../data/dungeons';
 import { rarityTier, rarityToHex } from '../config/rarity';
 import type { EquipmentSlot, ItemRarity } from '../config/types';
@@ -30,6 +30,7 @@ import {
   ensureClassCallingStarted,
   ensureQuestStarted,
   notifyTalkedTo,
+  offerSideQuest,
   questTrackerText,
 } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
@@ -165,6 +166,18 @@ const FOX_SCALE = 0.42;
 const FOX_WANDER_RADIUS = 1.6;
 const FOX_MOVE_SPEED = 0.6; // world units per second
 
+/**
+ * A single hand-placed "must be sought out" encounter (see
+ * OverworldCombat.spawnFixedMonster) — a troll standing distinctively at the
+ * pond's edge in Pedravale's own field, well clear of the pond's water
+ * ellipse and every plaza/gate/street, rather than blending into
+ * spawnMonsters' anonymous scatter. Ties into the "Contrato: O Troll da
+ * Lagoa" bounty (data/quests.ts) — Bram's dialogue points here directly.
+ * Grass-checked at spawn time exactly like FOX_SPAWN_TILES, so a future map
+ * change can't silently bury it in a tree.
+ */
+const LAGOA_TROLL_TILE = { x: 58, y: 22 };
+
 function disposeGroup(group: THREE.Object3D): void {
   group.traverse((obj) => {
     if (obj instanceof THREE.Mesh) {
@@ -183,6 +196,9 @@ export class OverworldScreen implements Screen {
   private waterMaterial: THREE.MeshStandardMaterial | null = null;
   private treeColliders: TreeCollider[] = [];
   private buildingColliders: BuildingCollider[] = [];
+  private minimapCanvas!: HTMLCanvasElement;
+  /** One tile-per-pixel render of the current zone's terrain, built once per mount — updateMinimap() blits this (cheap) instead of re-walking the whole tile grid every frame. */
+  private minimapBg: HTMLCanvasElement | null = null;
   private playerModel!: THREE.Group;
   private mountModel: THREE.Group | null = null;
   /** Whichever object currently moves through the world — the rider alone, or the mount carrying them. */
@@ -348,6 +364,9 @@ export class OverworldScreen implements Screen {
         minDistFromStart: this.zoneDef.monsterIds ? 3 : undefined,
         minSpacing: this.zoneDef.monsterIds ? 2 : undefined,
       });
+      if (this.player.zoneId === MAIN_CITY_ID && tiles[LAGOA_TROLL_TILE.y]?.[LAGOA_TROLL_TILE.x] === TileType.Grass) {
+        this.combat.spawnFixedMonster('troll', LAGOA_TROLL_TILE);
+      }
     }
 
     this.buildHud();
@@ -356,6 +375,7 @@ export class OverworldScreen implements Screen {
     this.buildShopOverlay();
     this.buildPauseOverlay();
     this.buildAct3Overlays();
+    this.buildMinimap();
     if (this.activeDungeon) {
       this.buildDungeonHud();
       this.buildDungeonCompleteOverlay();
@@ -403,6 +423,7 @@ export class OverworldScreen implements Screen {
     this.updateCamera(dt);
     this.updateNpcLabels();
     this.updateDungeonPortals();
+    this.updateMinimap();
     this.refreshHud();
   }
 
@@ -898,6 +919,15 @@ export class OverworldScreen implements Screen {
   private openDialogue(npc: NpcDefinition): void {
     this.dialogueNpc = npc;
     this.dialogueLineIndex = 0;
+    // Unlike notifyTalkedTo below (which completes whichever quest is
+    // ALREADY active), offerSideQuest can only ever START a fresh, unrelated
+    // side quest (a lost NPC's own chain, a bounty), and only while
+    // activeQuestId is free — see QuestSystem.offerSideQuest. Deliberately
+    // run BEFORE dialogueLinesFor (the opposite order from notifyTalkedTo's
+    // own placement below) so a chain that starts on this exact conversation
+    // shows its own briefing line immediately, instead of this NPC's generic
+    // default dialogue for one more visit.
+    const sideQuestMsg = offerSideQuest(this.player, npc.id);
     // Captured BEFORE notifyTalkedTo, which can complete the active quest and
     // change activeQuestId out from under us — the lines a quest-conditioned
     // NPC shows for this conversation reflect the state the player walked up
@@ -911,6 +941,10 @@ export class OverworldScreen implements Screen {
       saveGame(this.player);
       audio.questComplete();
       this.combat.showBanner(questMsg);
+    } else if (sideQuestMsg) {
+      saveGame(this.player);
+      audio.npcTalk();
+      this.combat.showBanner(sideQuestMsg);
     } else {
       audio.npcTalk();
     }
@@ -1696,6 +1730,102 @@ export class OverworldScreen implements Screen {
 
   private refreshQuestTracker(): void {
     this.questTrackerEl.textContent = questTrackerText(this.player);
+  }
+
+  // --- minimap -----------------------------------------------------------
+
+  private static readonly MINIMAP_SIZE = 140;
+  private static readonly MINIMAP_TILE_COLOR: Record<TileType, string> = {
+    [TileType.Grass]: '#3f6b34',
+    [TileType.Path]: '#c9b98a',
+    [TileType.Water]: '#4a7ba6',
+    [TileType.Tree]: '#173318',
+  };
+
+  private buildMinimap(): void {
+    this.minimapCanvas = document.createElement('canvas');
+    this.minimapCanvas.className = 'minimap-canvas';
+    this.minimapCanvas.width = OverworldScreen.MINIMAP_SIZE;
+    this.minimapCanvas.height = OverworldScreen.MINIMAP_SIZE;
+    this.game.uiRoot.append(this.minimapCanvas);
+    this.renderMinimapBackground();
+  }
+
+  /**
+   * One tile = one pixel on an offscreen canvas, rendered once per zone
+   * mount — zones can now be up to 240x150 tiles (see the world-size
+   * expansion), and re-walking every tile every frame just to draw a
+   * corner minimap would be pure waste when the terrain itself never
+   * changes after mount. updateMinimap() just blits this (a single cheap
+   * drawImage) and draws the few things that DO move on top of it.
+   */
+  private renderMinimapBackground(): void {
+    const height = this.tiles.length;
+    const width = this.tiles[0]?.length ?? 0;
+    if (width === 0 || height === 0) {
+      this.minimapBg = null;
+      return;
+    }
+    const bg = document.createElement('canvas');
+    bg.width = width;
+    bg.height = height;
+    const ctx = bg.getContext('2d')!;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        ctx.fillStyle = OverworldScreen.MINIMAP_TILE_COLOR[this.tiles[y][x]] ?? OverworldScreen.MINIMAP_TILE_COLOR[TileType.Grass];
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+    // Buildings on top, in a color distinct from every terrain tile, so
+    // the village/city's actual layout of streets+houses reads at a
+    // glance instead of just "some path tiles somewhere".
+    ctx.fillStyle = '#8a6a45';
+    for (const b of this.buildingColliders) {
+      const tx = Math.floor(b.minX / TILE_SIZE);
+      const ty = Math.floor(b.minZ / TILE_SIZE);
+      const tw = Math.max(1, Math.ceil((b.maxX - b.minX) / TILE_SIZE));
+      const th = Math.max(1, Math.ceil((b.maxZ - b.minZ) / TILE_SIZE));
+      ctx.fillRect(tx, ty, tw, th);
+    }
+    this.minimapBg = bg;
+  }
+
+  private updateMinimap(): void {
+    if (!this.minimapBg) return;
+    const size = OverworldScreen.MINIMAP_SIZE;
+    const ctx = this.minimapCanvas.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, size, size);
+    ctx.drawImage(this.minimapBg, 0, 0, size, size);
+
+    const toMinimap = (worldX: number, worldZ: number): { x: number; y: number } => ({
+      x: (worldX / TILE_SIZE / this.minimapBg!.width) * size,
+      y: (worldZ / TILE_SIZE / this.minimapBg!.height) * size,
+    });
+
+    // Dungeon portals and NPCs as small dots — cheap enough to redraw every
+    // frame at these counts (at most a few dozen per zone).
+    ctx.fillStyle = '#8a5cf5';
+    for (const p of this.dungeonPortals) {
+      const m = toMinimap(p.group.position.x, p.group.position.z);
+      ctx.fillRect(m.x - 2, m.y - 2, 4, 4);
+    }
+    ctx.fillStyle = '#e8d840';
+    for (const slot of this.npcSlots) {
+      const m = toMinimap(slot.model.position.x, slot.model.position.z);
+      ctx.fillRect(m.x - 1.5, m.y - 1.5, 3, 3);
+    }
+
+    // The player, on top of everything — a small outlined dot so it stays
+    // visible against both light (path) and dark (tree) terrain colors.
+    const p = toMinimap(this.avatar.position.x, this.avatar.position.z);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#f2c14e';
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#1a1423';
+    ctx.stroke();
   }
 
   /**

@@ -8,6 +8,7 @@ import {
   notifyEnemyDefeated,
   notifyLevelChanged,
   notifyTalkedTo,
+  offerSideQuest,
 } from './QuestSystem';
 
 function freshPlayer(classId = 'warrior'): Player {
@@ -295,5 +296,96 @@ describe('AMARA_REVEAL_QUESTS chain', () => {
     expect(finalMessage).not.toBeNull();
     expect(player.activeQuestId).toBeNull();
     expect(player.completedQuestIds).toEqual(expect.arrayContaining(['amara_r1_evasion', 'amara_r2_archives', 'amara_r3_proof', 'amara_r4_confession']));
+  });
+});
+
+describe('offerSideQuest', () => {
+  it('does nothing before the prerequisite quest is completed', () => {
+    const player = freshPlayer();
+    expect(offerSideQuest(player, 'baltazar_relicario')).toBeNull();
+    expect(player.activeQuestId).toBeNull();
+  });
+
+  it('does nothing while a main-chain (or any other) quest is already active', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push('q6_dragon');
+    player.activeQuestId = 'amara_r1_evasion';
+    expect(offerSideQuest(player, 'baltazar_relicario')).toBeNull();
+    expect(player.activeQuestId).toBe('amara_r1_evasion');
+  });
+
+  it('does nothing for an NPC that is not a side quest giver', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push('q6_dragon');
+    expect(offerSideQuest(player, 'tobias')).toBeNull();
+    expect(player.activeQuestId).toBeNull();
+  });
+
+  it('starts a lost NPC\'s own chain once its prerequisite is met and no quest is active', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push('q6_dragon');
+
+    const message = offerSideQuest(player, 'baltazar_relicario');
+
+    expect(message).not.toBeNull();
+    expect(player.activeQuestId).toBe('relicario_r1_guardioes');
+  });
+
+  it('never restarts a side quest chain once its first quest is already completed', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push('q6_dragon', 'relicario_r1_guardioes');
+    expect(offerSideQuest(player, 'baltazar_relicario')).toBeNull();
+    expect(player.activeQuestId).toBeNull();
+  });
+
+  it('walks a two-quest lost-NPC chain end to end using the same generic nextQuestId/notifyTalkedTo/notifyEnemyDefeated machinery as the main chain', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push('q6_dragon');
+
+    expect(offerSideQuest(player, 'baltazar_relicario')).not.toBeNull();
+    expect(player.activeQuestId).toBe('relicario_r1_guardioes');
+
+    for (let i = 0; i < 3; i++) {
+      expect(notifyEnemyDefeated(player, 'skeleton')).toBeNull();
+    }
+    expect(notifyEnemyDefeated(player, 'skeleton')).not.toBeNull();
+    expect(player.activeQuestId).toBe('relicario_r2_heranca');
+
+    const finalMessage = notifyTalkedTo(player, 'baltazar_relicario');
+    expect(finalMessage).not.toBeNull();
+    expect(player.activeQuestId).toBeNull();
+    expect(player.completedQuestIds).toEqual(expect.arrayContaining(['relicario_r1_guardioes', 'relicario_r2_heranca']));
+  });
+
+  it('walks a single-quest bounty end to end', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push('q6_dragon');
+
+    expect(offerSideQuest(player, 'bram')).not.toBeNull();
+    expect(player.activeQuestId).toBe('contrato_troll_lagoa');
+
+    const message = notifyEnemyDefeated(player, 'troll');
+
+    expect(message).not.toBeNull();
+    expect(player.activeQuestId).toBeNull();
+    expect(player.completedQuestIds).toContain('contrato_troll_lagoa');
+  });
+
+  it('offers each side quest giver in turn once every earlier one is already completed', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push(
+      'q6_dragon',
+      'relicario_r1_guardioes',
+      'relicario_r2_heranca',
+      'eremita_r1_cercado',
+      'eremita_r2_partida',
+      'nair_r1_ultimos_de_coivara',
+      'contrato_troll_lagoa',
+    );
+
+    const message = offerSideQuest(player, 'cacador_ren');
+
+    expect(message).not.toBeNull();
+    expect(player.activeQuestId).toBe('contrato_cinzas_elemental');
   });
 });

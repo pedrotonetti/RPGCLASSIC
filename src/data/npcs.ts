@@ -1,6 +1,7 @@
 import type { CharacterAppearance } from '../config/customization';
 import { villageClearingBounds } from '../systems/MapGenerator';
 import { CLASS_ZONE_THEMES } from './classZones';
+import { getDungeonById } from './dungeons';
 import { MAIN_CITY_ID, SECONDARY_VILLAGE_SIZE, START_VILLAGE_SIZE } from './zones';
 
 export type VendorKind = 'ferreiro' | 'artesao' | 'boticario' | 'joalheiro';
@@ -213,6 +214,20 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     dialogue: [
       'Fique nas trilhas conhecidas. O campo aberto anda mais perigoso a cada dia.',
       'As criaturas que vêm da Sede não são bichos comuns — juraria que reconheço rostos nelas. Não conto isso a qualquer um.',
+    ],
+    questDialogue: [
+      {
+        questId: 'contrato_troll_lagoa',
+        when: 'completed',
+        lines: ['(Bram arranca o próprio aviso da parede da estalagem.) Problema resolvido. Devia ter imaginado que seria você a dar um jeito nisso.'],
+      },
+      {
+        questId: 'contrato_troll_lagoa',
+        lines: [
+          'Viu o aviso na estalagem? Aquele troll não vai se afastar da lagoa sozinho, e cada dia ele anda mais perto das ruas.',
+          'Não é bicho de briga limpa. Cuidado com o alcance dos braços dele.',
+        ],
+      },
     ],
   },
   {
@@ -439,6 +454,20 @@ NPC_DEFINITIONS.push(
       'Fogem todas na mesma direção, feito puxadas por uma corda que a gente não vê. Isso não é instinto de bicho assustado — é chamado.',
       'Preciso de outro par de olhos que enxergue rastro como eu enxergo. Vem comigo?',
     ],
+    questDialogue: [
+      {
+        questId: 'contrato_cinzas_elemental',
+        when: 'completed',
+        lines: ['(Caçador Ren examina os restos de mais uma fogueira apagada.) As cinzas pararam de se espalhar. Bom trabalho.'],
+      },
+      {
+        questId: 'contrato_cinzas_elemental',
+        lines: [
+          'Duas clareiras inteiras já viraram cinza esta semana. Elementais de fogo migrando da mata funda — ache-os antes que vire três clareiras.',
+          'Fogo que anda sozinho não é fogo comum. Cuidado com o calor à distância.',
+        ],
+      },
+    ],
   },
   {
     id: 'zeladora_sable',
@@ -612,6 +641,169 @@ for (const theme of CLASS_ZONE_THEMES) {
     dialogue: theme.mentorGreeting,
   });
 }
+
+// "Lost" NPCs — placed somewhere a player wouldn't stumble on immediately
+// (a dungeon chamber off its own encounter tile, the far edge of a village,
+// past the far end of its own north/south road) rather than in the usual
+// villages'/Pedravale's clustered NPC rows above. Each opens its own short
+// 1-2 quest side chain once q6_dragon is behind the player (see
+// data/quests.ts's SIDE_QUESTS/SIDE_QUEST_STARTERS) — none of them touch
+// Ato 3 or Amara Ventura's own reveal, just Ipêra's wider texture.
+const rottenSapGallery = getDungeonById('rotten_sap_gallery');
+// Two tiles below encounter chamber #2's own center tile (see
+// dungeons.ts/MapGenerator's dungeonLayout) — inside that chamber's open
+// grass, on the corridor's own guaranteed-clear center column, but off the
+// fixed monster pod itself.
+const vascoTile = { x: rottenSapGallery.encounters[2].atTile.x, y: rottenSapGallery.encounters[2].atTile.y + 2 };
+
+NPC_DEFINITIONS.push(
+  {
+    id: 'baltazar_relicario',
+    name: 'Baltazar',
+    role: 'Guardião do Relicário Esquecido',
+    // Robed keeper of an old, half-forgotten shrine — the mage rig's staff/robe reads right for a relic keeper.
+    classAnalogId: 'mage',
+    zoneId: 'necromancer_secondary',
+    // Far up the north road of "Cripta Esquecida", near the map's own
+    // border — well clear of the central clearing everyone else clusters
+    // around, and on the same guaranteed-Path road column every secondary
+    // village carves north from its clearing (see villageClearingBounds),
+    // never a bare hardcoded tile number.
+    mapX: secondaryBounds.cx,
+    mapY: 4,
+    appearance: npcAppearance({
+      hairStyle: 'longo',
+      hairColor: 0x8a8378,
+      facialHair: 'longa',
+      primaryColor: 0x4a2f20,
+      secondaryColor: 0x6b5f78,
+      bodyType: 'magro',
+      headAccessory: 'nenhum',
+    }),
+    dialogue: [
+      'Poucos descem até este canto da Cripta Esquecida. A maioria vem pelas lojas lá em cima, não pelas lembranças aqui embaixo.',
+      'Guardo um relicário selado desde os tempos em que os Zeladores da Raiz ainda eram gente de carne e osso, não história de avó.',
+      '(Ele bate de leve na pedra ao lado, como quem confere se algo ainda dorme.) Por enquanto, ainda dorme.',
+    ],
+    questDialogue: [
+      {
+        questId: 'relicario_r2_heranca',
+        when: 'completed',
+        lines: [
+          '(Baltazar mantém o relicário aberto, vazio, como se isso finalmente aliviasse algo nele.)',
+          'Continue ouvindo as Raízes, Escolhido Verde. Alguém precisa, agora que eu já fiz minha parte.',
+        ],
+      },
+      {
+        questId: 'relicario_r2_heranca',
+        lines: [
+          '(Baltazar solta o ar que parecia segurar há dias.) Silêncio de novo. Obrigado.',
+          'Prometi a mim mesmo, há muito tempo, que nunca mostraria isso a ninguém. Mas guardar sozinho não impediu a Sede de se aproximar — talvez dividir o peso ajude mais do que escondê-lo.',
+          '(Ele abre o relicário. Dentro, um bracelete arcano, gasto pelo tempo, ainda pulsa fraco.) Leve. Um Zelador o carregou uma vez. Talvez sirva a você agora.',
+        ],
+      },
+      {
+        questId: 'relicario_r1_guardioes',
+        lines: [
+          'Ouviu isso? Os ossos lá embaixo não deviam se mexer sozinhos — não desde que o relicário foi selado.',
+          'Não peço que entenda o que guardo. Peço que desça e silencie o que acordou, antes que suba até aqui.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'eremita_vasco',
+    name: 'Eremita Vasco',
+    role: 'Preso na Galeria da Seiva Podre',
+    // A ragged survivor with no weapon of his own — the monk rig's bare-handed loadout fits.
+    classAnalogId: 'monk',
+    zoneId: rottenSapGallery.zoneId,
+    mapX: vascoTile.x,
+    mapY: vascoTile.y,
+    appearance: npcAppearance({
+      hairStyle: 'curto',
+      hairColor: 0x6b5f52,
+      facialHair: 'cavanhaque',
+      primaryColor: 0x5a4a3a,
+      secondaryColor: 0x2e2a24,
+      bodyType: 'magro',
+      headAccessory: 'nenhum',
+    }),
+    dialogue: [
+      '(Um homem magro se encolhe entre as raízes retorcidas, olhos fundos de quem não dorme direito há dias.) Não... não vim atrás de tesouro nenhum. Vim fugindo.',
+      'As aranhas tomaram a galeria faz uma semana. Eu devia ter saído no primeiro dia. Agora é tarde demais pra arriscar sozinho.',
+    ],
+    questDialogue: [
+      {
+        questId: 'eremita_r2_partida',
+        when: 'completed',
+        lines: [
+          '(Vasco ainda organiza as próprias coisas, decidido a partir assim que reunir coragem — mas já não olha por cima do ombro a cada passo.)',
+          'Vou andando quando o sol nascer de novo. Até lá, obrigado por me dar de volta o corredor.',
+        ],
+      },
+      {
+        questId: 'eremita_r2_partida',
+        lines: [
+          '(Vasco respira fundo, olhando o corredor livre pela primeira vez em dias.) Livre. Finalmente livre.',
+          'Não vou pra casa — vou pra vila mais próxima avisar o que vi se mexendo aqui embaixo. Se tem bicho sendo guiado feito rebanho, alguém em algum lugar segura a rédea.',
+          '(Ele aperta sua mão com força inesperada para alguém tão magro.) Obrigado por não me deixar aqui feito lembrança.',
+        ],
+      },
+      {
+        questId: 'eremita_r1_cercado',
+        lines: [
+          'Elas se moviam estranho, sabe? Não como bicho assustado — como bicho guiado. Nunca vi por quem.',
+          'Se limpar o caminho até a saída, eu saio com você. Juro que não atraso o passo.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'nair_coivara',
+    name: 'Nair',
+    role: 'Sobrevivente de Coivara',
+    // A scout who survived alone in the wild long enough to reach here — bow-carrying archer rig fits.
+    classAnalogId: 'archer',
+    zoneId: 'assassin_start',
+    // Far down the south road of "Vila das Sombras", near the map's own
+    // border — same guaranteed-Path road column every starting village
+    // carves south from its clearing, well past the houses everyone else
+    // clusters around.
+    mapX: startBounds.cx,
+    mapY: START_VILLAGE_SIZE.height - 4,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'trancado',
+      hairColor: 0x2a2a35,
+      eyeColor: 0x6b5f78,
+      primaryColor: 0x3a3540,
+      secondaryColor: 0x8a6a3f,
+      bodyType: 'magro',
+      scarStyle: 'bochecha',
+    }),
+    dialogue: [
+      '(Uma mulher magra observa o horizonte do canto mais afastado da vila, longe do centro, como se ainda vigiasse algo que já não existe mais.) Coivara não existe mais. Não pergunte onde fica — não fica em lugar nenhum.',
+      'Uma alcateia corrompida alcançou meu vilarejo há meses. Fui a única rápida o bastante pra fugir.',
+    ],
+    questDialogue: [
+      {
+        questId: 'nair_r1_ultimos_de_coivara',
+        when: 'completed',
+        lines: [
+          '(Nair ainda observa o horizonte, mas agora com os ombros um pouco mais soltos.) Obrigada. Coivara não volta, mas talvez ninguém mais precise virar Coivara.',
+        ],
+      },
+      {
+        questId: 'nair_r1_ultimos_de_coivara',
+        lines: [
+          'A mesma alcateia ainda ronda essas trilhas. Sinto o uivo à noite — o mesmo, tenho certeza.',
+          'Não peço vingança. Peço que ninguém mais precise correr como eu corri.',
+        ],
+      },
+    ],
+  },
+);
 
 export function getNpcById(id: string): NpcDefinition {
   const found = NPC_DEFINITIONS.find((n) => n.id === id);

@@ -531,12 +531,130 @@ export const ACT3_QUESTS: QuestDefinition[] = [
   },
 ];
 
+/**
+ * Side content: "lost" NPCs tucked away in remote corners (a dungeon
+ * chamber, the far edge of a village), plus a couple of bounty-style hunts
+ * against a specific higher-tier enemy. None of this gets its own
+ * ensure*Started gate the way QUEST_CHAIN/CLASS_CALLING_QUESTS/
+ * AMARA_REVEAL_QUESTS/ACT3_QUESTS do — the player only ever holds one
+ * activeQuestId, so a side quest is handed out by simply talking to its own
+ * giver NPC once its prerequisite is already in completedQuestIds (see
+ * SIDE_QUEST_STARTERS and QuestSystem.offerSideQuest), and only ever takes
+ * the slot while nothing from the main chain currently occupies it. Gated on
+ * q6_dragon so none of it competes with early-game pacing. Two-quest chains
+ * lean on the exact same generic nextQuestId/notifyTalkedTo/
+ * notifyEnemyDefeated machinery as the main chain for their own second leg —
+ * only the FIRST quest of each chain needs the special "offer" path.
+ */
+export const SIDE_QUESTS: QuestDefinition[] = [
+  // --- Baltazar, Guardião do Relicário Esquecido (Cripta Esquecida) -------
+  {
+    id: 'relicario_r1_guardioes',
+    title: 'O Peso do Relicário',
+    description:
+      'Baltazar guarda, num canto esquecido da Cripta, um relicário selado desde os tempos em que os Zeladores da Raiz ainda eram gente de carne e osso. Desde que a Sede se acelerou, ossos que deviam repousar voltaram a se mexer bem abaixo do relicário — e ele é velho demais para descer sozinho de novo.',
+    giverNpcId: 'baltazar_relicario',
+    objective: { kind: 'defeat', targetId: 'skeleton', amount: 4 },
+    rewardXp: 260,
+    rewardGold: 160,
+    nextQuestId: 'relicario_r2_heranca',
+  },
+  {
+    id: 'relicario_r2_heranca',
+    title: 'A Herança Selada',
+    description:
+      'Com os guardiões ósseos silenciados, Baltazar pode enfim voltar a selar o relicário — e decide, dessa vez, que você merece ver o que ele guarda, em vez de só ouvir falar.',
+    giverNpcId: 'baltazar_relicario',
+    objective: { kind: 'talkTo', targetId: 'baltazar_relicario', amount: 1 },
+    rewardXp: 380,
+    rewardGold: 240,
+    rewardItem: { templateId: 'bracelete_arcano', rarity: 'laranja' },
+  },
+
+  // --- Eremita Vasco (Galeria da Seiva Podre) -----------------------------
+  {
+    id: 'eremita_r1_cercado',
+    title: 'Cercado na Seiva Podre',
+    description:
+      'Vasco se escondeu fundo na galeria quando as aranhas tomaram o poço, dias atrás — longe demais da saída para arriscar a volta sozinho. Ele jura ter visto as criaturas se mover como se alguém as estivesse guiando, mas nunca viu quem.',
+    giverNpcId: 'eremita_vasco',
+    objective: { kind: 'defeat', targetId: 'giant_spider', amount: 4 },
+    rewardXp: 260,
+    rewardGold: 160,
+    nextQuestId: 'eremita_r2_partida',
+  },
+  {
+    id: 'eremita_r2_partida',
+    title: 'A Partida de Vasco',
+    description:
+      'Com o caminho livre até a saída, Vasco enfim aceita partir — não para casa, mas para avisar a vila mais próxima do que viu se mexer aqui embaixo, guiado por algo que ele nunca viu o rosto.',
+    giverNpcId: 'eremita_vasco',
+    objective: { kind: 'talkTo', targetId: 'eremita_vasco', amount: 1 },
+    rewardXp: 380,
+    rewardGold: 240,
+    rewardItem: { templateId: 'manoplas_combate', rarity: 'laranja' },
+  },
+
+  // --- Nair, sobrevivente de Coivara (Vila das Sombras) -------------------
+  {
+    id: 'nair_r1_ultimos_de_coivara',
+    title: 'Os Últimos de Coivara',
+    description:
+      'Nair não fala do próprio vilarejo — Coivara não existe mais desde que uma alcateia corrompida a alcançou, meses atrás, e ela foi a única rápida o bastante para fugir. Ela só pede uma coisa: que a mesma alcateia, ainda rondando essas trilhas, não encontre mais ninguém.',
+    giverNpcId: 'nair_coivara',
+    objective: { kind: 'defeat', targetId: 'dark_wolf', amount: 4 },
+    rewardXp: 300,
+    rewardGold: 180,
+    rewardItem: { templateId: 'armadura_couro', rarity: 'laranja' },
+  },
+
+  // --- Contratos de caça (bounties) ---------------------------------------
+  {
+    id: 'contrato_troll_lagoa',
+    title: 'Contrato: O Troll da Lagoa',
+    description:
+      'Guarda Bram cravou um aviso na estalagem: um troll das montanhas anda rondando a lagoa a leste da praça, cada vez mais perto das ruas. Ele quer o problema resolvido antes que vire manchete.',
+    giverNpcId: 'bram',
+    objective: { kind: 'defeat', targetId: 'troll', amount: 1 },
+    rewardXp: 300,
+    rewardGold: 200,
+    rewardItem: { templateId: 'amuleto_vitalidade', rarity: 'laranja' },
+  },
+  {
+    id: 'contrato_cinzas_elemental',
+    title: 'Rastro de Cinzas',
+    description:
+      'Caçador Ren encontrou clareiras inteiras carbonizadas nas trilhas — elementais de fogo migrando da mata funda, atraídos pela mesma inquietação que a Sede espalha nas Raízes. Duas fogueiras vivas já foram avistadas.',
+    giverNpcId: 'cacador_ren',
+    objective: { kind: 'defeat', targetId: 'fire_elemental', amount: 2 },
+    rewardXp: 280,
+    rewardGold: 190,
+    rewardItem: { templateId: 'talisma_velocidade', rarity: 'laranja' },
+  },
+];
+
+/**
+ * Prerequisite completedQuestIds gate for each side quest's own FIRST quest
+ * (the whole quest, for a single-quest bounty) — see QuestSystem.offerSideQuest,
+ * which walks this list every time the player talks to an NPC, and starts the
+ * first entry whose giverNpcId matches, prerequisite is already satisfied,
+ * activeQuestId is free, and the quest itself isn't already completed.
+ */
+export const SIDE_QUEST_STARTERS: Array<{ questId: string; prerequisiteQuestId: string }> = [
+  { questId: 'relicario_r1_guardioes', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'eremita_r1_cercado', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'nair_r1_ultimos_de_coivara', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'contrato_troll_lagoa', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'contrato_cinzas_elemental', prerequisiteQuestId: 'q6_dragon' },
+];
+
 const ALL_QUESTS: QuestDefinition[] = [
   ...CLASS_PRELUDE_QUESTS,
   ...QUEST_CHAIN,
   ...CLASS_CALLING_QUESTS,
   ...AMARA_REVEAL_QUESTS,
   ...ACT3_QUESTS,
+  ...SIDE_QUESTS,
 ];
 
 export function getQuestById(id: string): QuestDefinition | undefined {

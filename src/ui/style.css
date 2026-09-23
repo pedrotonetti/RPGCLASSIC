@@ -318,10 +318,23 @@ body {
 }
 .hud-hint {
   position: absolute;
-  top: 8px;
+  /* Below the minimap, which sits at top:8/right:10 — see .minimap-canvas. */
+  top: 156px;
   right: 10px;
   font-size: 14px;
   color: var(--text-dim);
+}
+
+.minimap-canvas {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 140px;
+  height: 140px;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  background: rgba(26, 20, 35, 0.7);
+  pointer-events: none;
 }
 
 .joystick {
@@ -409,7 +422,8 @@ body {
 .menu-btn {
   display: none;
   position: absolute;
-  top: 8px;
+  /* Below the minimap, which sits at top:8/right:10 — see .minimap-canvas. */
+  top: 156px;
   right: 10px;
   width: 40px;
   height: 40px;

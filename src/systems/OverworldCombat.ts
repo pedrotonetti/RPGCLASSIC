@@ -209,6 +209,19 @@ export class OverworldCombat {
     this.monsters.push(bossMonster);
   }
 
+  /**
+   * Places a single, hand-picked monster at a fixed overworld tile — a
+   * "must be sought out" encounter at a distinctive, memorable spot, as
+   * opposed to spawnMonsters' anonymous random scatter. Reuses the exact
+   * same buildMonster/AI lifecycle as any other wandering monster
+   * (idle/chase/engage/respawn); the only difference from a normal monster
+   * is that its spawn point is chosen by hand instead of picked at random.
+   */
+  spawnFixedMonster(enemyId: string, atTile: { x: number; y: number }): void {
+    this.ensureBaseHud();
+    this.monsters.push(this.buildMonster(enemyId, atTile.x, atTile.y));
+  }
+
   private ensureBaseHud(): void {
     if (this.hudBuilt) return;
     this.hudBuilt = true;
