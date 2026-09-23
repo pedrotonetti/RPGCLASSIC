@@ -1,6 +1,7 @@
 import type { CharacterAppearance } from '../config/customization';
+import { villageClearingBounds } from '../systems/MapGenerator';
 import { CLASS_ZONE_THEMES } from './classZones';
-import { MAIN_CITY_ID } from './zones';
+import { MAIN_CITY_ID, SECONDARY_VILLAGE_SIZE, START_VILLAGE_SIZE } from './zones';
 
 export type VendorKind = 'ferreiro' | 'artesao' | 'boticario' | 'joalheiro';
 
@@ -570,6 +571,15 @@ NPC_DEFINITIONS.push(
 // One elder (starting village) and one mentor (secondary village) per class,
 // generated from the shared theme table instead of hand-duplicated —
 // see data/classZones.ts for names/dialogue per class.
+//
+// Positioned relative to each village's own central clearing (see
+// villageClearingBounds) rather than a stale absolute tile — these used to
+// be hardcoded at (8,7)/(11,8), tuned by hand for the OLD, much smaller
+// village dimensions; a hardcoded tile like that silently strands the NPC
+// out in the trees the next time START_VILLAGE_SIZE/SECONDARY_VILLAGE_SIZE
+// changes; this can't drift out of sync with the village generator.
+const startBounds = villageClearingBounds(START_VILLAGE_SIZE.width, START_VILLAGE_SIZE.height);
+const secondaryBounds = villageClearingBounds(SECONDARY_VILLAGE_SIZE.width, SECONDARY_VILLAGE_SIZE.height);
 for (const theme of CLASS_ZONE_THEMES) {
   NPC_DEFINITIONS.push({
     id: `${theme.classId}_elder`,
@@ -579,8 +589,11 @@ for (const theme of CLASS_ZONE_THEMES) {
     // reuses that exact class's model/loadout instead of an analog guess.
     classAnalogId: theme.classId,
     zoneId: theme.startVillageId,
-    mapX: 8,
-    mapY: 7,
+    // Just outside the clearing's NW corner (3 tiles west of its wall, 1
+    // north of it) — matches where the old absolute (8,7) actually sat
+    // relative to the clearing at the previous village size.
+    mapX: startBounds.cx - startBounds.vw - 3,
+    mapY: startBounds.cy - startBounds.vh - 1,
     appearance: npcAppearance({ primaryColor: theme.accentColor, secondaryColor: 0xf2ede1, hairStyle: 'longo', hairColor: 0xe8e4dc }),
     dialogue: theme.elderGreeting,
   });
@@ -590,8 +603,11 @@ for (const theme of CLASS_ZONE_THEMES) {
     role: theme.mentorTitle,
     classAnalogId: theme.classId,
     zoneId: theme.secondaryVillageId,
-    mapX: 11,
-    mapY: 8,
+    // Just outside the clearing's NW corner (3 tiles west of its wall, 3
+    // north of it) — matches where the old absolute (11,8) sat relative to
+    // the clearing at the previous secondary-village size.
+    mapX: secondaryBounds.cx - secondaryBounds.vw - 3,
+    mapY: secondaryBounds.cy - secondaryBounds.vh - 3,
     appearance: npcAppearance({ primaryColor: theme.accentColor, secondaryColor: 0x2a2a35, bodyType: 'robusto' }),
     dialogue: theme.mentorGreeting,
   });

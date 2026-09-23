@@ -1,7 +1,13 @@
 import { TileType } from '../config/tiles';
 
-export const MAP_WIDTH = 80;
-export const MAP_HEIGHT = 48;
+// Was 80x48 — widened ~3x per axis (~9x total area) so the explorable
+// countryside around Pedravale is meaningfully bigger, not just a token
+// bump. The old-town plaza, downtown plaza, pond and every gate below are
+// all placed at their existing absolute low-numbered coordinates near the
+// map's origin corner (never centered), so none of them move — the extra
+// space is purely new field/forest extending outward past them.
+export const MAP_WIDTH = 240;
+export const MAP_HEIGHT = 150;
 
 export interface GeneratedMap {
   tiles: TileType[][];
@@ -271,7 +277,7 @@ export function generateOverworldMap(seed = 1337): GeneratedMap {
   // ...opening onto a much bigger downtown plaza, Pedravale's real town
   // square — the bulk of the main city's buildings line this and the gates.
   const plazaX0 = 3;
-  const plazaX1 = 19;
+  const plazaX1 = 30;
   const plazaY0 = villageY1 + streetLength + 1;
   const plazaY1 = plazaY0 + 10;
   for (let y = plazaY0; y <= plazaY1; y++) {
@@ -300,7 +306,10 @@ export function generateOverworldMap(seed = 1337): GeneratedMap {
   // One gate per class, each with a longer walk-in stub than before — carved
   // last (before buildings/trees) so nothing scattered above ever blocks
   // them, and long enough to give each one a little building frontage too.
-  const GATE_STUB_LENGTH = 4;
+  // Was 4 — quadrupled so each gate reads as its own small outpost/hamlet
+  // now that the field around it is ~9x bigger, instead of a bare 4-tile
+  // nub in the middle of a much larger empty stretch.
+  const GATE_STUB_LENGTH = 16;
   for (const gate of MAIN_CITY_GATES) {
     tiles[gate.y][gate.x] = TileType.Path;
     for (let i = 1; i <= GATE_STUB_LENGTH; i++) {
@@ -315,7 +324,7 @@ export function generateOverworldMap(seed = 1337): GeneratedMap {
   const buildings = placeBuildingsAlongPaths(
     tiles,
     rand,
-    34,
+    90,
     [
       { kind: 'hut', weight: 2 },
       { kind: 'house', weight: 6 },
@@ -326,10 +335,11 @@ export function generateOverworldMap(seed = 1337): GeneratedMap {
   );
 
   // Scattered trees across the field — count scaled up with the map's area
-  // (roughly 4x the old 40x24 map) so the bigger field doesn't read as barer
-  // than before; buildings/roads/plaza/pond above are already Path/Water so
+  // (roughly 9x the old 80x48 map, same proportional-to-area approach as
+  // the previous resize) so the bigger field doesn't read as barer than
+  // before; buildings/roads/plaza/pond above are already Path/Water so
   // the Grass-only check here leaves every one of them untouched.
-  for (let i = 0; i < 260; i++) {
+  for (let i = 0; i < 2300; i++) {
     const x = 1 + Math.floor(rand() * (MAP_WIDTH - 2));
     const y = 1 + Math.floor(rand() * (MAP_HEIGHT - 2));
     if (tiles[y][x] === TileType.Grass) {
@@ -361,6 +371,27 @@ export interface VillageMapOptions {
  * secondary village — visual identity comes from each zone's accent color
  * (see `render/worldBuilder.ts`) and NPC roster, not from a bespoke layout.
  */
+/**
+ * The central clearing's geometry for a village of this size — exported so
+ * `data/npcs.ts` can place the per-class elder/mentor NPCs relative to the
+ * clearing (e.g. "3 tiles west of its wall") instead of a stale absolute
+ * tile position that only made sense at one specific village size.
+ */
+export function villageClearingBounds(width: number, height: number): { cx: number; cy: number; vw: number; vh: number } {
+  const cx = Math.floor(width / 2);
+  const cy = Math.floor(height / 2);
+  // Capped, not purely proportional to width/height — a town square should
+  // stay roughly town-square-sized as the map grows, with the extra space
+  // becoming wilderness AROUND the village. An uncapped 0.22 factor at the
+  // ~3x-bigger village dimensions (see zones.ts) turned the whole clearing
+  // into a vast, near-empty paved plaza — confirmed visually (walking from
+  // its center in any direction showed nothing but bare pavement for many
+  // seconds) before this cap was added.
+  const vw = Math.min(10, Math.max(2, Math.floor(width * 0.22)));
+  const vh = Math.min(8, Math.max(2, Math.floor(height * 0.22)));
+  return { cx, cy, vw, vh };
+}
+
 export function generateVillageMap(opts: VillageMapOptions): GeneratedMap {
   const rand = mulberry32(opts.seed);
   const { width, height } = opts;
@@ -374,10 +405,7 @@ export function generateVillageMap(opts: VillageMapOptions): GeneratedMap {
     tiles.push(row);
   }
 
-  const cx = Math.floor(width / 2);
-  const cy = Math.floor(height / 2);
-  const vw = Math.max(2, Math.floor(width * 0.22));
-  const vh = Math.max(2, Math.floor(height * 0.22));
+  const { cx, cy, vw, vh } = villageClearingBounds(width, height);
 
   if (opts.hasNorthGate) {
     tiles[0][cx] = TileType.Path;
@@ -414,7 +442,7 @@ export function generateVillageMap(opts: VillageMapOptions): GeneratedMap {
       ? placeBuildingsAlongPaths(
           tiles,
           rand,
-          18,
+          50,
           [
             { kind: 'hut', weight: 3 },
             { kind: 'house', weight: 5 },
@@ -426,7 +454,7 @@ export function generateVillageMap(opts: VillageMapOptions): GeneratedMap {
       : placeBuildingsAlongPaths(
           tiles,
           rand,
-          12,
+          35,
           [
             { kind: 'hut', weight: 8 },
             { kind: 'house', weight: 2 },

@@ -41,8 +41,14 @@ const MAIN_CITY_ACCENT = 0x4c8a3f; // the field's usual grass green — no speci
 // Hoisted here (instead of each being a literal re-typed in both
 // buildClassVillageZones and mainCityExits, as they used to be) so the two
 // can never drift out of sync with each other again.
-const START_VILLAGE_SIZE = { width: 36, height: 28 };
-const SECONDARY_VILLAGE_SIZE = { width: 48, height: 36 };
+// Was 36x28/48x36 — widened ~3x per axis (~9x area), matching the main
+// city's own resize in MapGenerator.ts. Every exit/arrival tile below is
+// computed from these constants (Math.floor(width/2), height-3, etc.), not
+// hardcoded, so they stay correct automatically; only the elder/mentor NPC
+// positions (data/npcs.ts) needed an explicit fix, via the new
+// villageClearingBounds export, since those WERE hardcoded absolute tiles.
+export const START_VILLAGE_SIZE = { width: 110, height: 85 };
+export const SECONDARY_VILLAGE_SIZE = { width: 145, height: 110 };
 
 function buildClassVillageZones(): Record<string, ZoneDefinition> {
   const zones: Record<string, ZoneDefinition> = {};
@@ -62,9 +68,9 @@ function buildClassVillageZones(): Record<string, ZoneDefinition> {
       name: theme.startVillageName,
       accentColor: theme.accentColor,
       monsterIds: theme.startMonsters,
-      monsterCount: 14,
+      monsterCount: 30,
       generate: () =>
-        generateVillageMap({ ...startSize, seed: startSeed, hasNorthGate: false, hasSouthGate: true, treeCount: 65, development: 'sparse' }),
+        generateVillageMap({ ...startSize, seed: startSeed, hasNorthGate: false, hasSouthGate: true, treeCount: 480, development: 'sparse' }),
       exits: [
         {
           atTile: { x: Math.floor(startSize.width / 2), y: startSize.height - 1 },
@@ -79,9 +85,9 @@ function buildClassVillageZones(): Record<string, ZoneDefinition> {
       name: theme.secondaryVillageName,
       accentColor: theme.accentColor,
       monsterIds: theme.secondaryMonsters,
-      monsterCount: 20,
+      monsterCount: 45,
       generate: () =>
-        generateVillageMap({ ...secondarySize, seed: secondarySeed, hasNorthGate: true, hasSouthGate: true, treeCount: 95, development: 'developed' }),
+        generateVillageMap({ ...secondarySize, seed: secondarySeed, hasNorthGate: true, hasSouthGate: true, treeCount: 700, development: 'developed' }),
       exits: [
         { atTile: { x: Math.floor(secondarySize.width / 2), y: 0 }, toZone: theme.startVillageId, arriveTile: startArrive },
         { atTile: { x: Math.floor(secondarySize.width / 2), y: secondarySize.height - 1 }, toZone: MAIN_CITY_ID, arriveTile: cityArrive },
@@ -136,7 +142,7 @@ export const ZONE_DEFINITIONS: Record<string, ZoneDefinition> = {
     accentColor: MAIN_CITY_ACCENT,
     generate: () => generateOverworldMap(),
     exits: mainCityExits(),
-    monsterCount: 30,
+    monsterCount: 65,
   },
   ...CLASS_VILLAGE_ZONES,
   ...DUNGEON_ZONES,
