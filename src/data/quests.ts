@@ -631,6 +631,67 @@ export const SIDE_QUESTS: QuestDefinition[] = [
     rewardGold: 190,
     rewardItem: { templateId: 'talisma_velocidade', rarity: 'laranja' },
   },
+
+  // --- Five more lost/local NPCs, one per class village left with nothing
+  // beyond its generated elder/mentor pair — see data/npcs.ts's own comment
+  // just above where these are pushed for which classes this covers. Every
+  // one is a single-quest chain, same shape as Nair's own single-quest
+  // bounty above (a completed-state dialogue line, no second quest needed).
+  {
+    id: 'vidal_r1_portao',
+    title: 'O Portão Que Não Caiu',
+    description:
+      'Sargento Vidal ficou sozinho segurando o portão sul do Forte de Ferro depois que o comboio de refugiados partiu — e guerreiros de casca rachada testam esse portão toda noite, cada vez mais perto de derrubá-lo.',
+    giverNpcId: 'vidal_portao',
+    objective: { kind: 'defeat', targetId: 'orc', amount: 5 },
+    rewardXp: 300,
+    rewardGold: 190,
+    rewardItem: { templateId: 'armadura_placas', rarity: 'laranja' },
+  },
+  {
+    id: 'sora_r1_veu',
+    title: 'O Véu Perturbado',
+    description:
+      'Desde que a Sede se aproximou, os sussurros alados que rondam a Vila do Véu Azul enlouqueceram — batem contra o próprio poço de mana da vila, como se quisessem calar o que ouvem nele. Noviça Sora não consegue estudá-los e defender o poço ao mesmo tempo.',
+    giverNpcId: 'sora_veu',
+    objective: { kind: 'defeat', targetId: 'bat', amount: 5 },
+    rewardXp: 300,
+    rewardGold: 190,
+    rewardItem: { templateId: 'vestes_arcanas', rarity: 'laranja' },
+  },
+  {
+    id: 'ivo_r1_emboscada',
+    title: 'Emboscada na Trilha Verde',
+    description:
+      'Caravanas inteiras somem na Trilha Verde ultimamente — não por acaso, mas por andarilhos sedentos, gente que a Sede corrompeu por dentro antes de corromper por fora. Guarda-Trilha Ivo não tem gente de sobra pra escoltar ninguém.',
+    giverNpcId: 'ivo_trilha',
+    objective: { kind: 'defeat', targetId: 'bandit', amount: 5 },
+    rewardXp: 300,
+    rewardGold: 190,
+    rewardItem: { templateId: 'talisma_velocidade', rarity: 'laranja' },
+  },
+  {
+    id: 'dulce_r1_ancestrais',
+    title: 'Os Ancestrais Inquietos',
+    description:
+      'O bosque de ancestrais atrás da Vila do Bambu sempre foi lugar de descanso, não de guerra. Agora ancestrais descarnados caminham entre as próprias sepulturas, e Irmã Dulce reza sem saber mais se está sendo ouvida por quem descansa ou por quem a Sede virou do avesso.',
+    giverNpcId: 'dulce_bambu',
+    objective: { kind: 'defeat', targetId: 'skeleton', amount: 5 },
+    rewardXp: 300,
+    rewardGold: 190,
+    rewardItem: { templateId: 'amuleto_vitalidade', rarity: 'laranja' },
+  },
+  {
+    id: 'iwa_r1_disciplina',
+    title: 'Disciplina Interrompida',
+    description:
+      'O pátio de treino da Vila do Punho de Jade vem sendo invadido por brotos retorcidos toda madrugada — atraídos, acredita Mestre Iwa, pelo próprio ritmo dos cânticos de treino, como se confundissem disciplina com presa fácil.',
+    giverNpcId: 'iwa_jade',
+    objective: { kind: 'defeat', targetId: 'goblin', amount: 5 },
+    rewardXp: 300,
+    rewardGold: 190,
+    rewardItem: { templateId: 'manoplas_combate', rarity: 'laranja' },
+  },
 ];
 
 /**
@@ -646,6 +707,11 @@ export const SIDE_QUEST_STARTERS: Array<{ questId: string; prerequisiteQuestId: 
   { questId: 'nair_r1_ultimos_de_coivara', prerequisiteQuestId: 'q6_dragon' },
   { questId: 'contrato_troll_lagoa', prerequisiteQuestId: 'q6_dragon' },
   { questId: 'contrato_cinzas_elemental', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'vidal_r1_portao', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'sora_r1_veu', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'ivo_r1_emboscada', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'dulce_r1_ancestrais', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'iwa_r1_disciplina', prerequisiteQuestId: 'q6_dragon' },
 ];
 
 const ALL_QUESTS: QuestDefinition[] = [

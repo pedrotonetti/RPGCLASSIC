@@ -453,6 +453,7 @@ NPC_DEFINITIONS.push(
       'Rastreio bicho desde criança e nunca vi isso: criaturas da Sede fugindo de Pedravale, não atacando.',
       'Fogem todas na mesma direção, feito puxadas por uma corda que a gente não vê. Isso não é instinto de bicho assustado — é chamado.',
       'Preciso de outro par de olhos que enxergue rastro como eu enxergo. Vem comigo?',
+      'Tudo que você vê além dos portões de Pedravale, até onde as vilas de cada classe começam, é Verdegal — a mesma mata que dá nome à grande floresta de Ipêra inteira. Não tem dono. Só tem quem sabe andar nela.',
     ],
     questDialogue: [
       {
@@ -513,6 +514,7 @@ NPC_DEFINITIONS.push(
       'Vasculhando os arquivos mais velhos da vila, achei um juramento que ninguém sabia que ainda existia — um voto dos chamados Zeladores da Raiz.',
       'É um voto de guarda, não de guerra. Promete vigilância eterna contra algo que o texto nunca nomeia — só chama de "a ferida".',
       'Um documento desses não devia ficar esquecido numa prateleira. Mas reativar um juramento assim não é decisão de escrivão — é decisão de quem carrega honra o bastante pra jurá-lo de novo.',
+      '(Ele aponta pela janela para a praça murada logo ali fora dos arquivos.) Essa aqui é a Praça da Fundação — o pedaço mais velho de Pedravale, de antes da vila crescer o bastante pra precisar de uma praça nova.',
     ],
     questDialogue: [
       {
@@ -547,6 +549,7 @@ NPC_DEFINITIONS.push(
       'Bram me chamou baixinho — falou que tem gente estranha demais entrando por essas portas ultimamente. Rostos que ninguém conhece, perguntas que ninguém devia fazer.',
       'Eu comando a guarda, mas guarda não pensa como quem se esconde nas sombras. Você pensa.',
       'Se tem espião disfarçado de morador em Pedravale, você vai reconhecer o disfarce antes que qualquer um de nós.',
+      'Metade da minha guarda fica na Praça da Fundação, a outra metade lá embaixo na Praça do Mercado — Pedravale cresceu rápido demais pra uma só ronda dar conta das duas.',
     ],
   },
   {
@@ -799,6 +802,216 @@ NPC_DEFINITIONS.push(
         lines: [
           'A mesma alcateia ainda ronda essas trilhas. Sinto o uivo à noite — o mesmo, tenho certeza.',
           'Não peço vingança. Peço que ninguém mais precise correr como eu corri.',
+        ],
+      },
+    ],
+  },
+);
+
+// More "lost"-style NPCs, one per class village that had nothing beyond its
+// generated elder/mentor pair (necromancer_secondary already has Baltazar,
+// assassin_start already has Nair — this round covers five of the six
+// classes that so far had NEITHER village hold anything past that pair:
+// warrior, mage, archer, cleric, monk. Paladin's two villages are the one
+// remaining gap; see this session's report). Same idiom as the three lost
+// NPCs above: positioned off the generated village's own guaranteed-Path
+// road column (never a bare hardcoded tile), single-quest chains gated on
+// q6_dragon via SIDE_QUEST_STARTERS, rewarding an existing equipment
+// template id at 'laranja' rarity — on par with the existing bounties.
+NPC_DEFINITIONS.push(
+  {
+    id: 'vidal_portao',
+    name: 'Sargento Vidal',
+    role: 'Última Guarda do Portão Sul do Forte de Ferro',
+    // Held the fort's own gate alone after the refugee convoy fled — armored sword-and-shield Knight rig, same silhouette as Bram/Talma.
+    classAnalogId: 'paladin',
+    zoneId: 'warrior_secondary',
+    // Far down the south road of "Forte de Ferro", near the map's own
+    // border — the same guaranteed-Path column every secondary village
+    // carves south from its clearing, well past the barracks everyone else
+    // clusters around.
+    mapX: secondaryBounds.cx,
+    mapY: SECONDARY_VILLAGE_SIZE.height - 4,
+    appearance: npcAppearance({
+      hairStyle: 'moicano',
+      hairColor: 0x6b5f52,
+      primaryColor: 0xb33a3a,
+      secondaryColor: 0x2a2a35,
+      bodyType: 'robusto',
+      scarStyle: 'olho',
+    }),
+    dialogue: [
+      '(Um soldado sozinho examina o portão sul, os braços tremendo de cansaço.) O comboio já foi há muito. Doroteia foi na frente, o Comandante Gael foi atrás — e alguém precisava ficar segurando o que sobrou daqui.',
+      'Guerreiros de casca rachada testam esse portão toda noite. Sozinho, não aguento pra sempre.',
+    ],
+    questDialogue: [
+      {
+        questId: 'vidal_r1_portao',
+        when: 'completed',
+        lines: ['(Vidal se apoia no próprio portão, agora firme.) Segura. Pela primeira vez em semanas, o Forte de Ferro tem um portão de verdade outra vez.'],
+      },
+      {
+        questId: 'vidal_r1_portao',
+        lines: [
+          'Cada guerreiro de casca rachada que eu derrubo, dois aparecem na trilha atrás dele. Não é sorte ruim — é gente sendo mandada pra cá de propósito.',
+          'Ajude-me a segurar esse portão e prometo que o próximo recruta do Forte não vai precisar fazer isso sozinho.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'sora_veu',
+    name: 'Noviça Sora',
+    role: 'Guardiã do Poço de Mana do Véu Azul',
+    // A young apprentice tending an arcane wellspring — staff-carrying Mage rig.
+    classAnalogId: 'mage',
+    zoneId: 'mage_start',
+    // Far down the south road of "Vila do Véu Azul", near the map's own
+    // border — same guaranteed-Path road column every starting village
+    // carves south from its clearing.
+    mapX: startBounds.cx,
+    mapY: START_VILLAGE_SIZE.height - 4,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'medio',
+      hairColor: 0x3a5fb3,
+      eyeColor: 0x9acb6e,
+      primaryColor: 0x3a5fb3,
+      secondaryColor: 0xf2ede1,
+      bodyType: 'magro',
+    }),
+    dialogue: [
+      '(Uma noviça se debruça sobre um poço raso de mana, tentando acalmar a própria água com as duas mãos.) Desde que a Sede se aproximou, os sussurros alados enlouqueceram — batem contra o poço como se quisessem calar o que ouvem nele.',
+      'Não consigo estudar o poço e defendê-lo ao mesmo tempo. E se ele quebrar, o Véu Azul inteiro perde sua própria fonte.',
+    ],
+    questDialogue: [
+      {
+        questId: 'sora_r1_veu',
+        when: 'completed',
+        lines: ['(Sora encosta a testa na borda do poço, aliviada.) Quieto de novo. Obrigada — vou lembrar disso da próxima vez que alguém disser que noviça não serve pra nada em campo.'],
+      },
+      {
+        questId: 'sora_r1_veu',
+        lines: [
+          'Eles não atacam por fome — atacam o próprio poço, como se soubessem o que ele guarda.',
+          'Afaste-os antes que a água pare de responder a qualquer mão, até a minha.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'ivo_trilha',
+    name: 'Guarda-Trilha Ivo',
+    role: 'Vigia da Trilha Verde',
+    // A watchful trail scout — bow-carrying archer rig.
+    classAnalogId: 'archer',
+    zoneId: 'archer_secondary',
+    // Far up the north road of "Posto da Trilha Verde", near the map's own
+    // border — same guaranteed-Path road column every secondary village
+    // carves north from its clearing (mirrors Baltazar's own placement in
+    // necromancer_secondary, just the opposite class's territory).
+    mapX: secondaryBounds.cx,
+    mapY: 4,
+    appearance: npcAppearance({
+      hairStyle: 'curto',
+      hairColor: 0x4a2f20,
+      primaryColor: 0x3fae5b,
+      secondaryColor: 0x6b4423,
+      bodyType: 'atletico',
+    }),
+    dialogue: [
+      'Caravanas inteiras somem na Trilha Verde ultimamente. Não por acaso — por andarilhos sedentos, gente que a Sede corrompeu por dentro antes de corromper por fora.',
+      'Não tenho gente de sobra pra escoltar ninguém. O Posto inteiro segura a trilha com o que tem.',
+    ],
+    questDialogue: [
+      {
+        questId: 'ivo_r1_emboscada',
+        when: 'completed',
+        lines: ['(Ivo observa a trilha vazia, quieta pela primeira vez em dias.) Passagem livre. Diga aos viajantes que a Trilha Verde volta a merecer o nome.'],
+      },
+      {
+        questId: 'ivo_r1_emboscada',
+        lines: [
+          'Eles emboscam de longe, sedentos demais pra esperar um alvo melhor. Cuidado ao seguir a trilha sozinho.',
+          'Limpe o caminho e o Posto da Trilha Verde vai lembrar seu nome tanto quanto lembra o de Fenn.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'dulce_bambu',
+    name: 'Irmã Dulce',
+    role: 'Zeladora do Bosque de Ancestrais do Bambu',
+    // Tends a small ancestor grove — staff-carrying cleric rig.
+    classAnalogId: 'cleric',
+    zoneId: 'cleric_start',
+    // Far down the south road of "Vila do Bambu", near the map's own
+    // border — same guaranteed-Path road column every starting village
+    // carves south from its clearing.
+    mapX: startBounds.cx,
+    mapY: START_VILLAGE_SIZE.height - 4,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'coque',
+      hairColor: 0x8a8378,
+      primaryColor: 0xe0c34a,
+      secondaryColor: 0xf2ede1,
+      bodyType: 'magro',
+    }),
+    dialogue: [
+      '(Uma irmã reza ajoelhada diante de um pequeno bosque de sepulturas, mãos trêmulas.) O bosque de ancestrais sempre foi lugar de descanso, não de guerra. Agora ancestrais descarnados caminham entre as próprias sepulturas.',
+      'Rezo sem saber mais se estou sendo ouvida por quem descansa ou por quem a Sede virou do avesso.',
+    ],
+    questDialogue: [
+      {
+        questId: 'dulce_r1_ancestrais',
+        when: 'completed',
+        lines: ['(Dulce se levanta, ainda trêmula, mas com o bosque enfim em silêncio.) Descansem, ancestrais. Obrigada por me devolver isso pra dizer com o coração inteiro.'],
+      },
+      {
+        questId: 'dulce_r1_ancestrais',
+        lines: [
+          'Não venho pedir vingança contra os próprios ancestrais — só que voltem a descansar antes que mais gente do Bambu perca o sono por eles.',
+          'Silencie-os com respeito, se puder. Eles não escolheram voltar assim.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'iwa_jade',
+    name: 'Mestre Iwa',
+    role: 'Instrutor do Pátio de Treino do Punho de Jade',
+    // An old training instructor — unarmed monk rig.
+    classAnalogId: 'monk',
+    zoneId: 'monk_start',
+    // Far down the south road of "Vila do Punho de Jade", near the map's own
+    // border — same guaranteed-Path road column every starting village
+    // carves south from its clearing.
+    mapX: startBounds.cx,
+    mapY: START_VILLAGE_SIZE.height - 4,
+    appearance: npcAppearance({
+      hairStyle: 'careca',
+      facialHair: 'cavanhaque',
+      hairColor: 0xcfd6dc,
+      primaryColor: 0xd97a2e,
+      secondaryColor: 0xf2ede1,
+      bodyType: 'robusto',
+    }),
+    dialogue: [
+      '(Um instrutor idoso observa o próprio pátio de treino, pisoteado, os cânticos de disciplina interrompidos.) Brotos retorcidos invadem toda madrugada — atraídos pelo ritmo dos nossos cânticos, como se confundissem disciplina com presa fácil.',
+      'Um pátio que não treina em paz não forma discípulo nenhum. Preciso do pátio de volta antes do próximo amanhecer.',
+    ],
+    questDialogue: [
+      {
+        questId: 'iwa_r1_disciplina',
+        when: 'completed',
+        lines: ['(Mestre Iwa retoma a postura no centro do pátio, em silêncio, como se nunca tivesse saído dela.) Disciplina restaurada. Poucos de fora entendem o que isso vale aqui.'],
+      },
+      {
+        questId: 'iwa_r1_disciplina',
+        lines: [
+          'Eles vêm em bando, pequenos e rápidos demais para o meu próprio ritmo de golpes.',
+          'Afaste-os do pátio e prometo um ensinamento que nenhum mosteiro fora daqui oferece.',
         ],
       },
     ],

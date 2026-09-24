@@ -16,11 +16,25 @@ import type { EnemyDefinition } from '../config/types';
  * and pays out ~2.5x any regular enemy's xp/gold and a guaranteed mythic
  * reward, so `young_dragon` is tuned here as a levels-above-the-pack spike
  * rather than "one more step" in the regular sequence.
+ *
+ * Every `name` below is written to read as LORE.md frames these fights: "os
+ * monstros que o jogador enfrenta não são monstros aleatórios — são
+ * ancestrais e criaturas que a Sede virou do avesso" — a corrupted Raiz, an
+ * ancestor's memory, or an ordinary creature/traveler twisted by the Sede's
+ * drought-like hunger, never a stock generic-fantasy label. `id` (used by
+ * quest objectives, dungeon encounter pods, `monsterIds`, etc.) is left
+ * untouched — only the display `name`/flavor changed here, per this file's
+ * scope (no stat/balance changes). Every enemy id is currently a single
+ * global name — this schema has no per-zone name override, so an id reused
+ * across several villages' `monsterIds` (e.g. `goblin`, `bat`) always shows
+ * the same name everywhere it's fought; see this session's report for the
+ * regional-variant question this raises.
  */
 export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   {
     id: 'slime',
-    name: 'Geleia',
+    // A pool of Ipê sap that never dried into bark — the Sede curdled it mid-flow, so it slithers instead of settling.
+    name: 'Seiva Ressequida',
     color: 0x6fcf97,
     stats: { maxHp: 16, maxMp: 0, attack: 4, magicAttack: 0, defense: 2, magicDefense: 1, speed: 3, luck: 2 },
     xpReward: 8,
@@ -31,7 +45,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'bat',
-    name: 'Morcego',
+    // An ancestor's warning, given wings and fangs instead of a voice — the same "sussurro" the Root Hollow dungeon is named for.
+    name: 'Sussurro Alado',
     color: 0x9b59b6,
     stats: { maxHp: 14, maxMp: 0, attack: 5, magicAttack: 0, defense: 1, magicDefense: 1, speed: 8, luck: 4 },
     xpReward: 10,
@@ -42,7 +57,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'goblin',
-    name: 'Goblin',
+    // A sapling of the Verdegal, budded and corrupted before it ever grew into a proper Ipê — small, quick, feral.
+    name: 'Broto Retorcido',
     color: 0x7a8b3f,
     stats: { maxHp: 22, maxMp: 6, attack: 6, magicAttack: 1, defense: 3, magicDefense: 2, speed: 5, luck: 3 },
     xpReward: 14,
@@ -55,7 +71,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'bandit',
-    name: 'Bandido',
+    // A traveler the Sede's hunger drove feral before it ever twisted their body — still human-shaped, already lost.
+    name: 'Andarilho Sedento',
     color: 0x8a6a3f,
     stats: { maxHp: 26, maxMp: 8, attack: 8, magicAttack: 1, defense: 4, magicDefense: 3, speed: 6, luck: 5 },
     xpReward: 17,
@@ -68,6 +85,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'dark_wolf',
+    // Already lore-fitting as-is — a wolf pack given shadow-shape by the Sede (see e.g. Nair's own chain in data/quests.ts) — left unchanged.
     name: 'Lobo Sombrio',
     color: 0x4a4a58,
     stats: { maxHp: 32, maxMp: 0, attack: 9, magicAttack: 0, defense: 4, magicDefense: 3, speed: 7, luck: 5 },
@@ -81,7 +99,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'skeleton',
-    name: 'Esqueleto',
+    // Literally an ancestor whose bones should have rested in the Raízes — the Sede's rot instead pulled them back up.
+    name: 'Ancestral Descarnado',
     color: 0xd8d0c0,
     stats: { maxHp: 30, maxMp: 6, attack: 9, magicAttack: 2, defense: 6, magicDefense: 2, speed: 4, luck: 3 },
     xpReward: 24,
@@ -94,7 +113,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'giant_spider',
-    name: 'Aranha Gigante',
+    // Spins webs of dried root-fiber instead of silk — the Sede's own drought given a broodmother.
+    name: 'Tecelã da Sede',
     color: 0x3a2f3a,
     stats: { maxHp: 28, maxMp: 10, attack: 8, magicAttack: 4, defense: 4, magicDefense: 4, speed: 9, luck: 6 },
     xpReward: 26,
@@ -107,7 +127,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'orc',
-    name: 'Orc Guerreiro',
+    // An ancestor-spirit the Sede fused to bark and stone until only the brute strength remained.
+    name: 'Guerreiro de Casca Rachada',
     color: 0x5a7a3f,
     stats: { maxHp: 42, maxMp: 8, attack: 12, magicAttack: 1, defense: 7, magicDefense: 4, speed: 5, luck: 4 },
     xpReward: 34,
@@ -120,7 +141,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'fire_elemental',
-    name: 'Elemental de Fogo',
+    // A flame the Sede's hunger never lets die — always burning, never fed enough (see the Rastro de Cinzas bounty in data/quests.ts).
+    name: 'Brasa Faminta',
     color: 0xe0602d,
     stats: { maxHp: 36, maxMp: 20, attack: 4, magicAttack: 14, defense: 5, magicDefense: 8, speed: 6, luck: 5 },
     xpReward: 38,
@@ -133,7 +155,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'troll',
-    name: 'Troll das Montanhas',
+    // A serra guardian left parched and maddened by the same drought the Sede spreads through every root — hence its own pull toward the last open water (see the Contrato: O Troll da Lagoa bounty).
+    name: 'Colosso Ressequido',
     color: 0x6a7a6a,
     stats: { maxHp: 60, maxMp: 4, attack: 14, magicAttack: 2, defense: 9, magicDefense: 5, speed: 3, luck: 3 },
     xpReward: 48,
@@ -146,7 +169,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'stone_golem',
-    name: 'Golem de Pedra',
+    // An old sentinel Raiz fused to stone generations ago, still lumbering its post — hollowed and cracked by the Sede's drought instead of the ordinary wear of time.
+    name: 'Guardião de Pedra Rachada',
     color: 0x8a8478,
     stats: { maxHp: 80, maxMp: 0, attack: 13, magicAttack: 0, defense: 14, magicDefense: 10, speed: 2, luck: 2 },
     xpReward: 56,
@@ -159,6 +183,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   },
   {
     id: 'young_dragon',
+    // Already lore-fitting as-is — see q6_dragon's own description in data/quests.ts ("um antigo guardião... corrompido pela Sede") — left unchanged.
     name: 'Guardião-Dragão Corrompido',
     color: 0xc73a3a,
     isBoss: true,
