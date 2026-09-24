@@ -1018,6 +1018,467 @@ NPC_DEFINITIONS.push(
   },
 );
 
+// Third wave of lost/local NPCs. Two goals:
+// 1) Close the one remaining per-class gap noted by the previous two
+//    passes: paladin's two villages had nothing beyond the generated
+//    elder/mentor pair (every other class already had at least one lost
+//    NPC). Gareth below closes it, at the SAME reward tier as the rest of
+//    that earlier wave (300 XP / 190 gold, 'laranja') — parity, not a step up.
+// 2) Real breadth across the rest of the map: one NPC in EVERY remaining
+//    class village that still had nothing but its elder/mentor pair
+//    (warrior_start, mage_secondary, archer_start, cleric_secondary,
+//    paladin_secondary, assassin_secondary, necromancer_start,
+//    monk_secondary — nine villages total, counting both of paladin's), plus
+//    two new side-quest givers in Pedravale's own "Praça do Mercado" downtown
+//    plaza (added in the previous map-expansion pass, never populated since).
+//    That's full coverage: every one of the 16 class villages, plus the
+//    main city, now has at least one lost/local NPC beyond the generated
+//    pair. This second batch rewards noticeably more than the earlier
+//    waves — 450 XP / 280 gold instead of ~300/190 — and every reward item
+//    below is a template that had NEVER been handed out at 'laranja' before
+//    (only ever at 'azul' in the CLASS_CALLING_QUESTS chains), so this wave
+//    reads as genuinely new best-in-slot gear, not a repeat of the same
+//    handful of items. 'laranja' itself is still the top rarity tier (see
+//    config/rarity.ts's RARITY_ORDER/RARITY_LABEL — 'Mítico', above
+//    'vermelho' Lendário) so there's nothing higher to hand out; the step up
+//    here is in XP/gold and in which templates get their first 'laranja' roll.
+// Same idiom throughout: positioned off each village's own generated
+// clearing/road via villageClearingBounds (never a hardcoded tile), single-
+// quest chains gated on q6_dragon via SIDE_QUEST_STARTERS/offerSideQuest.
+NPC_DEFINITIONS.push(
+  {
+    id: 'gareth_escudo',
+    name: 'Escudeiro Gareth',
+    role: 'Guardião do Memorial do Escudo Branco',
+    // An aging shield-bearer tending a war memorial — armored Knight rig, same silhouette as every other paladin analog.
+    classAnalogId: 'paladin',
+    zoneId: 'paladin_start',
+    // Far down the south road of "Vila do Escudo Branco", near the map's own
+    // border — the only guaranteed-Path column a starting village carves
+    // (no north gate on a *_start zone), same as Nair/Sora/Dulce/Iwa's own
+    // placement in the other starting villages.
+    mapX: startBounds.cx,
+    mapY: START_VILLAGE_SIZE.height - 4,
+    appearance: npcAppearance({
+      hairStyle: 'curto',
+      hairColor: 0xcfd6dc,
+      facialHair: 'completa',
+      primaryColor: 0xcfd6dc,
+      secondaryColor: 0xb33a3a,
+      bodyType: 'robusto',
+      scarStyle: 'testa',
+    }),
+    dialogue: [
+      '(Um velho escudeiro poli escudos entalhados com nomes que já não pertencem a ninguém vivo.) Cada paladino que morreu segurando uma linha em Ipêra tem o próprio escudo pendurado aqui. É assim que o Escudo Branco lembra.',
+      'Ultimamente os nomes não descansam quietos. Ancestrais descarnados sobem entre os escudos à noite, como se a Sede quisesse apagar até a lembrança de quem a enfrentou antes.',
+    ],
+    questDialogue: [
+      {
+        questId: 'gareth_r1_memorial',
+        when: 'completed',
+        lines: ['(Gareth encosta a mão no escudo mais velho do memorial, em silêncio.) Descansem de novo. Prometo que ainda lembramos — só não do jeito que a Sede queria nos fazer lembrar.'],
+      },
+      {
+        questId: 'gareth_r1_memorial',
+        lines: [
+          'Não peço que empunhe espada por gente que já morreu. Peço que devolva o silêncio a quem já deu tudo o que tinha.',
+          'Eles ainda seguram a forma da armadura que usaram em vida. Isso dói mais de ver do que eu esperava.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'tadeu_bastiao',
+    name: 'Irmão Tadeu',
+    role: 'Guardião da Chama do Bastião da Fé',
+    // A devout brother tending the bastion's own ward-flame — staff-carrying cleric rig fits a non-combatant keeper of a sacred fire better than a sword.
+    classAnalogId: 'cleric',
+    zoneId: 'paladin_secondary',
+    // Far down the south road of "Bastião da Fé" — a secondary village has
+    // both gates, so either road column works; chosen simply to differ from
+    // Gareth's own placement in paladin_start (a different zone entirely, so
+    // no collision risk either way).
+    mapX: secondaryBounds.cx,
+    mapY: SECONDARY_VILLAGE_SIZE.height - 4,
+    appearance: npcAppearance({
+      hairStyle: 'careca',
+      hairColor: 0xe8e4dc,
+      facialHair: 'nenhuma',
+      primaryColor: 0xe0c34a,
+      secondaryColor: 0xcfd6dc,
+      bodyType: 'magro',
+      headAccessory: 'nenhum',
+    }),
+    dialogue: [
+      '(Um irmão alimenta com cuidado uma chama baixa, presa numa taça de pedra no centro do bastião.) Essa chama guarda peregrinos há gerações. Nunca a vi tremer tanto quanto treme agora.',
+      'Guerreiros de casca rachada testam os muros toda noite, atraídos pelo próprio calor que deviam temer. Não aguento afastá-los e alimentar a chama ao mesmo tempo.',
+    ],
+    questDialogue: [
+      {
+        questId: 'tadeu_r1_chama',
+        when: 'completed',
+        lines: ['(Tadeu observa a chama voltar a arder alta e estável.) Firme de novo. Obrigado — o Bastião ainda tem luz pra oferecer a quem chega cansado.'],
+      },
+      {
+        questId: 'tadeu_r1_chama',
+        lines: [
+          'Afaste-os dos muros antes que a chama apague de vez. Ela não é só tradição — é o que diz a quem chega exausto que ainda existe um lugar seguro em Ipêra.',
+          'Prometo que o Bastião não esquece quem segura a linha por ele.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'horacio_pedra',
+    name: 'Veterano Horácio',
+    role: 'Guardião da Forja Velha da Pedra Vermelha',
+    // A retired warrior still minding the village's old forge — armored/weathered Barbarian-style rig.
+    classAnalogId: 'warrior',
+    zoneId: 'warrior_start',
+    // Far down the south road of "Vila da Pedra Vermelha", the only
+    // guaranteed-Path column a starting village carves.
+    mapX: startBounds.cx,
+    mapY: START_VILLAGE_SIZE.height - 4,
+    appearance: npcAppearance({
+      hairStyle: 'careca',
+      facialHair: 'completa',
+      hairColor: 0x9a9a9a,
+      primaryColor: 0xb33a3a,
+      secondaryColor: 0x6b4423,
+      bodyType: 'robusto',
+      scarStyle: 'bochecha',
+    }),
+    dialogue: [
+      '(Um veterano de braços grossos bate um martelo contra a bigorna fria da forja velha, sem realmente forjar nada.) Parei de lutar há anos. A forja nunca me deixou parar de vez.',
+      'Brotos retorcidos vêm fuçando o minério guardado aqui toda madrugada — como se a Sede sentisse o metal antes de sentir a gente.',
+    ],
+    questDialogue: [
+      {
+        questId: 'horacio_r1_forja',
+        when: 'completed',
+        lines: ['(Horácio bate o martelo na bigorna com força de verdade, pela primeira vez em anos.) Forja livre. Quase esqueci como isso soava.'],
+      },
+      {
+        questId: 'horacio_r1_forja',
+        lines: [
+          'Afaste-os do minério antes que levem o pouco de aço que a Pedra Vermelha ainda tem de sobra.',
+          'Não é sobre o metal, na verdade. É sobre não perder mais uma coisa pra Sede sem revidar.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'yolanda_torre',
+    name: 'Bibliotecária Yolanda',
+    role: 'Guardiã do Arquivo Arcano da Torre dos Arcanos',
+    // A studious archivist of the Tower's own restricted stacks — staff-carrying mage rig.
+    classAnalogId: 'mage',
+    zoneId: 'mage_secondary',
+    // Far up the north road of "Torre dos Arcanos" — a secondary village's
+    // own guaranteed-Path column heading back toward its starting village,
+    // same idiom as Baltazar/Ivo's placement in the other secondary villages.
+    mapX: secondaryBounds.cx,
+    mapY: 4,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'coque',
+      hairColor: 0x2a2a35,
+      eyeColor: 0x8a5fbf,
+      primaryColor: 0x3a5fb3,
+      secondaryColor: 0xe8e4dc,
+      bodyType: 'magro',
+    }),
+    dialogue: [
+      '(Uma bibliotecária tranca às pressas uma prateleira inteira de pergaminhos selados.) O arquivo restrito guarda resíduo arcano puro — nunca precisou de guarda própria até esta semana.',
+      'Sussurros alados vêm em bando, batendo contra as prateleiras seladas como se ouvissem algo dentro delas que nem eu consigo ouvir.',
+    ],
+    questDialogue: [
+      {
+        questId: 'yolanda_r1_arquivo',
+        when: 'completed',
+        lines: ['(Yolanda tranca a última prateleira, aliviada.) Quieto. Vou dormir sem contar os bandos batendo na porta pela primeira vez em dias.'],
+      },
+      {
+        questId: 'yolanda_r1_arquivo',
+        lines: [
+          'Afaste-os do arquivo antes que arranhem um selo importante demais para reescrever.',
+          'Não sei o que ouvem lá dentro. Só sei que não paro de pensar nisso desde que começaram a vir.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'emico_folhagem',
+    name: 'Coletor Emico',
+    role: 'Coletor de Ervas da Vila da Folhagem',
+    // A trail forager who knows every path better than any guard — bow-carrying archer rig.
+    classAnalogId: 'archer',
+    zoneId: 'archer_start',
+    // Far down the south road of "Vila da Folhagem", the only guaranteed-
+    // Path column a starting village carves.
+    mapX: startBounds.cx,
+    mapY: START_VILLAGE_SIZE.height - 4,
+    appearance: npcAppearance({
+      hairStyle: 'trancado',
+      hairColor: 0x7a5233,
+      primaryColor: 0x3fae5b,
+      secondaryColor: 0x8a6a3f,
+      bodyType: 'atletico',
+    }),
+    dialogue: [
+      '(Um coletor examina uma cesta de ervas pela metade, franzindo a testa.) Ando voltando com menos da metade do que colho. Alguém — ou alguma coisa — chega às trilhas antes de mim.',
+      'Andarilhos sedentos, rondando minhas próprias trilhas de coleta. Não têm fome de comida — têm fome do que a Sede sente neles.',
+    ],
+    questDialogue: [
+      {
+        questId: 'emico_r1_trilhas',
+        when: 'completed',
+        lines: ['(Emico ergue uma cesta cheia, sorrindo de leve.) Trilha livre outra vez. Devo isso a você — e a Folhagem inteira deve a você o próximo chá que eu preparar.'],
+      },
+      {
+        questId: 'emico_r1_trilhas',
+        lines: [
+          'Afaste-os das minhas trilhas de coleta antes que a Folhagem inteira sinta a falta do que eu não trouxer.',
+          'Eles se escondem bem para gente sedenta. Cuidado ao segui-los mata adentro.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'serena_aurora',
+    name: 'Peregrina Serena',
+    role: 'Guardiã do Ritual da Alvorada do Santuário',
+    // A pilgrim who tends the sanctuary's own dawn rite — staff-carrying cleric rig.
+    classAnalogId: 'cleric',
+    zoneId: 'cleric_secondary',
+    // Far up the north road of "Santuário da Aurora" — a secondary village's
+    // own guaranteed-Path column, same idiom as Baltazar/Ivo/Yolanda above.
+    mapX: secondaryBounds.cx,
+    mapY: 4,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'longo',
+      hairColor: 0xd9b464,
+      primaryColor: 0xe0c34a,
+      secondaryColor: 0xf2ede1,
+      bodyType: 'magro',
+    }),
+    dialogue: [
+      '(Uma peregrina observa o forro do santuário, inquieta.) O ritual da alvorada precisa de silêncio puro. Já não temos isso há uma semana.',
+      'Tecelãs da Sede tomaram as vigas do teto. A cada amanhecer, mais uma teia cobre o vitral por onde a luz devia entrar.',
+    ],
+    questDialogue: [
+      {
+        questId: 'serena_r1_alvorada',
+        when: 'completed',
+        lines: ['(Serena observa a luz do amanhecer atravessar o vitral limpo, em silêncio, antes de finalmente sorrir.) Ela voltou a entrar inteira. Obrigada por devolver isso à Aurora.'],
+      },
+      {
+        questId: 'serena_r1_alvorada',
+        lines: [
+          'Afaste-as das vigas antes que o próximo amanhecer chegue coberto de teia em vez de luz.',
+          'Não são bichos maus — só famintas demais, feito tudo que a Sede toca. Ainda assim, cuidado com o veneno.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'zeca_refugio',
+    name: 'Batedor Zeca',
+    role: 'Vigia do Refúgio Silencioso',
+    // A scout keeping watch at the edge of the hideout — bow-carrying rogue-adjacent rig.
+    classAnalogId: 'assassin',
+    zoneId: 'assassin_secondary',
+    // Far down the south road of "Refúgio Silencioso" — a secondary
+    // village's own guaranteed-Path column.
+    mapX: secondaryBounds.cx,
+    mapY: SECONDARY_VILLAGE_SIZE.height - 4,
+    appearance: npcAppearance({
+      hairStyle: 'curto',
+      hairColor: 0x1c1712,
+      primaryColor: 0x2a2a35,
+      secondaryColor: 0x5a626b,
+      bodyType: 'atletico',
+      scarStyle: 'labio',
+    }),
+    dialogue: [
+      '(Um batedor observa a mata com o corpo imóvel, só os olhos se movendo.) Treinamos a vida inteira pra não ser vistos. Lobos sombrios não precisam nos ver — sentem o cheiro antes.',
+      'É a primeira ameaça que o Refúgio Silencioso não consegue simplesmente evitar. Tem que ser enfrentada de frente, do jeito que a gente menos gosta.',
+    ],
+    questDialogue: [
+      {
+        questId: 'zeca_r1_vigia',
+        when: 'completed',
+        lines: ['(Zeca relaxa os ombros pela primeira vez em dias.) Cheiro nenhum na trilha agora. Até um batedor precisa de ajuda às vezes — ainda que custe admitir.'],
+      },
+      {
+        questId: 'zeca_r1_vigia',
+        lines: [
+          'Afaste-os da trilha antes que aprendam o cheiro de todo mundo que mora aqui, não só o meu.',
+          'Não têm medo de sombra nenhuma. Isso não é bom sinal pra gente que só sabe lutar na sombra.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'ranulfo_ossos',
+    name: 'Coveiro Ranulfo',
+    role: 'Guardião do Ossário da Vila dos Ossos',
+    // Tends the village's own ossuary — bare-handed monk rig fits a non-combatant gravedigger.
+    classAnalogId: 'monk',
+    zoneId: 'necromancer_start',
+    // Far down the south road of "Vila dos Ossos", the only guaranteed-Path
+    // column a starting village carves.
+    mapX: startBounds.cx,
+    mapY: START_VILLAGE_SIZE.height - 4,
+    appearance: npcAppearance({
+      hairStyle: 'careca',
+      facialHair: 'cavanhaque',
+      hairColor: 0x8a8378,
+      primaryColor: 0x2f1f3a,
+      secondaryColor: 0x5c6b3f,
+      bodyType: 'robusto',
+      headAccessory: 'nenhum',
+    }),
+    dialogue: [
+      '(Um coveiro reorganiza ossos cuidadosamente etiquetados, mãos calejadas de décadas do mesmo trabalho.) Aqui a gente aprende cedo que os ossos merecem respeito, vivos ou não.',
+      'Nunca precisei prender ninguém no ossário antes. Agora prendo, toda noite, ancestrais descarnados que não deviam ter se levantado de jeito nenhum.',
+    ],
+    questDialogue: [
+      {
+        questId: 'ranulfo_r1_ossario',
+        when: 'completed',
+        lines: ['(Ranulfo reorganiza os últimos ossos no lugar, com o mesmo cuidado de sempre.) Quietos de novo. Obrigado por não me obrigar a fazer isso com raiva.'],
+      },
+      {
+        questId: 'ranulfo_r1_ossario',
+        lines: [
+          'Silencie-os com o mesmo respeito que eu teria, se conseguisse chegar tão perto sem me ferir.',
+          'Não é a primeira vez que a Sede mexe com os nossos ossos. É a primeira vez que mexe tão fundo.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'yuki_mosteiro',
+    name: 'Monge Yuki',
+    role: 'Guardiã da Trilha de Meditação do Mosteiro da Serra',
+    // Keeps the monastery's own mountain meditation path — bare-handed monk rig.
+    classAnalogId: 'monk',
+    zoneId: 'monk_secondary',
+    // Far up the north road of "Mosteiro da Serra" — a secondary village's
+    // own guaranteed-Path column, same idiom as Baltazar/Ivo above.
+    mapX: secondaryBounds.cx,
+    mapY: 4,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'careca',
+      hairColor: 0xcfd6dc,
+      primaryColor: 0xd97a2e,
+      secondaryColor: 0x2a2a35,
+      bodyType: 'atletico',
+    }),
+    dialogue: [
+      '(Uma monge caminha devagar por uma trilha estreita na serra, os olhos fechados, contando os próprios passos.) Medito nesta trilha desde noviça. Conheço cada pedra dela de cor.',
+      'Guerreiros de casca rachada subiram a serra pela primeira vez esta semana, pisando pedras que eu conto há anos. Quebram o próprio ritmo só de existir aqui.',
+    ],
+    questDialogue: [
+      {
+        questId: 'yuki_r1_meditacao',
+        when: 'completed',
+        lines: ['(Yuki retoma a caminhada devagar, olhos fechados de novo, contando os passos como sempre contou.) Trilha em silêncio. Voltei a ouvir os próprios pés.'],
+      },
+      {
+        questId: 'yuki_r1_meditacao',
+        lines: [
+          'Afaste-os da trilha e prometo lhe ensinar a contar os próprios passos até esquecer o corpo que os dá.',
+          'Não subo com raiva. Só quero de volta o silêncio que aprendi a ouvir aqui.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'nilza_mercado',
+    name: 'Feirante Nilza',
+    role: 'Vendedora da Praça do Mercado',
+    // An ordinary market stallkeeper, no reason to be armed — unarmed monk loadout, same choice as Dona Ilma's own civilian rig.
+    classAnalogId: 'monk',
+    zoneId: MAIN_CITY_ID,
+    // Inside the "Praça do Mercado" downtown plaza (see MapGenerator.ts's
+    // generateOverworldMap: plazaX0=3..plazaX1=30, plazaY0=21..plazaY1=31 —
+    // the whole rectangle is stamped Path with no tree border, so any tile
+    // strictly inside it is guaranteed clear forever; the plaza itself is a
+    // fixed absolute layout baked into generateOverworldMap, same as the
+    // old-town plaza every other main_city NPC above already sits in with a
+    // literal mapX/mapY, not a village-sized constant that could resize.
+    mapX: 10,
+    mapY: 24,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'coque',
+      hairColor: 0xa5502a,
+      primaryColor: 0xd9762e,
+      secondaryColor: 0xf2ede1,
+      bodyType: 'robusto',
+    }),
+    dialogue: [
+      '(Uma feirante reorganiza uma barraca pela metade vazia, contrariada.) A Praça do Mercado cresceu rápido demais pra guarda dar conta de toda banca sozinha.',
+      'Andarilhos sedentos rondam a feira à noite, se passando por fregueses cansados até a primeira barraca desatenta virar as costas.',
+    ],
+    questDialogue: [
+      {
+        questId: 'nilza_r1_barracas',
+        when: 'completed',
+        lines: ['(Nilza reorganiza a barraca, agora cheia de novo, sorrindo satisfeita.) Feira segura, mercadoria inteira. Isso aqui merece um desconto seu da próxima vez.'],
+      },
+      {
+        questId: 'nilza_r1_barracas',
+        lines: [
+          'Afaste-os da feira antes que mais uma banca feche as portas de vez.',
+          'Não distingo mais rosto de freguês de rosto de ladrão. Você talvez distinga melhor que eu.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'renato_fiscal',
+    name: 'Fiscal Renato',
+    role: 'Fiscal dos Armazéns da Praça do Mercado',
+    // A market-hall enforcer patrolling storage cellars — armored Barbarian-style rig fits an on-duty inspector.
+    classAnalogId: 'warrior',
+    zoneId: MAIN_CITY_ID,
+    // Inside the "Praça do Mercado" downtown plaza, same guaranteed-clear
+    // rectangle as Nilza above, spaced well apart from her own tile.
+    mapX: 22,
+    mapY: 28,
+    appearance: npcAppearance({
+      hairStyle: 'moicano',
+      hairColor: 0x4a2f20,
+      primaryColor: 0x5a626b,
+      secondaryColor: 0x2a2a35,
+      bodyType: 'robusto',
+    }),
+    dialogue: [
+      '(Um fiscal desce a escada de um armazém, contando sacas de grão com o cenho fechado.) Faltam sacas demais pra ser furto comum. Achei marcas de garra na entrada dos fundos.',
+      'Brotos retorcidos entrando pelos armazéns da Praça do Mercado. Se chegam até aqui, já não sobrou trilha nenhuma livre lá fora.',
+    ],
+    questDialogue: [
+      {
+        questId: 'renato_r1_armazens',
+        when: 'completed',
+        lines: ['(Renato conta as sacas restantes, satisfeito com a contagem pela primeira vez em dias.) Estoque seguro. Devia ter chamado você antes de perder tanta saca.'],
+      },
+      {
+        questId: 'renato_r1_armazens',
+        lines: [
+          'Afaste-os dos armazéns antes que o inverno chegue e a Praça do Mercado sinta falta do que devia estar guardado.',
+          'Não sei desde quando entram por aqui. Sei que quero saber onde é a entrada antes que fiquem mais espertos.',
+        ],
+      },
+    ],
+  },
+);
+
 export function getNpcById(id: string): NpcDefinition {
   const found = NPC_DEFINITIONS.find((n) => n.id === id);
   if (!found) throw new Error(`NPC desconhecido: ${id}`);

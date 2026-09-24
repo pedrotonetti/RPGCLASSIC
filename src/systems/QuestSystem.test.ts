@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Player } from '../entities/Player';
-import { firstCallingQuestIdForClass, firstQuestIdForClass, getQuestById, lastCallingQuestIdForClass } from '../data/quests';
+import { getEquipmentTemplate } from '../data/equipment';
+import { getNpcById } from '../data/npcs';
+import { firstCallingQuestIdForClass, firstQuestIdForClass, getQuestById, lastCallingQuestIdForClass, SIDE_QUEST_STARTERS } from '../data/quests';
 import {
   ensureAmaraRevealStarted,
   ensureClassCallingStarted,
@@ -388,4 +390,50 @@ describe('offerSideQuest', () => {
     expect(message).not.toBeNull();
     expect(player.activeQuestId).toBe('contrato_cinzas_elemental');
   });
+
+  it('closes the paladin gap: offers and completes Gareth\'s memorial chain', () => {
+    const player = freshPlayer('paladin');
+    player.completedQuestIds.push('q6_dragon');
+
+    expect(offerSideQuest(player, 'gareth_escudo')).not.toBeNull();
+    expect(player.activeQuestId).toBe('gareth_r1_memorial');
+
+    for (let i = 0; i < 4; i++) {
+      expect(notifyEnemyDefeated(player, 'skeleton')).toBeNull();
+    }
+    const message = notifyEnemyDefeated(player, 'skeleton');
+
+    expect(message).not.toBeNull();
+    expect(player.activeQuestId).toBeNull();
+    expect(player.completedQuestIds).toContain('gareth_r1_memorial');
+  });
+
+  it('offers and completes a breadth-wave chain from the new "Praça do Mercado" NPCs', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push('q6_dragon');
+
+    expect(offerSideQuest(player, 'nilza_mercado')).not.toBeNull();
+    expect(player.activeQuestId).toBe('nilza_r1_barracas');
+
+    for (let i = 0; i < 4; i++) {
+      expect(notifyEnemyDefeated(player, 'bandit')).toBeNull();
+    }
+    const message = notifyEnemyDefeated(player, 'bandit');
+
+    expect(message).not.toBeNull();
+    expect(player.activeQuestId).toBeNull();
+    expect(player.completedQuestIds).toContain('nilza_r1_barracas');
+  });
+
+  it.each(SIDE_QUEST_STARTERS.map((s) => s.questId))(
+    'quest %s (every side quest, old and new) resolves to a real giver NPC and reward template',
+    (questId) => {
+      const quest = getQuestById(questId)!;
+      expect(quest).toBeDefined();
+      expect(() => getNpcById(quest.giverNpcId)).not.toThrow();
+      if (quest.rewardItem) {
+        expect(() => getEquipmentTemplate(quest.rewardItem!.templateId)).not.toThrow();
+      }
+    },
+  );
 });

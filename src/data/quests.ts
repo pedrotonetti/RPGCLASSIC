@@ -692,6 +692,159 @@ export const SIDE_QUESTS: QuestDefinition[] = [
     rewardGold: 190,
     rewardItem: { templateId: 'manoplas_combate', rarity: 'laranja' },
   },
+
+  // --- Third wave: closing the paladin gap, then real breadth ------------
+  // See data/npcs.ts's own comment just above where these NPCs are pushed
+  // for the full rationale. Gareth closes the one remaining per-class gap
+  // (paladin) at the SAME reward tier as the immediately preceding wave
+  // (300/190, 'laranja'); everything after Gareth is the new, wider wave —
+  // one NPC in every remaining class village plus two in Pedravale's own
+  // "Praça do Mercado" — at a visibly higher tier (450/280) and, for every
+  // one of them, a reward template that had never been rolled at 'laranja'
+  // before (only ever 'azul', in CLASS_CALLING_QUESTS).
+
+  // --- Escudeiro Gareth (Vila do Escudo Branco) — the paladin gap-fill ---
+  {
+    id: 'gareth_r1_memorial',
+    title: 'O Memorial Profanado',
+    description:
+      'O memorial de escudos da Vila do Escudo Branco guarda o nome de todo paladino que já morreu segurando uma linha em Ipêra. Ultimamente os nomes não descansam quietos — ancestrais descarnados sobem entre os escudos à noite, como se a Sede quisesse apagar até a lembrança de quem a enfrentou antes.',
+    giverNpcId: 'gareth_escudo',
+    objective: { kind: 'defeat', targetId: 'skeleton', amount: 5 },
+    rewardXp: 300,
+    rewardGold: 190,
+    rewardItem: { templateId: 'martelo_sagrado', rarity: 'laranja' },
+  },
+
+  // --- Irmão Tadeu (Bastião da Fé) -----------------------------------------
+  {
+    id: 'tadeu_r1_chama',
+    title: 'A Chama que Vacila',
+    description:
+      'A chama-guarda do Bastião da Fé protege peregrinos há gerações e nunca tremeu como treme agora. Guerreiros de casca rachada testam os muros toda noite, atraídos pelo próprio calor que deviam temer, e Irmão Tadeu não consegue afastá-los e alimentar a chama ao mesmo tempo.',
+    giverNpcId: 'tadeu_bastiao',
+    objective: { kind: 'defeat', targetId: 'orc', amount: 6 },
+    rewardXp: 450,
+    rewardGold: 280,
+    rewardItem: { templateId: 'espada_curta', rarity: 'laranja' },
+  },
+
+  // --- Veterano Horácio (Vila da Pedra Vermelha) --------------------------
+  {
+    id: 'horacio_r1_forja',
+    title: 'Fome de Minério',
+    description:
+      'Brotos retorcidos vêm fuçando o minério guardado na forja velha da Pedra Vermelha toda madrugada, como se a Sede sentisse o metal antes de sentir a gente. O Veterano Horácio parou de lutar há anos, mas não vai deixar a forja perder o pouco de aço que ainda tem de sobra.',
+    giverNpcId: 'horacio_pedra',
+    objective: { kind: 'defeat', targetId: 'goblin', amount: 6 },
+    rewardXp: 450,
+    rewardGold: 280,
+    rewardItem: { templateId: 'machado_guerra', rarity: 'laranja' },
+  },
+
+  // --- Bibliotecária Yolanda (Torre dos Arcanos) --------------------------
+  {
+    id: 'yolanda_r1_arquivo',
+    title: 'O Arquivo Sussurrado',
+    description:
+      'Sussurros alados vêm em bando bater contra as prateleiras seladas do arquivo restrito da Torre dos Arcanos, como se ouvissem, dentro delas, algo que nem a própria Bibliotecária Yolanda consegue ouvir.',
+    giverNpcId: 'yolanda_torre',
+    objective: { kind: 'defeat', targetId: 'bat', amount: 6 },
+    rewardXp: 450,
+    rewardGold: 280,
+    rewardItem: { templateId: 'cajado_arcano', rarity: 'laranja' },
+  },
+
+  // --- Coletor Emico (Vila da Folhagem) ------------------------------------
+  {
+    id: 'emico_r1_trilhas',
+    title: 'Trilhas Roubadas',
+    description:
+      'O Coletor Emico anda voltando das trilhas de coleta da Folhagem com menos da metade do que colhe — andarilhos sedentos chegam antes dele, com fome não de comida, mas do que a Sede sente neles.',
+    giverNpcId: 'emico_folhagem',
+    objective: { kind: 'defeat', targetId: 'bandit', amount: 6 },
+    rewardXp: 450,
+    rewardGold: 280,
+    rewardItem: { templateId: 'arco_longo', rarity: 'laranja' },
+  },
+
+  // --- Peregrina Serena (Santuário da Aurora) ------------------------------
+  {
+    id: 'serena_r1_alvorada',
+    title: 'O Vitral Coberto',
+    description:
+      'Tecelãs da Sede tomaram as vigas do teto do Santuário da Aurora, e a cada amanhecer mais uma teia cobre o vitral por onde a luz do ritual da alvorada devia entrar. A Peregrina Serena precisa do teto livre antes do próximo nascer do sol.',
+    giverNpcId: 'serena_aurora',
+    objective: { kind: 'defeat', targetId: 'giant_spider', amount: 5 },
+    rewardXp: 450,
+    rewardGold: 280,
+    rewardItem: { templateId: 'manto_sagrado', rarity: 'laranja' },
+  },
+
+  // --- Batedor Zeca (Refúgio Silencioso) -----------------------------------
+  {
+    id: 'zeca_r1_vigia',
+    title: 'O Cheiro na Trilha',
+    description:
+      'Lobos sombrios rondam a trilha do Refúgio Silencioso e, ao contrário de qualquer perseguidor comum, não precisam VER os batedores treinados para encontrá-los — sentem o cheiro antes. É a primeira ameaça que o Refúgio não consegue simplesmente evitar.',
+    giverNpcId: 'zeca_refugio',
+    objective: { kind: 'defeat', targetId: 'dark_wolf', amount: 6 },
+    rewardXp: 450,
+    rewardGold: 280,
+    rewardItem: { templateId: 'adaga_sombria', rarity: 'laranja' },
+  },
+
+  // --- Coveiro Ranulfo (Vila dos Ossos) -------------------------------------
+  {
+    id: 'ranulfo_r1_ossario',
+    title: 'O Ossário Inquieto',
+    description:
+      'Pela primeira vez, o Coveiro Ranulfo precisa prender no ossário da Vila dos Ossos ancestrais descarnados que não deviam ter se levantado de jeito nenhum — não é a primeira vez que a Sede mexe com os ossos da vila, mas é a primeira vez que mexe tão fundo.',
+    giverNpcId: 'ranulfo_ossos',
+    objective: { kind: 'defeat', targetId: 'skeleton', amount: 6 },
+    rewardXp: 450,
+    rewardGold: 280,
+    rewardItem: { templateId: 'grimorio_amaldicoado', rarity: 'laranja' },
+  },
+
+  // --- Monge Yuki (Mosteiro da Serra) ---------------------------------------
+  {
+    id: 'yuki_r1_meditacao',
+    title: 'Passos Interrompidos',
+    description:
+      'Guerreiros de casca rachada subiram a serra até a trilha de meditação do Mosteiro pela primeira vez esta semana, quebrando com a própria presença o ritmo que a Monge Yuki conta de cor desde noviça.',
+    giverNpcId: 'yuki_mosteiro',
+    objective: { kind: 'defeat', targetId: 'orc', amount: 6 },
+    rewardXp: 450,
+    rewardGold: 280,
+    rewardItem: { templateId: 'anel_sorte', rarity: 'laranja' },
+  },
+
+  // --- Feirante Nilza (Praça do Mercado, Pedravale) -------------------------
+  {
+    id: 'nilza_r1_barracas',
+    title: 'Ladrões na Feira',
+    description:
+      'A Praça do Mercado cresceu rápido demais para a guarda dar conta de toda banca sozinha — andarilhos sedentos se passam por fregueses cansados até a primeira barraca desatenta virar as costas, e a Feirante Nilza já não distingue mais rosto de freguês de rosto de ladrão.',
+    giverNpcId: 'nilza_mercado',
+    objective: { kind: 'defeat', targetId: 'bandit', amount: 5 },
+    rewardXp: 450,
+    rewardGold: 280,
+    rewardItem: { templateId: 'armadura_couro', rarity: 'laranja' },
+  },
+
+  // --- Fiscal Renato (Praça do Mercado, Pedravale) --------------------------
+  {
+    id: 'renato_r1_armazens',
+    title: 'Marcas nos Armazéns',
+    description:
+      'Faltam sacas de grão demais nos armazéns da Praça do Mercado para ser furto comum — o Fiscal Renato achou marcas de garra na entrada dos fundos. Brotos retorcidos entrando pelos armazéns do centro da cidade só podem significar que não sobrou trilha nenhuma livre lá fora.',
+    giverNpcId: 'renato_fiscal',
+    objective: { kind: 'defeat', targetId: 'goblin', amount: 5 },
+    rewardXp: 450,
+    rewardGold: 280,
+    rewardItem: { templateId: 'bracelete_arcano', rarity: 'laranja' },
+  },
 ];
 
 /**
@@ -712,6 +865,17 @@ export const SIDE_QUEST_STARTERS: Array<{ questId: string; prerequisiteQuestId: 
   { questId: 'ivo_r1_emboscada', prerequisiteQuestId: 'q6_dragon' },
   { questId: 'dulce_r1_ancestrais', prerequisiteQuestId: 'q6_dragon' },
   { questId: 'iwa_r1_disciplina', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'gareth_r1_memorial', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'tadeu_r1_chama', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'horacio_r1_forja', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'yolanda_r1_arquivo', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'emico_r1_trilhas', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'serena_r1_alvorada', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'zeca_r1_vigia', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'ranulfo_r1_ossario', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'yuki_r1_meditacao', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'nilza_r1_barracas', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'renato_r1_armazens', prerequisiteQuestId: 'q6_dragon' },
 ];
 
 const ALL_QUESTS: QuestDefinition[] = [
