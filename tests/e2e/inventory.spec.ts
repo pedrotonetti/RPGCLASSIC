@@ -32,21 +32,25 @@ test('equipping an item from the bag updates the equipped panel', async ({ page 
   const weaponSlot = page.locator('.equip-slots .equip-slot').first();
   await expect(weaponSlot).toContainText('(vazio)');
 
-  // Bag renders the seeded item without error.
-  const bagItem = page.locator('.bag-list .bag-item').filter({ hasText: 'Machado de Guerra' });
+  // Bag renders the seeded item, grouped into its own "Arma" grid section,
+  // without error.
+  await expect(page.locator('.bag-slot-header').filter({ hasText: 'Arma' })).toBeVisible();
+  const bagItem = page.locator('.bag-grid .bag-card').filter({ hasText: 'Machado de Guerra' });
   await expect(bagItem).toBeVisible();
   await expect(bagItem).toContainText('Raro'); // RARITY_LABEL['azul']
   await expect(bagItem).toContainText('ganho garantido'); // comparisonBadge: nothing equipped yet in that slot
+  await expect(bagItem.locator('.item-icon svg')).toBeVisible(); // per-template icon swatch
 
   await bagItem.getByText('Equipar', { exact: true }).click();
 
   // Equipped panel now shows the weapon instead of "(vazio)".
   await expect(weaponSlot).toContainText('Machado de Guerra');
   await expect(weaponSlot).not.toContainText('(vazio)');
+  await expect(weaponSlot.locator('.item-icon svg')).toBeVisible();
 
   // The bag no longer offers to equip that same weapon slot's item a second
   // time in place — it's moved out of "Mochila" and into "Equipado".
-  await expect(page.locator('.bag-list .bag-item').filter({ hasText: 'Machado de Guerra' })).toHaveCount(0);
+  await expect(page.locator('.bag-grid .bag-card').filter({ hasText: 'Machado de Guerra' })).toHaveCount(0);
 
   expect(pageErrors, `unexpected page errors: ${pageErrors.join('; ')}`).toEqual([]);
 });

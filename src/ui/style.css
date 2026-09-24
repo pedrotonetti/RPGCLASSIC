@@ -1182,6 +1182,9 @@ body {
 .equip-slot {
   flex: 1;
   min-width: 200px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
   background: rgba(42, 32, 56, 0.6);
   border: 1px solid var(--panel-border);
   border-radius: 6px;
@@ -1189,6 +1192,10 @@ body {
 }
 .equip-slot.empty {
   opacity: 0.6;
+}
+.equip-slot-body {
+  flex: 1;
+  min-width: 0;
 }
 .slot-label {
   color: var(--text-dim);
@@ -1227,15 +1234,48 @@ body {
 .bag-item-info {
   flex: 1;
 }
+
+/* Mochila: one visually separate section per equipment slot (Arma/Armadura/
+   Acessório), each its own responsive grid of icon-first cards — a real
+   per-item-type inventory instead of one flat scrolling list. */
+.bag-section {
+  margin-top: 10px;
+}
+.bag-section:first-child {
+  margin-top: 0;
+}
 .bag-slot-header {
   color: var(--accent);
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 1px;
-  margin-top: 4px;
+  margin-bottom: 6px;
 }
-.bag-slot-header:first-child {
-  margin-top: 0;
+.bag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+.bag-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(42, 32, 56, 0.55);
+  border: 1px solid rgba(107, 95, 120, 0.4);
+  border-radius: 8px;
+  padding: 10px;
+}
+.bag-card-top {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.bag-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.bag-card-equip {
+  align-self: flex-end;
 }
 .item-compare {
   font-size: 12px;
@@ -1249,6 +1289,56 @@ body {
 }
 .item-compare.neutral {
   color: var(--text-dim);
+}
+
+/* Per-item-template icon swatch — a flat SVG silhouette (see
+   InventoryScreen.ts's ITEM_ICON_SHAPES), tinted and framed by rarity via
+   the shared `.rarity-border` rule below. */
+.item-icon {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 11, 20, 0.7);
+  border: 2px solid var(--panel-border);
+  border-radius: 6px;
+}
+.item-icon svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+/* Rarity border/glow — one shared rule driven entirely by the `--rarity-color`
+   custom property each card/icon sets from `config/rarity.ts`'s RARITY_COLOR
+   (via `rarityToHex`), so every rarity tier (verde/azul/amarelo/vermelho/
+   laranja) gets a consistently-colored frame without hardcoding hexes here. */
+.rarity-border {
+  border-color: var(--rarity-color, var(--panel-border));
+  box-shadow:
+    0 0 0 1px var(--rarity-color, transparent) inset,
+    0 0 9px -1px var(--rarity-color, transparent);
+}
+.item-icon.rarity-border {
+  color: var(--rarity-color);
+}
+.rarity-border.rarity-mythic {
+  animation: mythic-glow-pulse 1.8s ease-in-out infinite;
+}
+@keyframes mythic-glow-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px var(--rarity-color) inset,
+      0 0 9px -1px var(--rarity-color);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px var(--rarity-color) inset,
+      0 0 20px 3px var(--rarity-color);
+  }
 }
 
 /* --- Intro narrativa ---------------------------------------------- */

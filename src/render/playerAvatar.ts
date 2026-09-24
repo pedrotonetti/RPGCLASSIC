@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Player } from '../entities/Player';
+import { RARITY_COLOR, rarityTier } from '../config/rarity';
 import { getGemById } from '../data/gems';
 import { GltfActor, loadSkinnedInstance } from './gltfModel';
 
@@ -166,10 +167,11 @@ export async function loadPreviewAvatar(classId: string, heightScale = 1): Promi
   return { scene: loaded.scene, actor, weaponKind: WEAPON_KIND[classId] ?? WEAPON_KIND[DEFAULT_CLASS], classId };
 }
 
-/** Same loader as `loadPreviewAvatar`, plus the player-specific bits (their actual height pick, socketed weapon gem) a bare class/appearance preview doesn't have. */
+/** Same loader as `loadPreviewAvatar`, plus the player-specific bits (their actual height pick, socketed weapon gem, equipped armor's visual accents) a bare class/appearance preview doesn't have. */
 export async function loadPlayerAvatar(player: Player): Promise<PlayerAvatar> {
   const avatar = await loadPreviewAvatar(player.classId, player.appearance.heightScale);
   applyWeaponGem(avatar, player);
+  applyArmorVisual(avatar, player);
   return avatar;
 }
 
@@ -205,4 +207,78 @@ export function applyWeaponGem(avatar: PlayerAvatar, player: Player): void {
   gem.userData.isGemStone = true;
   gem.position.set(0, 0.12, 0);
   anchor.add(gem);
+}
+
+/**
+ * Adds (or refreshes) armor-tier visual accents on the real GLTF avatar —
+ * the "equipping armor changes the model" counterpart to `applyWeaponGem`
+ * above, but for `armadura` instead of a socketed weapon gem, and for the
+ * body instead of the held weapon.
+ *
+ * Unlike a socketed gem's stand-in stone, this can't just recolor the
+ * character's own body material: dumping each KayKit GLB's JSON chunk shows
+ * every mesh (body, arms, legs, head, cape, helmet) shares ONE baked texture
+ * atlas material per file, and `loadSkinnedInstance`'s clone (three's
+ * `SkeletonUtils.clone`) reuses that material BY REFERENCE across every
+ * clone made from it — mutating its `.color` here would recolor every other
+ * NPC and player currently wearing the same class model, not just this one.
+ * So instead of a tint, higher rarities pin small NEW meshes (their own
+ * dedicated, never-shared material) onto the model's `chest` bone: pauldrons
+ * from epic tier up, a chest emblem from legendary, and a glowing cape at
+ * mythic — the same escalating accent set `characterModel.ts`'s procedural
+ * showcase rig grows (that one CAN safely tint its body material too, since
+ * every showcase mannequin gets its own freshly-built materials).
+ */
+export function applyArmorVisual(avatar: PlayerAvatar, player: Player): void {
+  const chest = avatar.scene.getObjectByName('chest');
+  if (!chest) return;
+
+  for (const child of [...chest.children]) {
+    if (child.userData.isArmorAccent) chest.remove(child);
+  }
+
+  const armor = player.equipment.armadura;
+  if (!armor) return;
+  const tier = rarityTier(armor.rarity);
+  if (tier < 2) return;
+
+  const color = RARITY_COLOR[armor.rarity];
+  const glow = tier >= 4;
+
+  const pauldronMat = new THREE.MeshStandardMaterial({
+    color,
+    metalness: 0.65,
+    roughness: 0.22,
+    emissive: glow ? color : 0x000000,
+    emissiveIntensity: glow ? 0.9 : 0,
+  });
+  const pauldronGeo = new THREE.BoxGeometry(0.16, 0.1, 0.2);
+  for (const side of [-1, 1] as const) {
+    const pauldron = new THREE.Mesh(pauldronGeo, pauldronMat);
+    pauldron.castShadow = true;
+    pauldron.position.set(side * 0.23, 0.12, 0.02);
+    pauldron.userData.isArmorAccent = true;
+    chest.add(pauldron);
+  }
+
+  if (tier >= 3) {
+    const emblem = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.06, 0),
+      new THREE.MeshStandardMaterial({ color, metalness: 0.5, roughness: 0.3, emissive: glow ? color : 0x000000, emissiveIntensity: glow ? 1.0 : 0 }),
+    );
+    emblem.position.set(0, 0.1, 0.16);
+    emblem.userData.isArmorAccent = true;
+    chest.add(emblem);
+  }
+
+  if (tier >= 4) {
+    const cape = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.5, 0.03),
+      new THREE.MeshStandardMaterial({ color, roughness: 0.65, metalness: 0.1, side: THREE.DoubleSide }),
+    );
+    cape.position.set(0, -0.05, -0.14);
+    cape.rotation.x = 0.12;
+    cape.userData.isArmorAccent = true;
+    chest.add(cape);
+  }
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { getClassById } from '../config/classes';
-import { HEIGHT_NOTCHES, defaultAppearance, type CharacterAppearance, type ChoiceOption } from '../config/customization';
+import { HEIGHT_NOTCHES, defaultAppearance, randomizeAppearance, type CharacterAppearance, type ChoiceOption } from '../config/customization';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { Player } from '../entities/Player';
@@ -16,11 +16,18 @@ const HEIGHT_LABELS = ['Baixo', 'Médio-', 'Médio', 'Médio+', 'Alto'];
  * uses (`render/playerAvatar.ts`), not a stand-in — except it loads
  * asynchronously (see `loadShowcase`), so `mount()` adds an empty placeholder
  * group first and swaps the real model in once its file resolves. Of every
- * `CharacterAppearance` field, only `heightScale` has anywhere to go on the
+ * `CharacterAppearance` field, only `heightScale` has anywhere to go on this
  * model (a uniform scale) — skin tone, face, hair, markings and garment
  * colors have no home on the class's single pre-baked texture atlas, so this
- * screen no longer offers controls for them at all (see `defaultAppearance`
- * for what the rest quietly default to instead).
+ * screen no longer offers controls for them at all.
+ *
+ * They aren't wasted, though: the rest of `CharacterAppearance` still drives
+ * the separate procedural mannequin `render/characterModel.ts` builds for the
+ * Inventário/Habilidades showcases (see `buildPlayerCharacter`), which has no
+ * such texture-atlas limit. `randomizeAppearance` below is what gives each
+ * new hero its own hair/face/body/skin/palette there — otherwise every hero
+ * would render identically in those two screens regardless of class or
+ * player choice.
  */
 export class CharacterCreationScreen implements Screen {
   scene = new THREE.Scene();
@@ -41,7 +48,7 @@ export class CharacterCreationScreen implements Screen {
   ) {
     this.camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 50);
     const def = getClassById(classId);
-    this.appearance = defaultAppearance(def.color, def.accentColor);
+    this.appearance = randomizeAppearance(defaultAppearance(def.color, def.accentColor));
   }
 
   mount(): void {

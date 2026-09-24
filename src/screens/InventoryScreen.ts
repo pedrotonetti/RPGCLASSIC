@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { EquipmentInstance, EquipmentSlot } from '../config/types';
+import type { EquipmentInstance, EquipmentSlot, ItemRarity } from '../config/types';
 import { RARITY_LABEL, RARITY_SCORE_MULTIPLIER, rarityToHex } from '../config/rarity';
 import { computeEquipmentBonus, getEquipmentTemplate } from '../data/equipment';
 import { getGemById } from '../data/gems';
@@ -49,6 +49,117 @@ function formatSigned(value: number): string {
  */
 function itemPower(instance: EquipmentInstance): number {
   return RARITY_SCORE_MULTIPLIER[instance.rarity] * instance.itemLevel;
+}
+
+// --- item icons -----------------------------------------------------------
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+interface IconShape {
+  tag: 'rect' | 'circle' | 'ellipse' | 'path' | 'line';
+  attrs: Record<string, string>;
+}
+
+/**
+ * A distinct low-poly-flat silhouette per equipment template — plain SVG
+ * primitives (rects/circles/paths), never a bitmap, matching this game's
+ * flat-shaded primitive-geometry look elsewhere. Every shape that isn't
+ * explicitly given a `fill`/`stroke` uses `currentColor`, so a single CSS
+ * `color` (set to the item's rarity color — see `itemIcon`) tints the whole
+ * icon consistently with its swatch border/glow.
+ */
+const ITEM_ICON_SHAPES: Record<string, IconShape[]> = {
+  // --- weapons -------------------------------------------------------------
+  espada_curta: [
+    { tag: 'rect', attrs: { x: '14.5', y: '4', width: '3', height: '16', rx: '1' } },
+    { tag: 'rect', attrs: { x: '9', y: '19', width: '14', height: '3', rx: '1' } },
+    { tag: 'rect', attrs: { x: '14.5', y: '22', width: '3', height: '7', rx: '1' } },
+  ],
+  machado_guerra: [
+    { tag: 'rect', attrs: { x: '14.5', y: '4', width: '3', height: '24', rx: '1' } },
+    { tag: 'path', attrs: { d: 'M18 6 L28 9 L28 19 L18 15 Z' } },
+  ],
+  cajado_arcano: [
+    { tag: 'rect', attrs: { x: '14.5', y: '10', width: '3', height: '20', rx: '1' } },
+    { tag: 'circle', attrs: { cx: '16', cy: '7', r: '5' } },
+  ],
+  arco_longo: [
+    { tag: 'path', attrs: { d: 'M11 4 Q22 16 11 28', fill: 'none', stroke: 'currentColor', 'stroke-width': '2.4' } },
+    { tag: 'line', attrs: { x1: '11', y1: '4', x2: '11', y2: '28', stroke: 'currentColor', 'stroke-width': '1.3' } },
+  ],
+  adaga_sombria: [
+    { tag: 'rect', attrs: { x: '14.5', y: '9', width: '3', height: '10', rx: '1' } },
+    { tag: 'rect', attrs: { x: '11', y: '19', width: '10', height: '2.5', rx: '1' } },
+    { tag: 'rect', attrs: { x: '14.5', y: '21.5', width: '3', height: '6', rx: '1' } },
+  ],
+  grimorio_amaldicoado: [
+    { tag: 'rect', attrs: { x: '6', y: '7', width: '20', height: '18', rx: '2', fill: 'none', stroke: 'currentColor', 'stroke-width': '2.3' } },
+    { tag: 'line', attrs: { x1: '16', y1: '7', x2: '16', y2: '25', stroke: 'currentColor', 'stroke-width': '1.3' } },
+  ],
+  manoplas_combate: [
+    { tag: 'circle', attrs: { cx: '12', cy: '17', r: '6' } },
+    { tag: 'circle', attrs: { cx: '21', cy: '15', r: '4.5' } },
+  ],
+  martelo_sagrado: [
+    { tag: 'rect', attrs: { x: '14.5', y: '11', width: '3', height: '19', rx: '1' } },
+    { tag: 'rect', attrs: { x: '8', y: '4', width: '16', height: '8', rx: '1.5' } },
+  ],
+  // --- armor -----------------------------------------------------------------
+  armadura_couro: [{ tag: 'path', attrs: { d: 'M11 6 L21 6 L24 26 L8 26 Z' } }],
+  armadura_placas: [
+    { tag: 'path', attrs: { d: 'M9 6 L23 6 L25 26 L7 26 Z' } },
+    { tag: 'line', attrs: { x1: '16', y1: '7', x2: '16', y2: '25', stroke: 'rgba(0,0,0,0.35)', 'stroke-width': '1.3' } },
+  ],
+  vestes_arcanas: [{ tag: 'path', attrs: { d: 'M13 5 L19 5 L23 27 L9 27 Z' } }],
+  manto_sagrado: [
+    { tag: 'path', attrs: { d: 'M16 6 C8 8 6 17 8 27 L24 27 C26 17 24 8 16 6 Z' } },
+    { tag: 'circle', attrs: { cx: '16', cy: '9', r: '2', fill: 'rgba(0,0,0,0.35)' } },
+  ],
+  // --- accessories -------------------------------------------------------------
+  anel_sorte: [
+    { tag: 'circle', attrs: { cx: '16', cy: '19', r: '7', fill: 'none', stroke: 'currentColor', 'stroke-width': '3.4' } },
+    { tag: 'circle', attrs: { cx: '16', cy: '8', r: '3' } },
+  ],
+  amuleto_vitalidade: [
+    { tag: 'path', attrs: { d: 'M12 4 L20 4 L16 11 Z' } },
+    { tag: 'circle', attrs: { cx: '16', cy: '19', r: '7', fill: 'none', stroke: 'currentColor', 'stroke-width': '3' } },
+  ],
+  bracelete_arcano: [{ tag: 'ellipse', attrs: { cx: '16', cy: '16', rx: '10', ry: '6', fill: 'none', stroke: 'currentColor', 'stroke-width': '3.4' } }],
+  talisma_velocidade: [
+    { tag: 'path', attrs: { d: 'M16 4 L24 16 L16 28 L8 16 Z', fill: 'none', stroke: 'currentColor', 'stroke-width': '2.3' } },
+    { tag: 'line', attrs: { x1: '16', y1: '10', x2: '16', y2: '22', stroke: 'currentColor', 'stroke-width': '1.3' } },
+  ],
+};
+
+const FALLBACK_ICON_SHAPE: IconShape[] = [{ tag: 'rect', attrs: { x: '9', y: '9', width: '14', height: '14', rx: '2' } }];
+
+function buildItemIconSvg(templateId: string): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg') as unknown as SVGSVGElement;
+  svg.setAttribute('viewBox', '0 0 32 32');
+  svg.setAttribute('width', '26');
+  svg.setAttribute('height', '26');
+  const shapes = ITEM_ICON_SHAPES[templateId] ?? FALLBACK_ICON_SHAPE;
+  for (const shape of shapes) {
+    const node = document.createElementNS(SVG_NS, shape.tag);
+    for (const [k, v] of Object.entries(shape.attrs)) node.setAttribute(k, v);
+    if (!node.hasAttribute('fill')) node.setAttribute('fill', 'currentColor');
+    svg.append(node);
+  }
+  return svg;
+}
+
+/** Sets the shared `--rarity-color` custom property a card/icon reads for its border/glow (and, on `.item-icon`, its `currentColor` fill) — see the `.rarity-border`/`.rarity-mythic` rules in style.css. Single source of truth stays `config/rarity.ts`'s RARITY_COLOR; nothing here hardcodes a rarity's hex. */
+function applyRarityBorder(node: HTMLElement, rarity: ItemRarity): void {
+  node.style.setProperty('--rarity-color', rarityToHex(rarity));
+  node.classList.add('rarity-border');
+  if (rarity === 'laranja') node.classList.add('rarity-mythic');
+}
+
+function itemIcon(templateId: string, rarity: ItemRarity): HTMLElement {
+  const wrap = el('div', { className: 'item-icon' });
+  applyRarityBorder(wrap, rarity);
+  wrap.append(buildItemIconSvg(templateId) as unknown as Node);
+  return wrap;
 }
 
 export class InventoryScreen implements Screen {
@@ -168,41 +279,75 @@ export class InventoryScreen implements Screen {
     });
   }
 
+  /** One "Equipado" slot card: an empty placeholder, or the icon + stat readout for what's currently worn there. */
+  private equipSlotCard(slot: EquipmentSlot): HTMLElement {
+    const instance = this.player.equipment[slot];
+    if (!instance) {
+      return el('div', { className: 'equip-slot empty' }, [
+        el('div', { className: 'slot-label', text: SLOT_LABELS[slot] }),
+        el('div', { className: 'item-name', text: '(vazio)' }),
+      ]);
+    }
+    const template = getEquipmentTemplate(instance.templateId);
+    const card = el('div', { className: 'equip-slot' }, [
+      itemIcon(instance.templateId, instance.rarity),
+      el('div', { className: 'equip-slot-body' }, [
+        el('div', { className: 'slot-label', text: SLOT_LABELS[slot] }),
+        el('div', { className: 'item-name', text: `${template.name} (Nv.${instance.itemLevel})`, style: { color: rarityToHex(instance.rarity) } }),
+        el('div', { className: 'item-rarity', text: RARITY_LABEL[instance.rarity] }),
+        this.itemLine(instance),
+        el('div', {
+          className: 'btn small',
+          text: 'Desequipar',
+          onClick: () => {
+            this.player.unequip(slot);
+            saveGame(this.player);
+            this.rebuildShowcase();
+            this.render();
+          },
+        }),
+      ]),
+    ]);
+    applyRarityBorder(card, instance.rarity);
+    return card;
+  }
+
+  /** One bag card in a slot's grid: icon, name/rarity/level, stat line, upgrade-or-not verdict, and an Equipar button. */
+  private bagCard(instance: EquipmentInstance): HTMLElement {
+    const template = getEquipmentTemplate(instance.templateId);
+    const card = el('div', { className: 'bag-card' }, [
+      el('div', { className: 'bag-card-top' }, [
+        itemIcon(instance.templateId, instance.rarity),
+        el('div', { className: 'bag-card-info' }, [
+          el('div', {
+            className: 'item-name',
+            text: `${template.name} (Nv.${instance.itemLevel})`,
+            style: { color: rarityToHex(instance.rarity) },
+          }),
+          el('div', { className: 'item-rarity', text: RARITY_LABEL[instance.rarity] }),
+          this.itemLine(instance),
+          this.comparisonBadge(instance),
+        ]),
+      ]),
+      el('div', {
+        className: 'btn small bag-card-equip',
+        text: 'Equipar',
+        onClick: () => {
+          this.player.equipFromBag(instance.uid);
+          saveGame(this.player);
+          this.rebuildShowcase();
+          this.render();
+        },
+      }),
+    ]);
+    applyRarityBorder(card, instance.rarity);
+    return card;
+  }
+
   private render(): void {
     this.powerScoreEl.textContent = `Power Score: ${computePowerScore(this.player).toLocaleString('pt-BR')}`;
 
-    const slots: EquipmentSlot[] = ['arma', 'armadura', 'acessorio'];
-    this.slotsEl.replaceChildren(
-      ...slots.map((slot) => {
-        const instance = this.player.equipment[slot];
-        if (!instance) {
-          return el('div', { className: 'equip-slot empty' }, [
-            el('div', { className: 'slot-label', text: SLOT_LABELS[slot] }),
-            el('div', { className: 'item-name', text: '(vazio)' }),
-          ]);
-        }
-        const template = getEquipmentTemplate(instance.templateId);
-        return el(
-          'div',
-          { className: 'equip-slot' },
-          [
-            el('div', { className: 'slot-label', text: SLOT_LABELS[slot] }),
-            el('div', { className: 'item-name', text: `${template.name} (Nv.${instance.itemLevel})`, style: { color: rarityToHex(instance.rarity) } }),
-            el('div', { className: 'item-rarity', text: RARITY_LABEL[instance.rarity] }),
-            this.itemLine(instance),
-            el('div', {
-              className: 'btn small',
-              text: 'Desequipar',
-              onClick: () => {
-                this.player.unequip(slot);
-                saveGame(this.player);
-                this.render();
-              },
-            }),
-          ],
-        );
-      }),
-    );
+    this.slotsEl.replaceChildren(...SLOT_ORDER.map((slot) => this.equipSlotCard(slot)));
 
     this.renderSupplies();
 
@@ -211,55 +356,30 @@ export class InventoryScreen implements Screen {
       return;
     }
 
-    // Grouped by slot (same order as the "Equipado" section above), then by
-    // item level within each group — so every candidate for a slot sits
-    // together, right next to the comparison badge telling you whether any
-    // of them beat what's already equipped there.
-    const sorted = [...this.player.bag].sort((a, b) => {
-      const slotA = getEquipmentTemplate(a.templateId).slot;
-      const slotB = getEquipmentTemplate(b.templateId).slot;
-      if (slotA !== slotB) return SLOT_ORDER.indexOf(slotA) - SLOT_ORDER.indexOf(slotB);
-      return b.itemLevel - a.itemLevel;
-    });
-
-    const rows: HTMLElement[] = [];
-    let lastSlot: EquipmentSlot | null = null;
-    for (const instance of sorted) {
-      const template = getEquipmentTemplate(instance.templateId);
-      if (template.slot !== lastSlot) {
-        lastSlot = template.slot;
-        rows.push(el('div', { className: 'bag-slot-header', text: SLOT_LABELS[template.slot] }));
-      }
-      rows.push(
-        el(
-          'div',
-          { className: 'bag-item' },
-          [
-            el('div', { className: 'bag-item-info' }, [
-              el('div', {
-                className: 'item-name',
-                text: `${template.name} (Nv.${instance.itemLevel})`,
-                style: { color: rarityToHex(instance.rarity) },
-              }),
-              el('div', { className: 'item-rarity', text: `${RARITY_LABEL[instance.rarity]} • ${SLOT_LABELS[template.slot]}` }),
-              this.itemLine(instance),
-              this.comparisonBadge(instance),
-            ]),
-            el('div', {
-              className: 'btn small',
-              text: 'Equipar',
-              onClick: () => {
-                this.player.equipFromBag(instance.uid);
-                saveGame(this.player);
-                this.rebuildShowcase();
-                this.render();
-              },
-            }),
-          ],
-        ),
+    // A visually separate section per slot (Arma/Armadura/Acessório), each
+    // its own grid of icon-first item cards — not one flat scrolling list —
+    // so the bag reads as "what weapons do I have" / "what armor do I have"
+    // at a glance, matching a real per-item-type inventory instead of a
+    // single undifferentiated pile. Within each section, highest item level
+    // first (the strongest candidate for that slot leads).
+    const sections: HTMLElement[] = [];
+    for (const slot of SLOT_ORDER) {
+      const items = this.player.bag
+        .filter((instance) => getEquipmentTemplate(instance.templateId).slot === slot)
+        .sort((a, b) => b.itemLevel - a.itemLevel);
+      if (items.length === 0) continue;
+      sections.push(
+        el('div', { className: 'bag-section' }, [
+          el('div', { className: 'bag-slot-header', text: `${SLOT_LABELS[slot]} (${items.length})` }),
+          el(
+            'div',
+            { className: 'bag-grid' },
+            items.map((instance) => this.bagCard(instance)),
+          ),
+        ]),
       );
     }
-    this.bagEl.replaceChildren(...rows);
+    this.bagEl.replaceChildren(...sections);
   }
 
   private renderSupplies(): void {

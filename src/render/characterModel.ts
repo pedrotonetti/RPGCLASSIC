@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { getClassById } from '../config/classes';
 import { defaultAppearance, type CharacterAppearance } from '../config/customization';
+import { RARITY_COLOR, rarityTier } from '../config/rarity';
+import type { ItemRarity } from '../config/types';
 import type { Player } from '../entities/Player';
 import { ENEMY_DEFINITIONS } from '../data/enemies';
 import { getGemById } from '../data/gems';
@@ -29,10 +31,34 @@ function mesh(geometry: THREE.BufferGeometry, material: THREE.Material, castShad
   return m;
 }
 
-const BODY_SCALE: Record<CharacterAppearance['bodyType'], { torso: number; limb: number; shoulder: number }> = {
+/** Linear per-channel blend from `base` toward `target` by `t` (0 = base, 1 = target) — used to tint equipped-armor colors onto the player's own garment palette without fully overwriting it (see `buildHumanCharacter`'s armor-rarity tint). */
+function blendColor(base: number, target: number, t: number): number {
+  const br = (base >> 16) & 0xff;
+  const bg = (base >> 8) & 0xff;
+  const bb = base & 0xff;
+  const tr = (target >> 16) & 0xff;
+  const tg = (target >> 8) & 0xff;
+  const tb = target & 0xff;
+  const r = Math.round(br + (tr - br) * t);
+  const g = Math.round(bg + (tg - bg) * t);
+  const b = Math.round(bb + (tb - bb) * t);
+  return (r << 16) | (g << 8) | b;
+}
+
+/**
+ * `waist` narrows (or widens) just the waist capsule independently of the
+ * general `torso` scale — `magro`/`atletico`/`robusto` don't need it (their
+ * waist tapers naturally with the rest of the torso), but `ampulheta`'s big-
+ * shoulder/narrow-waist hourglass silhouette does; it defaults to `torso`
+ * when left out.
+ */
+const BODY_SCALE: Record<CharacterAppearance['bodyType'], { torso: number; limb: number; shoulder: number; waist?: number }> = {
   magro: { torso: 0.86, limb: 0.85, shoulder: 0.92 },
   atletico: { torso: 1.0, limb: 1.0, shoulder: 1.05 },
   robusto: { torso: 1.22, limb: 1.15, shoulder: 1.18 },
+  musculoso: { torso: 1.1, limb: 1.16, shoulder: 1.34 },
+  esbelto: { torso: 0.78, limb: 0.82, shoulder: 0.85 },
+  ampulheta: { torso: 1.02, limb: 0.98, shoulder: 1.22, waist: 0.72 },
 };
 
 /**
@@ -72,7 +98,12 @@ export function getRig(character: THREE.Group): CharacterRig {
  * same trick classic blocky avatars and early 3D indie games use instead of
  * full skeletal animation).
  */
-export function buildHumanCharacter(appearance: CharacterAppearance, accessory: ClassAccessory, gemGlowColor?: number): THREE.Group {
+export function buildHumanCharacter(
+  appearance: CharacterAppearance,
+  accessory: ClassAccessory,
+  gemGlowColor?: number,
+  armorRarity?: ItemRarity,
+): THREE.Group {
   const root = new THREE.Group();
   const upperBody = new THREE.Group();
   root.add(upperBody);
@@ -80,9 +111,24 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
   const body = BODY_SCALE[appearance.bodyType];
   const isFem = appearance.gender === 'feminino';
 
+  // Equipped-armor rarity tints the garment/trim colors toward that rarity's
+  // signature color (see `config/rarity.ts`'s RARITY_COLOR) and gilds the
+  // trim material shinier as the tier climbs — 'verde'/common leaves the
+  // player's own palette untouched (tier 0 → 0 blend), 'laranja'/mythic pulls
+  // it hard toward the rarity color. `addArmorAccents` below layers actual
+  // extra geometry (pauldrons/emblem/cape) on top from 'amarelo' up, so
+  // equipping a better `armadura` reads as a real visual upgrade, not just a
+  // bigger number in the inventory panel.
+  const armorTier = armorRarity ? rarityTier(armorRarity) : -1;
+  const armorAccentColor = armorRarity ? RARITY_COLOR[armorRarity] : undefined;
+  const clothTint = armorAccentColor !== undefined ? Math.min(0.6, armorTier * 0.16) : 0;
+  const trimTint = armorAccentColor !== undefined ? Math.min(0.85, armorTier * 0.16 + 0.22) : 0;
+  const clothColor = armorAccentColor !== undefined ? blendColor(appearance.primaryColor, armorAccentColor, clothTint) : appearance.primaryColor;
+  const trimColor = armorAccentColor !== undefined ? blendColor(appearance.secondaryColor, armorAccentColor, trimTint) : appearance.secondaryColor;
+
   const skinMat = mat(appearance.skinTone, { roughness: 0.55 });
-  const clothMat = mat(appearance.primaryColor, { roughness: 0.8 });
-  const trimMat = mat(appearance.secondaryColor, { roughness: 0.55, metalness: 0.25 });
+  const clothMat = mat(clothColor, { roughness: 0.8 - clothTint * 0.25 });
+  const trimMat = mat(trimColor, { roughness: Math.max(0.12, 0.55 - trimTint * 0.45), metalness: Math.min(0.85, 0.25 + trimTint * 0.7) });
   const shoeMat = mat(0x2a2016, { roughness: 0.9 });
 
   // Legs: hip-pivoted thigh, then a knee-pivoted shin + foot — mirrors the
@@ -141,7 +187,7 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
 
   // Hips + torso (added to upperBody, which sits at the world origin — the
   // whole upper body can be nudged/leaned as one unit for animation).
-  const waistWidth = (isFem ? 0.155 : 0.17) * body.torso;
+  const waistWidth = (isFem ? 0.155 : 0.17) * (body.waist ?? body.torso);
   const hips = mesh(new THREE.CapsuleGeometry(waistWidth, 0.06, 6, 12), clothMat);
   hips.position.set(0, hipY, 0);
   hips.scale.set(1, 0.7, 0.85);
@@ -243,8 +289,9 @@ export function buildHumanCharacter(appearance: CharacterAppearance, accessory: 
   addHair(headGroup, appearance, 0, headRadius);
   addFacialHair(headGroup, appearance, 0, headRadius);
   addHeadAccessory(headGroup, appearance, 0, headRadius, clothMat, trimMat);
-  addMarkings(headGroup, appearance, 0, headRadius, armR);
+  addMarkings(headGroup, appearance, 0, headRadius, armL, armR);
   addClassAccessory(upperBody, accessory, appearance.primaryColor, appearance.secondaryColor, headY, shoulderWidth, armL, armR, shoulderY, gemGlowColor);
+  addArmorAccents(upperBody, armL, armR, chestY, chestRadius, armorTier, armorAccentColor);
 
   root.scale.setScalar(appearance.heightScale);
 
@@ -268,6 +315,19 @@ function shapedHeadGeometry(shape: CharacterAppearance['faceShape'], r: number):
     case 'anguloso': {
       const geo = new THREE.IcosahedronGeometry(r * 1.05, 1);
       geo.scale(1, 1.05, 0.95);
+      return geo;
+    }
+    case 'coracao': {
+      // Wide cheekbones tapering to a narrower jaw — an icosahedron's flat
+      // facets already read as more angular than a smooth sphere, scaled
+      // wide-and-short instead of 'anguloso's taller/narrower proportions.
+      const geo = new THREE.IcosahedronGeometry(r * 1.02, 1);
+      geo.scale(1.12, 0.9, 1.0);
+      return geo;
+    }
+    case 'alongado': {
+      const geo = new THREE.SphereGeometry(r, 14, 12);
+      geo.scale(0.82, 1.3, 0.88);
       return geo;
     }
     case 'oval':
@@ -312,16 +372,27 @@ function addFace(group: THREE.Group, appearance: CharacterAppearance, headY: num
   }
 
   const browMat = mat(appearance.hairColor, { roughness: 0.9 });
-  const browThickness = appearance.eyebrowStyle === 'grossa' ? 0.05 : 0.03;
-  const browGeo = new THREE.BoxGeometry(r * 0.5, r * browThickness, r * 0.12);
-  const browL = mesh(browGeo, browMat, false);
-  const browR = mesh(browGeo, browMat, false);
-  const browTilt = appearance.eyebrowStyle === 'arqueada' ? 0.35 : appearance.eyebrowStyle === 'reta' ? 0 : 0.15;
-  browL.position.set(-r * 0.42, headY + r * 0.32, r * 0.92);
-  browR.position.set(r * 0.42, headY + r * 0.32, r * 0.92);
-  browL.rotation.z = browTilt;
-  browR.rotation.z = -browTilt;
-  group.add(browL, browR);
+  if (appearance.eyebrowStyle === 'juntas') {
+    // A single continuous unibrow spanning both eye positions instead of two
+    // separate brows.
+    const unibrow = mesh(new THREE.BoxGeometry(r * 0.98, r * 0.045, r * 0.12), browMat, false);
+    unibrow.position.set(0, headY + r * 0.32, r * 0.92);
+    group.add(unibrow);
+  } else {
+    const browThickness = appearance.eyebrowStyle === 'grossa' ? 0.05 : 0.03;
+    const browGeo = new THREE.BoxGeometry(r * 0.5, r * browThickness, r * 0.12);
+    const browL = mesh(browGeo, browMat, false);
+    const browR = mesh(browGeo, browMat, false);
+    // 'assimetrica' genuinely differs left-to-right (one arched, one flat) —
+    // every other style is mirrored the same both sides.
+    const tiltL = appearance.eyebrowStyle === 'arqueada' || appearance.eyebrowStyle === 'assimetrica' ? 0.35 : appearance.eyebrowStyle === 'reta' ? 0 : 0.15;
+    const tiltR = appearance.eyebrowStyle === 'arqueada' ? 0.35 : appearance.eyebrowStyle === 'reta' || appearance.eyebrowStyle === 'assimetrica' ? 0 : 0.15;
+    browL.position.set(-r * 0.42, headY + r * 0.32, r * 0.92);
+    browR.position.set(r * 0.42, headY + r * 0.32, r * 0.92);
+    browL.rotation.z = tiltL;
+    browR.rotation.z = -tiltR;
+    group.add(browL, browR);
+  }
 
   const nose = mesh(new THREE.ConeGeometry(r * 0.1, r * 0.2, 8), mat(appearance.skinTone), false);
   nose.position.set(0, headY - r * 0.05, r * 0.98);
@@ -394,6 +465,80 @@ function addHair(group: THREE.Group, appearance: CharacterAppearance, headY: num
       group.add(braid);
       break;
     }
+    case 'topete': {
+      // A short cap plus a forward-swept quiff wedge standing up off the
+      // front of the head — the crest 'moicano' doesn't have (that one runs
+      // front-to-back down the centerline; this one leans forward).
+      const cap = mesh(new THREE.SphereGeometry(r * 0.96, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.3), hairMat);
+      cap.position.set(0, headY + r * 0.22, -r * 0.05);
+      group.add(cap);
+      const quiff = mesh(new THREE.ConeGeometry(r * 0.3, r * 0.55, 8), hairMat);
+      quiff.position.set(0, headY + r * 0.55, r * 0.3);
+      quiff.rotation.x = -0.6;
+      group.add(quiff);
+      break;
+    }
+    case 'rabocavalo': {
+      const cap = mesh(new THREE.SphereGeometry(r * 1.0, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.4), hairMat);
+      cap.position.set(0, headY + r * 0.14, 0);
+      group.add(cap);
+      const tailBase = mesh(new THREE.SphereGeometry(r * 0.22, 8, 8), hairMat);
+      tailBase.position.set(0, headY + r * 0.18, -r * 0.85);
+      group.add(tailBase);
+      const tail = mesh(new THREE.CylinderGeometry(r * 0.16, r * 0.05, r * 1.5, 8), hairMat);
+      tail.position.set(0, headY - r * 0.42, -r * 1.05);
+      tail.rotation.x = 0.4;
+      group.add(tail);
+      break;
+    }
+    case 'chiquinhas': {
+      // Twin space buns, one on each side — distinct from 'coque's single
+      // centered back bun.
+      const cap = mesh(new THREE.SphereGeometry(r * 0.98, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.36), hairMat);
+      cap.position.set(0, headY + r * 0.16, 0);
+      group.add(cap);
+      for (const side of [-1, 1] as const) {
+        const bun = mesh(new THREE.SphereGeometry(r * 0.3, 10, 8), hairMat);
+        bun.position.set(r * 0.95 * side, headY + r * 0.28, -r * 0.15);
+        group.add(bun);
+        const strand = mesh(new THREE.CylinderGeometry(r * 0.1, r * 0.04, r * 0.55, 6), hairMat);
+        strand.position.set(r * 0.95 * side, headY - r * 0.1, -r * 0.2);
+        group.add(strand);
+      }
+      break;
+    }
+    case 'espetado': {
+      // A scatter of short spikes over the whole crown, angled outward —
+      // wilder and fuller than 'moicano's single centerline ridge.
+      for (let i = 0; i < 7; i++) {
+        const t = i / 6 - 0.5;
+        const spike = mesh(new THREE.ConeGeometry(r * 0.09, r * 0.48, 6), hairMat);
+        spike.position.set(t * r * 1.3, headY + r * 0.55, -Math.abs(t) * r * 0.5);
+        spike.rotation.z = -t * 0.7;
+        spike.rotation.x = -0.15;
+        group.add(spike);
+      }
+      break;
+    }
+    case 'franja': {
+      // Straight hair with a blunt, flat fringe cut low over the forehead.
+      const cap = mesh(new THREE.SphereGeometry(r * 1.05, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.42), hairMat);
+      cap.position.set(0, headY + r * 0.12, -r * 0.03);
+      group.add(cap);
+      const bangs = mesh(new THREE.BoxGeometry(r * 1.0, r * 0.32, r * 0.18), hairMat, false);
+      bangs.position.set(0, headY + r * 0.3, r * 0.82);
+      group.add(bangs);
+      break;
+    }
+    case 'entradas': {
+      // A receding hairline: a low band covering the sides/back only, bald
+      // dome left showing on top — the horseshoe-shaped opposite of 'careca'
+      // (fully bald) and every full-coverage style above.
+      const band = mesh(new THREE.SphereGeometry(r * 1.0, 12, 10, 0, Math.PI * 2, Math.PI * 0.42, Math.PI * 0.4), hairMat);
+      band.position.set(0, headY + r * 0.02, -r * 0.05);
+      group.add(band);
+      break;
+    }
   }
 }
 
@@ -428,6 +573,27 @@ function addFacialHair(group: THREE.Group, appearance: CharacterAppearance, head
       const drape = mesh(new THREE.ConeGeometry(r * 0.5, r * 1.2, 10), beardMat);
       drape.position.set(0, headY - r * 1.1, r * 0.25);
       group.add(drape);
+      break;
+    }
+    case 'costeleta': {
+      // Sideburns only, no mustache or chin coverage.
+      for (const side of [-1, 1] as const) {
+        const patch = mesh(new THREE.BoxGeometry(r * 0.12, r * 0.42, r * 0.1), beardMat, false);
+        patch.position.set(r * 0.82 * side, headY - r * 0.05, r * 0.32);
+        group.add(patch);
+      }
+      break;
+    }
+    case 'circulo': {
+      // A connected ring: mustache plus a separate chin patch, no full jaw
+      // coverage — distinct from 'cavanhaque' (chin only) and 'completa'
+      // (full jaw).
+      const stache = mesh(new THREE.BoxGeometry(r * 0.4, r * 0.08, r * 0.08), beardMat, false);
+      stache.position.set(0, headY - r * 0.32, r * 0.95);
+      const chin = mesh(new THREE.ConeGeometry(r * 0.16, r * 0.22, 8), beardMat, false);
+      chin.position.set(0, headY - r * 0.66, r * 0.7);
+      chin.rotation.x = Math.PI;
+      group.add(stache, chin);
       break;
     }
   }
@@ -473,6 +639,26 @@ function addHeadAccessory(
       group.add(hood);
       break;
     }
+    case 'bandana': {
+      const band = mesh(new THREE.TorusGeometry(r * 1.02, r * 0.09, 8, 16), trimMat);
+      band.position.set(0, headY + r * 0.05, 0);
+      band.rotation.x = Math.PI / 2;
+      const knot = mesh(new THREE.BoxGeometry(r * 0.16, r * 0.22, r * 0.06), trimMat, false);
+      knot.position.set(0, headY - r * 0.05, -r * 1.0);
+      group.add(band, knot);
+      break;
+    }
+    case 'chifres': {
+      const hornMat = mat(0xe8e0d0, { roughness: 0.4 });
+      for (const side of [-1, 1] as const) {
+        const horn = mesh(new THREE.ConeGeometry(r * 0.12, r * 0.42, 8), hornMat, false);
+        horn.position.set(r * 0.5 * side, headY + r * 0.68, r * 0.15);
+        horn.rotation.z = side * 0.35;
+        horn.rotation.x = -0.25;
+        group.add(horn);
+      }
+      break;
+    }
   }
 }
 
@@ -481,6 +667,7 @@ function addMarkings(
   appearance: CharacterAppearance,
   headY: number,
   r: number,
+  armL: THREE.Group,
   armR: THREE.Group,
 ): void {
   if (appearance.scarStyle !== 'nenhuma') {
@@ -490,6 +677,8 @@ function addMarkings(
       olho: [r * 0.5, headY + r * 0.1, r * 0.9],
       bochecha: [r * 0.45, headY - r * 0.2, r * 0.88],
       queixo: [0, headY - r * 0.55, r * 0.85],
+      testa: [r * 0.2, headY + r * 0.4, r * 0.9],
+      labio: [r * 0.14, headY - r * 0.42, r * 0.94],
     };
     const pos = positions[appearance.scarStyle];
     if (pos) {
@@ -500,15 +689,34 @@ function addMarkings(
 
   if (appearance.tattooStyle !== 'nenhuma') {
     const inkMat = mat(0x2a4a6b, { roughness: 0.5 });
-    if (appearance.tattooStyle === 'braco') {
+    const armRing = (arm: THREE.Group): void => {
       const ring = mesh(new THREE.TorusGeometry(0.075, 0.012, 6, 16), inkMat, false);
       ring.position.set(0, -0.5, 0.02);
       ring.rotation.x = Math.PI / 2;
-      armR.add(ring);
-    } else {
-      const mark = mesh(new THREE.BoxGeometry(r * 0.18, r * 0.18, r * 0.02), inkMat, false);
-      mark.position.set(-r * 0.55, headY - r * 0.1, r * 0.75);
-      group.add(mark);
+      arm.add(ring);
+    };
+    switch (appearance.tattooStyle) {
+      case 'braco':
+        armRing(armR);
+        break;
+      case 'ambosbracos':
+        armRing(armL);
+        armRing(armR);
+        break;
+      case 'pescoco': {
+        const ring = mesh(new THREE.TorusGeometry(r * 0.6, 0.01, 6, 16), inkMat, false);
+        ring.position.set(0, headY - r * 1.05, 0);
+        ring.rotation.x = Math.PI / 2;
+        group.add(ring);
+        break;
+      }
+      case 'rosto':
+      default: {
+        const mark = mesh(new THREE.BoxGeometry(r * 0.18, r * 0.18, r * 0.02), inkMat, false);
+        mark.position.set(-r * 0.55, headY - r * 0.1, r * 0.75);
+        group.add(mark);
+        break;
+      }
     }
   }
 }
@@ -635,6 +843,52 @@ function addClassAccessory(
   }
 }
 
+/**
+ * Extra geometry that appears only once equipped `armadura` clears a rarity
+ * threshold — pauldrons from 'amarelo'/epic up, a chest emblem from
+ * 'vermelho'/legendary, and a glowing cape at 'laranja'/mythic. Stacks with
+ * (doesn't replace) the cloth/trim tint `buildHumanCharacter` already applies
+ * at every tier, so a mythic-geared hero is unmistakably kitted out compared
+ * to one in green/common gear, not just a slightly different shade of the
+ * same silhouette.
+ */
+function addArmorAccents(
+  upperBody: THREE.Group,
+  armL: THREE.Group,
+  armR: THREE.Group,
+  chestY: number,
+  chestRadius: number,
+  tier: number,
+  accentColor?: number,
+): void {
+  if (accentColor === undefined || tier < 2) return;
+  const glow = tier >= 4;
+
+  const pauldronMat = mat(accentColor, { metalness: 0.65, roughness: 0.22, emissive: glow ? accentColor : 0x000000, emissiveIntensity: glow ? 0.9 : 0 });
+  const pauldronGeo = new THREE.BoxGeometry(0.16, 0.09, 0.18);
+  for (const [arm, side] of [[armL, -1], [armR, 1]] as const) {
+    const pauldron = mesh(pauldronGeo, pauldronMat);
+    pauldron.position.set(0.04 * side, 0.07, 0);
+    pauldron.rotation.z = 0.12 * side;
+    arm.add(pauldron);
+  }
+
+  if (tier >= 3) {
+    const emblemMat = mat(accentColor, { metalness: 0.5, roughness: 0.3, emissive: glow ? accentColor : 0x000000, emissiveIntensity: glow ? 1.0 : 0 });
+    const emblem = mesh(new THREE.OctahedronGeometry(0.055, 0), emblemMat);
+    emblem.position.set(0, chestY + 0.03, chestRadius * 0.95);
+    upperBody.add(emblem);
+  }
+
+  if (tier >= 4) {
+    const capeMat = mat(accentColor, { roughness: 0.65, metalness: 0.1, side: THREE.DoubleSide });
+    const cape = mesh(new THREE.BoxGeometry(0.36, 0.5, 0.02), capeMat);
+    cape.position.set(0, chestY - 0.08, -chestRadius * 1.15);
+    cape.rotation.x = 0.1;
+    upperBody.add(cape);
+  }
+}
+
 // --- convenience wrappers ------------------------------------------------
 
 export function buildClassPreview(classId: string): THREE.Group {
@@ -646,7 +900,8 @@ export function buildClassPreview(classId: string): THREE.Group {
 export function buildPlayerCharacter(player: Player): THREE.Group {
   const weaponGemId = player.equipment.arma?.socketedGemId;
   const gemGlowColor = weaponGemId ? getGemById(weaponGemId).color : undefined;
-  return buildHumanCharacter(player.appearance, CLASS_ACCESSORY[player.classId] ?? 'none', gemGlowColor);
+  const armorRarity = player.equipment.armadura?.rarity;
+  return buildHumanCharacter(player.appearance, CLASS_ACCESSORY[player.classId] ?? 'none', gemGlowColor, armorRarity);
 }
 
 // --- enemy creature builders ----------------------------------------------
