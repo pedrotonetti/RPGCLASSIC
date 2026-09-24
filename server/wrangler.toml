@@ -11,7 +11,7 @@ binding = "DB"
 database_name = "sede_db"
 # Filled in automatically by `wrangler d1 create sede_db` — see README.md
 # in this directory for the one-time setup steps.
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "0dc3fcc8-f23c-43ff-9c39-cfe0c8b5bccb"
 
 [vars]
 # Comma-separated list of origins allowed to call this API (your landing
