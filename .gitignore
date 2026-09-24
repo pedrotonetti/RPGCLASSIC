@@ -24,3 +24,7 @@ node_modules/.tmp
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Cloudflare Workers local dev state (server/ — local D1 sqlite, dev cache)
+.wrangler
+

@@ -1,0 +1,19 @@
+{
+  "name": "sede-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Registration + trial-serial backend for Sede — a Cloudflare Worker + D1 database, kept separate from the game's own Vite/Vitest project.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:init:local": "wrangler d1 execute sede_db --local --file=./schema.sql",
+    "db:init:remote": "wrangler d1 execute sede_db --remote --file=./schema.sql"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250906.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.99.0"
+  }
+}

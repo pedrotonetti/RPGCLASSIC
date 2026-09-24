@@ -1,0 +1,22 @@
+name = "sede-server"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Free-tier Cloudflare Workers: 100,000 requests/day, no cold-start sleep —
+# see MULTIPLAYER.md at the repo root for why this stack was picked (the
+# only realistic "free + genuinely 24/7" option researched for this game).
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sede_db"
+# Filled in automatically by `wrangler d1 create sede_db` — see README.md
+# in this directory for the one-time setup steps.
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+# Comma-separated list of origins allowed to call this API (your landing
+# page's real domain, plus a local dev origin). Update before deploying.
+ALLOWED_ORIGINS = "http://localhost:5173,http://localhost:8788"
+
+# Set with `wrangler secret put ADMIN_KEY` — never commit a real value here.
+# Required to call the /api/admin/* endpoints (listing registrations).
