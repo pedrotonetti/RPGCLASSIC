@@ -8,6 +8,14 @@
   --hp: #e06b6b;
   --mp: #6ba7e0;
   --heal: #6bff8e;
+  /* Notch/Dynamic Island/home-indicator clearance (iPhone 16 family and
+     similar) — resolves to 0px on any device without a safe-area inset,
+     so this never changes layout there. Requires viewport-fit=cover on
+     the <meta name="viewport"> tag (already set in index.html). */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
 }
 
 * {
@@ -123,7 +131,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  padding: 28px 0 22px;
+  padding: calc(28px + var(--safe-t)) var(--safe-r) calc(22px + var(--safe-b)) var(--safe-l);
 }
 .main-menu .top-bar {
   text-align: center;
@@ -165,8 +173,8 @@ body {
 }
 .main-menu .music-toggle {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: calc(16px + var(--safe-t));
+  right: calc(16px + var(--safe-r));
   width: 40px;
   height: 40px;
   display: flex;
@@ -219,7 +227,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px 0;
+  padding: calc(16px + var(--safe-t)) calc(20px + var(--safe-r)) 0 calc(20px + var(--safe-l));
 }
 .char-select .top-bar {
   display: flex;
@@ -299,8 +307,8 @@ body {
 /* --- Overworld HUD ------------------------------------------------ */
 .hud-panel {
   position: absolute;
-  top: 8px;
-  left: 8px;
+  top: calc(8px + var(--safe-t));
+  left: calc(8px + var(--safe-l));
   padding: 8px 12px;
   font-size: 18px;
   line-height: 1.3;
@@ -319,16 +327,16 @@ body {
 .hud-hint {
   position: absolute;
   /* Below the minimap, which sits at top:8/right:10 — see .minimap-canvas. */
-  top: 156px;
-  right: 10px;
+  top: calc(156px + var(--safe-t));
+  right: calc(10px + var(--safe-r));
   font-size: 14px;
   color: var(--text-dim);
 }
 
 .minimap-canvas {
   position: absolute;
-  top: 8px;
-  right: 10px;
+  top: calc(8px + var(--safe-t));
+  right: calc(10px + var(--safe-r));
   width: 140px;
   height: 140px;
   border: 1px solid var(--panel-border);
@@ -339,8 +347,8 @@ body {
 
 .joystick {
   position: absolute;
-  bottom: 22px;
-  left: 22px;
+  bottom: calc(22px + var(--safe-b));
+  left: calc(22px + var(--safe-l));
   width: 120px;
   height: 120px;
 }
@@ -388,8 +396,8 @@ body {
 
 .quest-tracker {
   position: absolute;
-  top: 118px;
-  left: 8px;
+  top: calc(118px + var(--safe-t));
+  left: calc(8px + var(--safe-l));
   max-width: 320px;
   padding: 6px 10px;
   font-size: 15px;
@@ -423,8 +431,8 @@ body {
   display: none;
   position: absolute;
   /* Below the minimap, which sits at top:8/right:10 — see .minimap-canvas. */
-  top: 156px;
-  right: 10px;
+  top: calc(156px + var(--safe-t));
+  right: calc(10px + var(--safe-r));
   width: 40px;
   height: 40px;
   align-items: center;
@@ -446,7 +454,7 @@ body {
 
 .dialogue-box {
   position: absolute;
-  bottom: 24px;
+  bottom: calc(24px + var(--safe-b));
   left: 50%;
   transform: translateX(-50%);
   width: min(640px, 92vw);
@@ -540,7 +548,7 @@ body {
    (dungeon bosses, and the story's own young_dragon). */
 .boss-banner {
   position: absolute;
-  top: 14px;
+  top: calc(14px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
   width: min(420px, 88vw);
@@ -592,8 +600,8 @@ body {
 /* Small "Emboscadas: 2/3" readout shown only while inside a dungeon instance. */
 .dungeon-progress {
   position: absolute;
-  top: 148px;
-  left: 8px;
+  top: calc(148px + var(--safe-t));
+  left: calc(8px + var(--safe-l));
   padding: 5px 10px;
   font-size: 15px;
   color: #d9c8f2;
@@ -648,7 +656,7 @@ body {
    are on screen together. */
 .battle-message-bar {
   position: absolute;
-  top: 8px;
+  top: calc(8px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
   padding: 6px 16px;
@@ -667,7 +675,7 @@ body {
 
 .combo-badge {
   position: absolute;
-  top: 52px;
+  top: calc(52px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
   font-size: 22px;
@@ -679,7 +687,7 @@ body {
 
 .hotbar {
   position: absolute;
-  bottom: 150px;
+  bottom: calc(150px + var(--safe-b));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -749,8 +757,8 @@ body {
 }
 .item-hotbar {
   position: absolute;
-  right: 12px;
-  bottom: 150px;
+  right: calc(12px + var(--safe-r));
+  bottom: calc(150px + var(--safe-b));
   display: flex;
   flex-direction: column-reverse;
   gap: 8px;
@@ -779,8 +787,29 @@ body {
 
 /* Narrow phones: the hotbar now shares the bottom strip with the movement
    d-pad, so shrink slots to keep the whole bar to one or two short rows
-   instead of stacking tall enough to crowd the rest of the HUD. */
+   instead of stacking tall enough to crowd the rest of the HUD. The
+   minimap/hud-panel/quest-tracker also shrink here — at ~390px wide the
+   140px minimap only leaves ~235px for the left-side HUD text, and
+   quest-tracker's 320px max-width (sized for a desktop-wide screen) would
+   otherwise run directly under it. */
 @media (max-width: 560px) {
+  .minimap-canvas {
+    width: 110px;
+    height: 110px;
+  }
+  .hud-hint,
+  .menu-btn {
+    top: calc(126px + var(--safe-t));
+  }
+  .hud-panel {
+    min-width: 0;
+    max-width: 60vw;
+  }
+  .quest-tracker {
+    max-width: 56vw;
+    font-size: 13px;
+    padding: 5px 8px;
+  }
   .hotbar-slot {
     width: 58px;
     height: 58px;
@@ -794,15 +823,86 @@ body {
     font-size: 9px;
   }
   .hotbar {
-    bottom: 140px;
+    bottom: calc(140px + var(--safe-b));
     gap: 6px;
   }
   .item-hotbar {
-    bottom: 140px;
+    bottom: calc(140px + var(--safe-b));
   }
   .item-hotbar .hotbar-slot.item {
     width: 48px;
     height: 48px;
+  }
+}
+
+/* Phones in landscape — the game's primary played orientation given the
+   bottom-anchored joystick/hotbar. Width is generous here (852-932px on
+   the iPhone 16 family), but height is short, so this targets max-height
+   instead of max-width; a phone is never both narrow-portrait and
+   short-landscape at once, so this never fights the rule above. Shrinks
+   every HUD element enough that the vertical stack (top HUD, play area,
+   bottom HUD) still fits without collisions on a ~390-430px-tall screen. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .hud-panel {
+    padding: 5px 8px;
+    font-size: 14px;
+    min-width: 130px;
+  }
+  .hud-panel .name-line {
+    font-size: 12px;
+  }
+  .quest-tracker {
+    top: calc(78px + var(--safe-t));
+    font-size: 12px;
+    padding: 3px 6px;
+  }
+  .dungeon-progress {
+    top: calc(100px + var(--safe-t));
+    font-size: 12px;
+    padding: 3px 6px;
+  }
+  .minimap-canvas {
+    width: 90px;
+    height: 90px;
+  }
+  .hud-hint,
+  .menu-btn {
+    top: calc(104px + var(--safe-t));
+  }
+  .joystick {
+    width: 84px;
+    height: 84px;
+    bottom: calc(12px + var(--safe-b));
+    left: calc(12px + var(--safe-l));
+  }
+  .joystick-knob {
+    width: 30px;
+    height: 30px;
+    margin: -15px 0 0 -15px;
+  }
+  .hotbar {
+    bottom: calc(92px + var(--safe-b));
+    gap: 5px;
+  }
+  .hotbar-slot {
+    width: 46px;
+    height: 46px;
+    padding: 2px;
+  }
+  .hotbar-name {
+    font-size: 10px;
+  }
+  .hotbar-level,
+  .hotbar-cost {
+    font-size: 8px;
+  }
+  .item-hotbar {
+    bottom: calc(92px + var(--safe-b));
+    gap: 5px;
+  }
+  .item-hotbar .hotbar-slot.item {
+    width: 38px;
+    height: 38px;
   }
 }
 
@@ -818,8 +918,8 @@ body {
 }
 .creation-preview h1 {
   position: absolute;
-  top: 14px;
-  left: 20px;
+  top: calc(14px + var(--safe-t));
+  left: calc(20px + var(--safe-l));
   font-size: clamp(18px, 3vw, 26px);
   margin: 0;
   text-shadow: 2px 2px 0 #000;
@@ -905,6 +1005,31 @@ body {
   padding: 9px 16px;
 }
 
+/* Narrow phones in portrait: the character-creation split (3D preview next
+   to a 420px/48vw settings panel) leaves the preview a sliver — stack
+   instead, preview on top and the panel as a fixed-height sheet below.
+   Placed after the base .creation-screen/.creation-preview/.creation-panel
+   rules above on purpose — a media-query block earlier in the file than
+   the rule it overrides loses the cascade despite matching, since both
+   sides have equal selector specificity and CSS breaks the tie by source
+   order, not by which one sits inside @media. */
+@media (max-width: 560px) and (orientation: portrait) {
+  .creation-screen {
+    flex-direction: column;
+  }
+  .creation-preview {
+    flex: none;
+    height: 42%;
+  }
+  .creation-panel {
+    width: 100%;
+    max-width: 100%;
+    height: 58%;
+    border-left: none;
+    border-top: 1px solid var(--panel-border);
+  }
+}
+
 /* --- Skill tree -------------------------------------------------- */
 .skilltree-screen {
   width: 100%;
@@ -912,7 +1037,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 16px 20px 0;
+  padding: calc(16px + var(--safe-t)) calc(20px + var(--safe-r)) 0 calc(20px + var(--safe-l));
 }
 .skilltree-screen .top-bar {
   text-align: center;
@@ -974,7 +1099,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 16px 20px 0;
+  padding: calc(16px + var(--safe-t)) calc(20px + var(--safe-r)) 0 calc(20px + var(--safe-l));
 }
 .ranking-screen .top-bar {
   text-align: center;
@@ -1030,7 +1155,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 16px 20px 0;
+  padding: calc(16px + var(--safe-t)) calc(20px + var(--safe-r)) 0 calc(20px + var(--safe-l));
 }
 .inventory-screen .top-bar {
   text-align: center;
@@ -1136,8 +1261,8 @@ body {
   pointer-events: auto;
   cursor: pointer;
   position: absolute;
-  top: 14px;
-  right: 16px;
+  top: calc(14px + var(--safe-t));
+  right: calc(16px + var(--safe-r));
   font-size: 15px;
   color: var(--text-dim);
   z-index: 2;
