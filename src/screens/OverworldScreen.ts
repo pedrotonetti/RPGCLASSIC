@@ -9,7 +9,7 @@ import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
 import { dialogueLinesFor, NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
-import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, type ZoneDefinition, type ZoneExit } from '../data/zones';
+import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, subAreaNameAt, type ZoneDefinition, type ZoneExit } from '../data/zones';
 import { dungeonsInHostZone, getDungeonById, type DungeonDefinition } from '../data/dungeons';
 import { rarityTier, rarityToHex } from '../config/rarity';
 import type { EquipmentSlot, ItemRarity } from '../config/types';
@@ -23,6 +23,7 @@ import { loadNpcAvatar } from '../render/npcAvatar';
 import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
 import { OverworldCombat } from '../systems/OverworldCombat';
+import { buildWalkabilityGrid, pathfindToClick } from '../systems/Pathfinding';
 import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
 import {
   ensureAct3Started,
@@ -53,6 +54,14 @@ const DIR_AXIS: Record<Dir, { x: number; z: number }> = {
 const PLAYER_SPEED = 3.6; // world units/second, free-roam walking pace (not grid-snapped)
 const PLAYER_RADIUS = 0.34; // collision circle, roughly the character's own girth
 const TURN_SPEED = 12; // how fast the avatar's facing catches up to its movement direction
+
+// --- click-to-walk (minimap) ------------------------------------------
+/** How close (world units) counts as "arrived" at an auto-walk waypoint before advancing to the next one. Well under half a tile (TILE_SIZE=2) so the follower doesn't overshoot and oscillate around it. */
+const AUTO_WALK_WAYPOINT_EPS = 0.15;
+/** How many tiles out from a clicked point on solid geometry (a tree, a building, water) findNearestWalkable is allowed to search for a walkable tile to snap onto — see Pathfinding.findNearestWalkable. */
+const AUTO_WALK_SNAP_RADIUS = 3;
+/** Seconds of near-zero progress toward the current waypoint before the auto-walker gives up — guards against a dynamic obstacle (an NPC) that wandered onto an already-computed path, which the pathfinder itself can't see. */
+const AUTO_WALK_STUCK_LIMIT = 1.2;
 
 /**
  * The default third-person camera rig: behind and above the avatar, angled
@@ -232,6 +241,18 @@ export class OverworldScreen implements Screen {
   /** Normalized {x,z} from the on-screen joystick, magnitude <=1; null while untouched. */
   private joystickAxis: { x: number; z: number } | null = null;
   private joystickPointerId: number | null = null;
+
+  /**
+   * Click-to-walk (see the minimap's click handler): remaining world-space
+   * waypoints to chase through, nearest first. Emptied the instant the
+   * player gives ANY manual directional input (keyboard or joystick) — see
+   * updateMovement — so auto-walk can never fight manual control, and
+   * emptied on its own once the last waypoint is reached or the follower
+   * gets stuck (see autoWalkStuckTime).
+   */
+  private autoWalkWaypoints: THREE.Vector3[] = [];
+  /** Seconds the auto-walker has gone without making real progress toward its current waypoint — e.g. an NPC wandered onto the path after it was computed. Past AUTO_WALK_STUCK_LIMIT this cancels the walk instead of holding the player in place forever. */
+  private autoWalkStuckTime = 0;
   private keydownHandler = (e: KeyboardEvent) => this.onKeyDown(e);
   private keyupHandler = (e: KeyboardEvent) => this.onKeyUp(e);
 
@@ -687,7 +708,14 @@ export class OverworldScreen implements Screen {
   }
 
   private updateMovement(dt: number): void {
-    const axis = this.computeInputAxis();
+    const manualAxis = this.computeInputAxis();
+    const hasManualInput = manualAxis.x !== 0 || manualAxis.z !== 0;
+    // Manual control always wins: ANY directional input — keyboard or
+    // joystick — instantly drops whatever auto-walk path was following,
+    // rather than the two fighting over the avatar's position.
+    if (hasManualInput && this.autoWalkWaypoints.length > 0) this.cancelAutoWalk();
+
+    const axis = hasManualInput ? manualAxis : this.autoWalkAxis();
     this.isMoving = axis.x !== 0 || axis.z !== 0;
 
     if (this.isMoving) {
@@ -700,11 +728,24 @@ export class OverworldScreen implements Screen {
 
       // Axis-separated collision so sliding along a wall/tree edge works
       // instead of a diagonal move getting fully blocked by one obstacle.
+      let moved = false;
       if (stepX !== 0 && this.canOccupy(pos.x + stepX, pos.z, PLAYER_RADIUS, flying)) {
         pos.x += stepX;
+        moved = true;
       }
       if (stepZ !== 0 && this.canOccupy(pos.x, pos.z + stepZ, PLAYER_RADIUS, flying)) {
         pos.z += stepZ;
+        moved = true;
+      }
+
+      // Auto-walk stuck detection: a dynamic obstacle (an NPC) the static
+      // pathfind couldn't have known about wandered onto the current
+      // waypoint's tile after the path was computed. Rather than holding
+      // the player in place indefinitely, give up on the walk past
+      // AUTO_WALK_STUCK_LIMIT seconds of no real progress.
+      if (!hasManualInput && this.autoWalkWaypoints.length > 0) {
+        this.autoWalkStuckTime = moved ? 0 : this.autoWalkStuckTime + dt;
+        if (this.autoWalkStuckTime >= AUTO_WALK_STUCK_LIMIT) this.cancelAutoWalk();
       }
 
       const targetYaw = Math.atan2(axis.x, axis.z);
@@ -718,6 +759,78 @@ export class OverworldScreen implements Screen {
       const exit = this.zoneDef.exits.find((e) => e.atTile.x === tx && e.atTile.y === ty);
       if (exit) this.transitionToZone(exit);
     }
+  }
+
+  // --- click-to-walk (minimap) -------------------------------------------
+
+  /** World-space direction toward the current auto-walk waypoint, normalized like computeInputAxis's own output — {0,0} once the path is exhausted. Advances through (and drops) waypoints already reached this frame, so a short first leg doesn't cost an extra idle frame. */
+  private autoWalkAxis(): { x: number; z: number } {
+    const pos = this.avatar.position;
+    while (this.autoWalkWaypoints.length > 0) {
+      const target = this.autoWalkWaypoints[0];
+      const dx = target.x - pos.x;
+      const dz = target.z - pos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist <= AUTO_WALK_WAYPOINT_EPS) {
+        this.autoWalkWaypoints.shift();
+        continue;
+      }
+      return { x: dx / dist, z: dz / dist };
+    }
+    return { x: 0, z: 0 };
+  }
+
+  private cancelAutoWalk(): void {
+    this.autoWalkWaypoints = [];
+    this.autoWalkStuckTime = 0;
+  }
+
+  /**
+   * The minimap's click-to-walk entry point: converts a clicked tile into a
+   * path (reusing the exact same walkability rules canOccupy applies to
+   * every other movement — plain tile walkability from config/tiles.ts, plus
+   * this zone's own building footprints — never a separately-defined notion
+   * of "blocked") and hands the result to the per-frame follower above.
+   * Fails silently (a brief on-screen hint, no crash) if the click landed
+   * somewhere no route can reach.
+   */
+  private startAutoWalkTo(clickedTile: { x: number; y: number }): void {
+    const startTile = { x: Math.floor(this.avatar.position.x / TILE_SIZE), y: Math.floor(this.avatar.position.z / TILE_SIZE) };
+    // Buildings occupy tiles the grid still calls Path/Grass (see
+    // MapGenerator's stampFootprint) — their real blocking is this exact
+    // list of AABBs, the same one canOccupy checks. Converting world units
+    // back to tile space here mirrors renderMinimapBackground's own
+    // building-footprint conversion just below.
+    const buildingFootprints = this.buildingColliders.map((b) => ({
+      x: Math.floor(b.minX / TILE_SIZE),
+      y: Math.floor(b.minZ / TILE_SIZE),
+      w: Math.max(1, Math.round((b.maxX - b.minX) / TILE_SIZE)),
+      h: Math.max(1, Math.round((b.maxZ - b.minZ) / TILE_SIZE)),
+    }));
+    const grid = buildWalkabilityGrid(this.tiles, buildingFootprints);
+    const path = pathfindToClick(grid, startTile, clickedTile, AUTO_WALK_SNAP_RADIUS);
+    if (!path || path.length === 0) {
+      this.combat.showBanner('Sem caminho até ali.', 1400);
+      return;
+    }
+    // Drop a leading waypoint that's just the tile the player is already
+    // standing on — nothing to "walk toward" there.
+    const toWalk = path[0].x === startTile.x && path[0].y === startTile.y ? path.slice(1) : path;
+    this.autoWalkWaypoints = toWalk.map((p) => tileCenterWorld(p.x, p.y));
+    this.autoWalkStuckTime = 0;
+  }
+
+  /** Converts a click/tap on the minimap canvas into world tile coordinates — the exact inverse of renderMinimapBackground's world-to-pixel scale — and kicks off a pathfind there. Reads the canvas's own displayed (CSS) size via getBoundingClientRect rather than its fixed internal MINIMAP_SIZE resolution, so this still maps correctly once the phone breakpoints in style.css shrink the minimap down (110px/90px). */
+  private handleMinimapClick(ev: MouseEvent): void {
+    if (!this.minimapBg || this.paused || this.dialogueNpc || this.shopNpc) return;
+    const rect = this.minimapCanvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const fracX = (ev.clientX - rect.left) / rect.width;
+    const fracY = (ev.clientY - rect.top) / rect.height;
+    if (fracX < 0 || fracX > 1 || fracY < 0 || fracY > 1) return;
+    const worldX = fracX * this.minimapBg.width * TILE_SIZE;
+    const worldZ = fracY * this.minimapBg.height * TILE_SIZE;
+    this.startAutoWalkTo({ x: Math.floor(worldX / TILE_SIZE), y: Math.floor(worldZ / TILE_SIZE) });
   }
 
   /** Leaves the current zone through `exit`, arriving at its destination — a full screen rebuild, same as the old battle/respawn transitions. */
@@ -1747,6 +1860,11 @@ export class OverworldScreen implements Screen {
     this.minimapCanvas.className = 'minimap-canvas';
     this.minimapCanvas.width = OverworldScreen.MINIMAP_SIZE;
     this.minimapCanvas.height = OverworldScreen.MINIMAP_SIZE;
+    // Click/tap-to-walk — see handleMinimapClick. The minimap was purely
+    // decorative before this (pointer-events: none in style.css); 'click'
+    // fires for both a mouse click and a touch tap, so one listener covers
+    // both without needing separate touch handling like the joystick does.
+    this.minimapCanvas.addEventListener('click', (ev) => this.handleMinimapClick(ev));
     this.game.uiRoot.append(this.minimapCanvas);
     this.renderMinimapBackground();
   }
@@ -1803,17 +1921,47 @@ export class OverworldScreen implements Screen {
       y: (worldZ / TILE_SIZE / this.minimapBg!.height) * size,
     });
 
-    // Dungeon portals and NPCs as small dots — cheap enough to redraw every
-    // frame at these counts (at most a few dozen per zone).
+    // Dungeon portals as small purple squares — unchanged from earlier work
+    // this session, kept distinct from every marker kind added below.
     ctx.fillStyle = '#8a5cf5';
     for (const p of this.dungeonPortals) {
       const m = toMinimap(p.group.position.x, p.group.position.z);
       ctx.fillRect(m.x - 2, m.y - 2, 4, 4);
     }
+
+    // NPCs as small squares — vendor NPCs (blacksmith/apothecary/artisan/
+    // jeweler) get a distinct teal so they read as "somewhere to trade" at a
+    // glance, the closest thing this game has to a gatherable-resource node
+    // (there's no ore/herb-node mechanic to mark instead — see this
+    // session's own report). Every other NPC keeps the original yellow.
     ctx.fillStyle = '#e8d840';
     for (const slot of this.npcSlots) {
+      if (slot.def.vendor) continue;
       const m = toMinimap(slot.model.position.x, slot.model.position.z);
       ctx.fillRect(m.x - 1.5, m.y - 1.5, 3, 3);
+    }
+    ctx.fillStyle = '#3fd9c7';
+    for (const slot of this.npcSlots) {
+      if (!slot.def.vendor) continue;
+      const m = toMinimap(slot.model.position.x, slot.model.position.z);
+      ctx.fillRect(m.x - 2, m.y - 2, 4, 4);
+    }
+
+    // Alive monsters — a small red diamond, visually distinct from every
+    // dot/square above. Read fresh from OverworldCombat every frame (cheap:
+    // at most a few dozen monsters per zone, the same live positions its own
+    // AI already tracks) rather than snapshotting at mount time, so a
+    // monster that wanders (or dies) is reflected immediately.
+    ctx.fillStyle = '#d94f4f';
+    for (const pos of this.combat.aliveMonsterPositions()) {
+      const m = toMinimap(pos.x, pos.z);
+      ctx.beginPath();
+      ctx.moveTo(m.x, m.y - 2.5);
+      ctx.lineTo(m.x + 2.5, m.y);
+      ctx.lineTo(m.x, m.y + 2.5);
+      ctx.lineTo(m.x - 2.5, m.y);
+      ctx.closePath();
+      ctx.fill();
     }
 
     // The player, on top of everything — a small outlined dot so it stays
@@ -1826,6 +1974,24 @@ export class OverworldScreen implements Screen {
     ctx.lineWidth = 1;
     ctx.strokeStyle = '#1a1423';
     ctx.stroke();
+
+    // Current settlement/plaza name, as a caption strip along the bottom —
+    // drawn directly on this same canvas (rather than a separate DOM label)
+    // so it scales along with the minimap itself at the phone breakpoints
+    // (style.css shrinks the whole canvas via CSS, this just rides along).
+    // Recomputed every frame from the player's own tile — a handful of
+    // bounds comparisons, not a map re-walk (see data/zones.ts's
+    // subAreaNameAt), so this stays just as cheap as everything else here.
+    const tileX = Math.floor(this.avatar.position.x / TILE_SIZE);
+    const tileY = Math.floor(this.avatar.position.z / TILE_SIZE);
+    const areaName = subAreaNameAt(this.player.zoneId, tileX, tileY);
+    ctx.fillStyle = 'rgba(26, 20, 35, 0.78)';
+    ctx.fillRect(0, size - 15, size, 15);
+    ctx.fillStyle = '#f2ede3';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(areaName, size / 2, size - 7, size - 6);
   }
 
   /**

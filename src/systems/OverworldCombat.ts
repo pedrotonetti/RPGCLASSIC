@@ -284,6 +284,11 @@ export class OverworldCombat {
     return this.engine !== null;
   }
 
+  /** World-space (x,z) of every currently-alive monster in this zone — read by OverworldScreen's minimap to draw a marker per live enemy instance. Cheap: at most a few dozen monsters per zone, called once a frame. */
+  aliveMonsterPositions(): Array<{ x: number; z: number }> {
+    return this.monsters.filter((m) => m.state !== 'dead').map((m) => ({ x: m.model.position.x, z: m.model.position.z }));
+  }
+
   /** Advances monster AI, the active fight (if any), and refreshes all combat HUD elements. Call every frame. */
   update(dt: number, playerPos: THREE.Vector3, camera: THREE.Camera): void {
     this.clock += dt;

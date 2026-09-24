@@ -231,6 +231,29 @@ function placeLandmark(tiles: TileType[][], kind: BuildingKind, x: number, y: nu
 }
 
 /**
+ * Old-town plaza bounds (tile-space, inclusive) — "Praça da Fundação" in
+ * lore/dialogue (see the archivist NPC's line in `data/npcs.ts`). Hoisted to
+ * a module-level constant, rather than a local var inside
+ * `generateOverworldMap`, purely so callers outside this file (the minimap's
+ * sub-area label) can key off the exact same numbers the generator itself
+ * carves — these two can never drift apart.
+ */
+export const MAIN_CITY_OLD_TOWN_BOUNDS = { x0: 2, y0: 2, x1: 9, y1: 8 };
+const STREET_LENGTH = 12;
+/**
+ * Downtown plaza bounds (tile-space, inclusive) — "Praça do Mercado" in
+ * lore/dialogue (see the guard NPC's line in `data/npcs.ts`). See
+ * `MAIN_CITY_OLD_TOWN_BOUNDS`'s own doc comment for why this is hoisted here
+ * instead of computed as a local inside `generateOverworldMap`.
+ */
+export const MAIN_CITY_DOWNTOWN_BOUNDS = {
+  x0: 3,
+  x1: 30,
+  y0: MAIN_CITY_OLD_TOWN_BOUNDS.y1 + STREET_LENGTH + 1,
+  y1: MAIN_CITY_OLD_TOWN_BOUNDS.y1 + STREET_LENGTH + 1 + 10,
+};
+
+/**
  * Builds a proper (if small) city: an old-town plaza in the top-left corner
  * (unchanged in absolute position/size across the whole game's life so far —
  * every hardcoded NPC stall position in `data/npcs.ts` still lands correctly
@@ -254,10 +277,7 @@ export function generateOverworldMap(seed = 1337): GeneratedMap {
 
   // Old-town plaza (safe, no encounters) — kept at its original size/position
   // so every NPC's hardcoded mapX/mapY (data/npcs.ts) still lands inside it.
-  const villageX0 = 2;
-  const villageY0 = 2;
-  const villageX1 = 9;
-  const villageY1 = 8;
+  const { x0: villageX0, y0: villageY0, x1: villageX1, y1: villageY1 } = MAIN_CITY_OLD_TOWN_BOUNDS;
   for (let y = villageY0; y <= villageY1; y++) {
     for (let x = villageX0; x <= villageX1; x++) {
       const isEdge = x === villageX0 || y === villageY0 || x === villageX1 || y === villageY1;
@@ -269,17 +289,13 @@ export function generateOverworldMap(seed = 1337): GeneratedMap {
   tiles[villageY1][7] = TileType.Path;
 
   // A long paved street south from the old-town gate...
-  const streetLength = 12;
-  for (let y = villageY1 + 1; y <= villageY1 + streetLength; y++) {
+  for (let y = villageY1 + 1; y <= villageY1 + STREET_LENGTH; y++) {
     tiles[y][6] = TileType.Path;
     tiles[y][7] = TileType.Path;
   }
   // ...opening onto a much bigger downtown plaza, Pedravale's real town
   // square — the bulk of the main city's buildings line this and the gates.
-  const plazaX0 = 3;
-  const plazaX1 = 30;
-  const plazaY0 = villageY1 + streetLength + 1;
-  const plazaY1 = plazaY0 + 10;
+  const { x0: plazaX0, x1: plazaX1, y0: plazaY0, y1: plazaY1 } = MAIN_CITY_DOWNTOWN_BOUNDS;
   for (let y = plazaY0; y <= plazaY1; y++) {
     for (let x = plazaX0; x <= plazaX1; x++) {
       tiles[y][x] = TileType.Path;

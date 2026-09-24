@@ -342,7 +342,13 @@ body {
   border: 1px solid var(--panel-border);
   border-radius: 4px;
   background: rgba(26, 20, 35, 0.7);
-  pointer-events: none;
+  /* Click/tap-to-walk (OverworldScreen.handleMinimapClick) — was
+     pointer-events: none while the minimap was purely decorative; #ui-root
+     defaults every child to none, same reasoning as .interact-prompt's own
+     override just below. */
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .joystick {
