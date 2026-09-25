@@ -19,14 +19,44 @@ interface LoadedGltf {
 const loader = new GLTFLoader();
 const gltfCache = new Map<string, Promise<LoadedGltf>>();
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * A GLB's embedded textures are decoded from short-lived blob URLs — under
+ * load (many instances loading around the same time, a slow tab, a
+ * throttled CPU) that decode can occasionally lose the race and fail with
+ * "THREE.GLTFLoader: Couldn't load texture", which observably renders the
+ * affected mesh as solid black (its texture unit never gets real pixel
+ * data) instead of failing loudly. It's a transient race, not a
+ * deterministic asset problem — reproducing the exact same load repeatedly
+ * mostly succeeds — so one retry after a short delay resolves it almost
+ * every time.
+ */
+async function loadGltfOnce(fileName: string): Promise<LoadedGltf> {
+  const url = MODELS_BASE + fileName;
+  try {
+    const gltf = await loader.loadAsync(url);
+    return { scene: gltf.scene, animations: gltf.animations };
+  } catch (err) {
+    console.warn(`gltfModel: first load of ${fileName} failed (likely a texture-decode race), retrying once`, err);
+    await delay(150);
+    const gltf = await loader.loadAsync(url);
+    return { scene: gltf.scene, animations: gltf.animations };
+  }
+}
+
 function loadGltf(fileName: string): Promise<LoadedGltf> {
   let promise = gltfCache.get(fileName);
   if (!promise) {
-    promise = loader.loadAsync(MODELS_BASE + fileName).then((gltf) => ({
-      scene: gltf.scene,
-      animations: gltf.animations,
-    }));
+    promise = loadGltfOnce(fileName);
     gltfCache.set(fileName, promise);
+    // Never leave a rejected load cached — a transient failure (or a
+    // failure even the retry above couldn't recover from) would otherwise
+    // permanently break every future instance of this asset for the rest
+    // of the page's lifetime. Let the NEXT call try fresh instead.
+    promise.catch(() => gltfCache.delete(fileName));
   }
   return promise;
 }
