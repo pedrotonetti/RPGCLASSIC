@@ -25,6 +25,7 @@ import { buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type Tree
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { buildWalkabilityGrid, pathfindToClick } from '../systems/Pathfinding';
 import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
+import { DUNGEON_TIER_CAP, dungeonTierStatMultiplier, selectableDungeonTiers } from '../systems/DungeonTierSystem';
 import {
   ensureAct3Started,
   ensureAmaraRevealStarted,
@@ -229,6 +230,10 @@ export class OverworldScreen implements Screen {
   private dungeonProgressEl: HTMLElement | null = null;
   private dungeonCompleteEl: HTMLElement | null = null;
   private dungeonCompleteMessageEl: HTMLElement | null = null;
+  /** The floating tier-choice panel shown at an already-cleared dungeon's portal — see openDungeonTierPicker. Rebuilt fresh each time it's opened, so it always reflects the player's current best-cleared tier. */
+  private dungeonTierPickerEl: HTMLElement | null = null;
+  /** Which dungeon `dungeonTierPickerEl` is currently showing tiers for, if any — lets updateInteraction auto-close it once the player walks away from that portal. */
+  private dungeonTierPickerDungeon: DungeonDefinition | null = null;
   private act3ChoiceEl!: HTMLElement;
   private act3EpilogueEl!: HTMLElement;
   private act3EpilogueTextEl!: HTMLElement;
@@ -369,7 +374,13 @@ export class OverworldScreen implements Screen {
     this.combat = new OverworldCombat(this.game, this.player, this.scene, this.animator, () => this.handleDefeat());
     if (this.activeDungeon) {
       const dungeon = this.activeDungeon;
-      this.dungeonRunState = startDungeonRun(dungeon);
+      // Consumed immediately (reset to 1) so it can only ever apply to THIS
+      // mount — walking back out through the corridor's own exit and back in
+      // later always goes through enterDungeon (portal or tier picker) again,
+      // which sets it fresh.
+      const tier = this.player.pendingDungeonTier;
+      this.player.pendingDungeonTier = 1;
+      this.dungeonRunState = startDungeonRun(dungeon, tier);
       this.combat.spawnDungeonEncounters(
         dungeon.encounters,
         { atTile: dungeon.bossTile, enemyId: dungeon.boss.enemyId, visualId: dungeon.boss.visualId },
@@ -377,6 +388,7 @@ export class OverworldScreen implements Screen {
           onEncounterCleared: (index) => this.onDungeonEncounterCleared(index),
           onBossDefeated: () => this.onDungeonBossDefeated(),
         },
+        dungeonTierStatMultiplier(tier),
       );
     } else {
       this.combat.spawnMonsters(tiles, playerStart, {
@@ -503,7 +515,7 @@ export class OverworldScreen implements Screen {
   private tryInteract(): void {
     if (this.shopNpc || this.dialogueNpc || this.paused) return;
     if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
-    else if (this.nearbyDungeon) this.enterDungeon(this.nearbyDungeon);
+    else if (this.nearbyDungeon) this.interactWithDungeonPortal(this.nearbyDungeon);
   }
 
   private cycleMount(): void {
@@ -1016,14 +1028,17 @@ export class OverworldScreen implements Screen {
 
     const foundPortal = this.dungeonPortals.find((p) => p.group.position.distanceTo(this.avatar.position) <= INTERACT_RANGE);
     this.nearbyDungeon = foundPortal?.def ?? null;
+    if (this.dungeonTierPickerDungeon && this.nearbyDungeon !== this.dungeonTierPickerDungeon) this.closeDungeonTierPicker();
 
     const touch = isTouchDevice();
     if (this.nearbyNpc) {
       this.promptEl.hidden = false;
       this.promptEl.textContent = touch ? `Toque para falar com ${this.nearbyNpc.name}` : `[E] Falar com ${this.nearbyNpc.name}`;
     } else if (this.nearbyDungeon) {
+      const alreadyCleared = (this.player.dungeonTiers[this.nearbyDungeon.id] ?? 0) > 0;
+      const verb = alreadyCleared ? 'escolher o tier de' : 'entrar em';
       this.promptEl.hidden = false;
-      this.promptEl.textContent = touch ? `Toque para entrar em ${this.nearbyDungeon.name}` : `[E] Entrar em ${this.nearbyDungeon.name}`;
+      this.promptEl.textContent = touch ? `Toque para ${verb} ${this.nearbyDungeon.name}` : `[E] ${alreadyCleared ? 'Escolher tier de' : 'Entrar em'} ${this.nearbyDungeon.name}`;
     } else {
       this.promptEl.hidden = true;
     }
@@ -1147,7 +1162,7 @@ export class OverworldScreen implements Screen {
         {
           className: 'dungeon-portal-label',
           onClick: () => {
-            if (this.nearbyDungeon === dungeon) this.enterDungeon(dungeon);
+            if (this.nearbyDungeon === dungeon) this.interactWithDungeonPortal(dungeon);
           },
         },
         [el('div', { className: 'dname', text: dungeon.name }), el('div', { className: 'dlevel', text: `Nv. recomendado ${dungeon.recommendedLevel}` })],
@@ -1175,8 +1190,26 @@ export class OverworldScreen implements Screen {
     }
   }
 
+  /**
+   * The single entry point for the portal label's click and the [E]/tap
+   * interact prompt alike (see tryInteract): a dungeon never yet cleared
+   * enters straight in at tier 1, exactly as before this endgame-loop
+   * feature existed — only a dungeon with a recorded best-cleared tier
+   * offers the tier picker instead.
+   */
+  private interactWithDungeonPortal(dungeon: DungeonDefinition): void {
+    const bestTier = this.player.dungeonTiers[dungeon.id] ?? 0;
+    if (bestTier <= 0) {
+      this.enterDungeon(dungeon, 1);
+      return;
+    }
+    this.openDungeonTierPicker(dungeon, bestTier);
+  }
+
   /** Walks the player into a dungeon's own instance zone — same "arrive at a fixed tile" mechanics as any other zone transition, just triggered by an interact prompt instead of stepping on an exit tile. */
-  private enterDungeon(dungeon: DungeonDefinition): void {
+  private enterDungeon(dungeon: DungeonDefinition, tier: number): void {
+    this.closeDungeonTierPicker();
+    this.player.pendingDungeonTier = tier;
     this.player.zoneId = dungeon.zoneId;
     const arrive = arriveWorldPosition(dungeon.playerStart);
     this.player.mapX = arrive.x;
@@ -1184,6 +1217,41 @@ export class OverworldScreen implements Screen {
     saveGame(this.player);
     audio.encounterStart();
     this.game.goTo(new OverworldScreen(this.game, this.player, this.avatarData));
+  }
+
+  /**
+   * Reuses the dungeon-portal-label's own floating, world-anchored idiom
+   * (see updateDungeonPortals) instead of a whole new interaction pattern: a
+   * small panel of tier rows anchored at the same portal, "Tier 1
+   * (concluído)" through the player's best-cleared tier, plus exactly one
+   * new tier to try next — never further, so tiers can't be skipped.
+   */
+  private openDungeonTierPicker(dungeon: DungeonDefinition, bestTier: number): void {
+    this.closeDungeonTierPicker();
+    const rows = selectableDungeonTiers(bestTier).map((tier) => {
+      const cleared = tier <= bestTier;
+      const label = cleared ? `Tier ${tier} (concluído)` : `Tier ${tier} (novo)`;
+      return el('div', { className: 'tier-picker-row', text: label, onClick: () => this.enterDungeon(dungeon, tier) });
+    });
+    const capNote =
+      bestTier >= DUNGEON_TIER_CAP
+        ? el('div', { className: 'tier-picker-cap', text: 'Tier máximo alcançado.' })
+        : null;
+    const closeBtn = el('div', { className: 'tier-picker-row tier-picker-close', text: 'Cancelar', onClick: () => this.closeDungeonTierPicker() });
+    this.dungeonTierPickerEl = el('div', { className: 'panel dungeon-tier-picker' }, [
+      el('div', { className: 'dname', text: dungeon.name }),
+      ...rows,
+      capNote,
+      closeBtn,
+    ]);
+    this.dungeonTierPickerDungeon = dungeon;
+    this.game.uiRoot.append(this.dungeonTierPickerEl);
+  }
+
+  private closeDungeonTierPicker(): void {
+    this.dungeonTierPickerEl?.remove();
+    this.dungeonTierPickerEl = null;
+    this.dungeonTierPickerDungeon = null;
   }
 
   /** The dungeon completion overlay's "instant warp" option — the walk-back-out corridor exit (a normal ZoneExit) works too, this just spares the walk. */

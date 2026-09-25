@@ -49,13 +49,22 @@ describe('DUNGEON_DEFINITIONS', () => {
 });
 
 describe('encounter progression', () => {
-  it('starts a run at 0/N cleared', () => {
+  it('starts a run at 0/N cleared, at tier 1 by default', () => {
     const dungeon = getDungeonById('root_hollow');
     const state = startDungeonRun(dungeon);
     expect(state.clearedEncounters).toBe(0);
     expect(state.totalEncounters).toBe(dungeon.encounters.length);
     expect(state.bossDefeated).toBe(false);
+    expect(state.tier).toBe(1);
     expect(encounterProgressText(state)).toBe(`Emboscadas: 0/${dungeon.encounters.length}`);
+  });
+
+  it('can start a run at a higher tier, and the HUD text says so — a tier-1 run\'s text is unchanged', () => {
+    const dungeon = getDungeonById('root_hollow');
+    const tier1 = startDungeonRun(dungeon, 1);
+    const tier3 = startDungeonRun(dungeon, 3);
+    expect(encounterProgressText(tier1)).toBe(`Emboscadas: 0/${dungeon.encounters.length}`);
+    expect(encounterProgressText(tier3)).toBe(`Emboscadas: 0/${dungeon.encounters.length} · Tier 3`);
   });
 
   it('advances one at a time as each fixed pod is cleared, without mutating the previous state', () => {
@@ -127,5 +136,48 @@ describe('completeDungeon', () => {
       const boss = getDungeonBossDefinition(dungeon);
       expect(dungeon.bonusGold + boss.goldReward).toBeGreaterThan(boss.goldReward * 1.5);
     }
+  });
+});
+
+describe('completeDungeon — repeatable-tier scaling', () => {
+  it('a tier-1 clear is byte-for-byte the same payout as before this feature existed', () => {
+    const player = freshPlayer();
+    const dungeon = getDungeonById('root_hollow');
+    const state = startDungeonRun(dungeon, 1);
+    const { reward } = completeDungeon(player, dungeon, state);
+    expect(reward.tier).toBe(1);
+    expect(reward.bonusGold).toBe(dungeon.bonusGold);
+    expect(player.bag[player.bag.length - 1].rarity).toBe(dungeon.rewardItem.rarity);
+  });
+
+  it('a higher tier pays out proportionally more bonus gold and records the tier in the message', () => {
+    const player = freshPlayer();
+    const dungeon = getDungeonById('root_hollow');
+    const state = startDungeonRun(dungeon, 3);
+    const { reward } = completeDungeon(player, dungeon, state);
+    expect(reward.tier).toBe(3);
+    expect(reward.bonusGold).toBeGreaterThan(dungeon.bonusGold);
+    expect(reward.message).toContain('Tier 3');
+  });
+
+  it('a higher tier escalates the guaranteed reward item up the rarity ladder', () => {
+    const player = freshPlayer();
+    const dungeon = getDungeonById('root_hollow'); // base reward rarity: azul
+    const state = startDungeonRun(dungeon, 4);
+    completeDungeon(player, dungeon, state);
+    expect(player.bag[player.bag.length - 1].rarity).toBe('laranja');
+  });
+
+  it('records the dungeon\'s best-cleared tier on the player, and never lowers it on a later lower-tier replay', () => {
+    const player = freshPlayer();
+    const dungeon = getDungeonById('root_hollow');
+    completeDungeon(player, dungeon, startDungeonRun(dungeon, 3));
+    expect(player.dungeonTiers[dungeon.id]).toBe(3);
+
+    completeDungeon(player, dungeon, startDungeonRun(dungeon, 1));
+    expect(player.dungeonTiers[dungeon.id]).toBe(3); // still 3, not overwritten down to 1
+
+    completeDungeon(player, dungeon, startDungeonRun(dungeon, 5));
+    expect(player.dungeonTiers[dungeon.id]).toBe(5);
   });
 });

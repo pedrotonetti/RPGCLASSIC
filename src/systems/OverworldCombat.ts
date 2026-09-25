@@ -180,7 +180,14 @@ export class OverworldCombat {
    * run, from scratch anyway). `hooks` drives that dungeon's own
    * `DungeonSystem` run-state as each pod (and finally the boss) falls.
    */
-  spawnDungeonEncounters(encounters: DungeonEncounterSpawn[], boss: DungeonBossSpawn, hooks: DungeonCombatHooks): void {
+  /**
+   * `tierMultiplier` scales every spawned monster's (and the boss's) stats,
+   * XP/gold reward and loot-tier signal — see `Enemy`'s own `tierMultiplier`
+   * and `DungeonTierSystem.dungeonTierStatMultiplier`. 1 for a first-time
+   * (or ordinary tier-1) run, so nothing here changes from before unless the
+   * caller picked a higher tier at the portal.
+   */
+  spawnDungeonEncounters(encounters: DungeonEncounterSpawn[], boss: DungeonBossSpawn, hooks: DungeonCombatHooks, tierMultiplier = 1): void {
     this.ensureBaseHud();
     this.dungeonHooks = hooks;
 
@@ -196,14 +203,14 @@ export class OverworldCombat {
     encounters.forEach((encounter, index) => {
       encounter.enemyIds.forEach((enemyId, slot) => {
         const off = GROUP_OFFSETS[slot % GROUP_OFFSETS.length];
-        const m = this.buildMonster(enemyId, encounter.atTile.x + off.dx / TILE_SIZE, encounter.atTile.y + off.dy / TILE_SIZE);
+        const m = this.buildMonster(enemyId, encounter.atTile.x + off.dx / TILE_SIZE, encounter.atTile.y + off.dy / TILE_SIZE, { tierMultiplier });
         m.dungeonEncounterIndex = index;
         m.noRespawn = true;
         this.monsters.push(m);
       });
     });
 
-    const bossMonster = this.buildMonster(boss.enemyId, boss.atTile.x, boss.atTile.y, { visualId: boss.visualId, scale: 1.6 });
+    const bossMonster = this.buildMonster(boss.enemyId, boss.atTile.x, boss.atTile.y, { visualId: boss.visualId, scale: 1.6, tierMultiplier });
     bossMonster.isDungeonBoss = true;
     bossMonster.noRespawn = true;
     this.monsters.push(bossMonster);
@@ -239,8 +246,8 @@ export class OverworldCombat {
     this.game.uiRoot.append(this.messageEl, this.comboEl, this.bossBannerEl);
   }
 
-  private buildMonster(enemyId: string, tx: number, ty: number, opts: { visualId?: string; scale?: number } = {}): WorldMonster {
-    const enemy = new Enemy(enemyId);
+  private buildMonster(enemyId: string, tx: number, ty: number, opts: { visualId?: string; scale?: number; tierMultiplier?: number } = {}): WorldMonster {
+    const enemy = new Enemy(enemyId, opts.tierMultiplier ?? 1);
     const model = buildEnemyModel(opts.visualId ?? enemyId, enemy.color);
     const spawnX = tx * 2 + 1;
     const spawnZ = ty * 2 + 1;

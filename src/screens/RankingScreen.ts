@@ -4,6 +4,8 @@ import type { Screen } from '../engine/Screen';
 import { Player } from '../entities/Player';
 import { estimatePlayerRank, getTopRivals, rankPercentile, TOTAL_SIMULATED_PLAYERS } from '../data/leaderboard';
 import { computePowerScore } from '../systems/PowerScore';
+import { DUNGEON_DEFINITIONS } from '../data/dungeons';
+import { DUNGEON_TIER_CAP } from '../systems/DungeonTierSystem';
 import { el, goToLazy } from '../ui/dom';
 
 export class RankingScreen implements Screen {
@@ -55,6 +57,23 @@ export class RankingScreen implements Screen {
       el('div', { className: 'rank-score', text: powerScore.toLocaleString('pt-BR') }),
     ]);
 
+    // Endgame-loop progress: the highest repeatable-dungeon tier cleared per
+    // instance (see systems/DungeonTierSystem.ts + Player.dungeonTiers) — the
+    // smallest clean place to surface it is right alongside Power Score,
+    // rather than a whole new screen.
+    const dungeonTierRows = DUNGEON_DEFINITIONS.map((dungeon) => {
+      const bestTier = this.player.dungeonTiers[dungeon.id] ?? 0;
+      const valueText = bestTier > 0 ? `Tier ${bestTier}/${DUNGEON_TIER_CAP}` : 'Não conquistada';
+      return el('div', { className: 'dungeon-tier-row' }, [
+        el('div', { className: 'dungeon-tier-name', text: dungeon.name }),
+        el('div', { className: `dungeon-tier-value${bestTier >= DUNGEON_TIER_CAP ? ' maxed' : ''}`, text: valueText }),
+      ]);
+    });
+    const dungeonTiersPanel = el('div', { className: 'dungeon-tiers-panel panel' }, [
+      el('h2', { text: 'Instâncias — maior tier conquistado' }),
+      ...dungeonTierRows,
+    ]);
+
     const backBtn = el('div', {
       className: 'btn primary',
       text: '< Voltar à Aventura',
@@ -79,6 +98,7 @@ export class RankingScreen implements Screen {
         el('div', { className: 'rank-divider' }),
         ...rows,
       ]),
+      dungeonTiersPanel,
       el('div', { className: 'bottom-bar' }, [backBtn]),
     ]);
     this.game.uiRoot.append(screen);
