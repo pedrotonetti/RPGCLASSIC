@@ -6,6 +6,7 @@ import { computeEquipmentBonus, createStarterItem, getEquipmentTemplate } from '
 import { getItemById } from '../data/items';
 import { computeSkillLevelStats, skillPointsForLevel, ultimateLevelForCharacter } from '../systems/skillMath';
 import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder } from '../systems/statusEffects';
+import { createInitialWorldState, type WorldState } from '../systems/WorldStateSystem';
 import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, startZoneForClass } from '../data/zones';
 import { computeStatsAtLevel } from './statMath';
 
@@ -44,6 +45,15 @@ export interface PlayerSaveData {
    * `DungeonSystem.completeDungeon` for where this gets bumped.
    */
   dungeonTiers: Record<string, number>;
+  /**
+   * Ipêra's own persistent state (corruption/hope/trust/natureBalance,
+   * faction reputation, flags, event/zone state) — see
+   * `systems/WorldStateSystem.ts`. Separate from every field above it: those
+   * track the PLAYER's own progress, this tracks what the player's presence
+   * has done to the WORLD. Absent on any save from before this field existed
+   * — defaulted the same way `hasSeenTutorial`/`dungeonTiers` were.
+   */
+  worldState: WorldState;
 }
 
 /** The three closures Ato 3 branches into — see LORE.md's "O final". */
@@ -80,6 +90,7 @@ export class Player implements StatusEffectHolder {
   act3Ending: Act3Ending | null;
   hasSeenTutorial: boolean;
   dungeonTiers: Record<string, number>;
+  worldState: WorldState;
   /**
    * Session-only "enter the next dungeon at this tier" hand-off — set by
    * OverworldScreen.enterDungeon just before swapping to the dungeon's own
@@ -120,6 +131,7 @@ export class Player implements StatusEffectHolder {
     this.act3Ending = data?.act3Ending ?? null;
     this.hasSeenTutorial = data?.hasSeenTutorial ?? false;
     this.dungeonTiers = data?.dungeonTiers ?? {};
+    this.worldState = data?.worldState ?? createInitialWorldState();
     this.currentHp = data?.currentHp ?? this.stats.maxHp;
     this.currentMp = data?.currentMp ?? this.stats.maxMp;
   }
@@ -352,6 +364,14 @@ export class Player implements StatusEffectHolder {
       act3Ending: this.act3Ending,
       hasSeenTutorial: this.hasSeenTutorial,
       dungeonTiers: { ...this.dungeonTiers },
+      worldState: {
+        ...this.worldState,
+        factionReputation: { ...this.worldState.factionReputation },
+        flags: { ...this.worldState.flags },
+        counters: { ...this.worldState.counters },
+        completedEvents: { ...this.worldState.completedEvents },
+        zoneStates: { ...this.worldState.zoneStates },
+      },
     };
   }
 }

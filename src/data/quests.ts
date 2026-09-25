@@ -1,4 +1,5 @@
 import type { ItemRarity } from '../config/types';
+import type { ChoiceEffect } from '../systems/ChoiceSystem';
 import { CLASS_ZONE_THEMES } from './classZones';
 
 export type QuestObjectiveKind = 'talkTo' | 'defeat' | 'reachLevel';
@@ -21,6 +22,15 @@ export interface QuestDefinition {
   rewardGold: number;
   rewardItem?: { templateId: string; rarity: ItemRarity };
   nextQuestId?: string;
+  /**
+   * Applied once, the moment this quest completes (see QuestSystem's
+   * completeQuest) — how THIS quest nudges Ipêra's own persistent
+   * WorldState, on top of the player's own XP/gold/item reward. See
+   * `systems/ChoiceSystem.ts`/`WorldStateSystem.ts`. Most quests leave this
+   * unset; it's meant for beats that are actually about the world changing
+   * (clearing corruption, earning a village's trust), not every fetch quest.
+   */
+  onCompleteEffect?: ChoiceEffect;
 }
 
 /**
@@ -49,6 +59,7 @@ export const QUEST_CHAIN: QuestDefinition[] = [
     rewardXp: 40,
     rewardGold: 20,
     nextQuestId: 'q3_new_blood',
+    onCompleteEffect: { worldStateDelta: { corruption: -4, hope: 3 } },
   },
   {
     id: 'q3_new_blood',
@@ -70,6 +81,7 @@ export const QUEST_CHAIN: QuestDefinition[] = [
     rewardXp: 100,
     rewardGold: 60,
     nextQuestId: 'q5_the_calling',
+    onCompleteEffect: { worldStateDelta: { corruption: -5, hope: 4 }, factionDelta: { factionId: 'pedravale', amount: 5 } },
   },
   {
     id: 'q5_the_calling',
