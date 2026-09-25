@@ -141,6 +141,20 @@ export class Game {
     }
   };
 
+  /**
+   * Lets a screen modulate the ambient vignette's darkness around its tuned
+   * default (1.15) — currently driven by OverworldScreen's own worldMood
+   * hook (see WorldStateSystem.worldMoodFactor), so Ipêra visibly feels a
+   * little less oppressive as the player pushes hope over corruption. The
+   * vignette pass is shared across every screen (this.composer never
+   * rebuilds it), so a value set here persists until something sets it
+   * again — intentionally subtle enough (see its own construction comment)
+   * that this doesn't look out of place on a screen that never calls this.
+   */
+  setVignetteDarkness(darkness: number): void {
+    this.vignettePass.uniforms.darkness.value = darkness;
+  }
+
   dispose(): void {
     cancelAnimationFrame(this.rafHandle);
     this.current?.unmount();

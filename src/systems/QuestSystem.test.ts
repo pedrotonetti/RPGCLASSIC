@@ -12,6 +12,7 @@ import {
   notifyTalkedTo,
   offerSideQuest,
 } from './QuestSystem';
+import { getFactionReputation } from './WorldStateSystem';
 
 function freshPlayer(classId = 'warrior'): Player {
   return Player.createNew('Testador', classId);
@@ -86,6 +87,10 @@ describe('notifyEnemyDefeated', () => {
     const message = notifyEnemyDefeated(player, 'bat');
     expect(message).not.toBeNull();
     expect(player.activeQuestId).toBe('q3_new_blood');
+    // q2_first_steps carries an onCompleteEffect (see data/quests.ts) —
+    // completing it should nudge WorldState, not just grant XP/gold.
+    expect(player.worldState.corruption).toBe(46);
+    expect(player.worldState.hope).toBe(53);
   });
 
   it('only counts the matching enemy id for a defeat objective with a targetId', () => {
@@ -103,6 +108,9 @@ describe('notifyEnemyDefeated', () => {
     const message = notifyEnemyDefeated(player, 'goblin');
     expect(message).not.toBeNull();
     expect(player.activeQuestId).toBe('q5_the_calling');
+    expect(player.worldState.corruption).toBe(45);
+    expect(player.worldState.hope).toBe(54);
+    expect(getFactionReputation(player.worldState, 'pedravale')).toBe(5);
   });
 });
 

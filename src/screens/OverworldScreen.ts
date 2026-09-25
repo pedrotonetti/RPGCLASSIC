@@ -36,6 +36,7 @@ import {
   offerSideQuest,
   questTrackerText,
 } from '../systems/QuestSystem';
+import { worldMoodFactor } from '../systems/WorldStateSystem';
 import type { QuestDefinition } from '../data/quests';
 import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
@@ -217,6 +218,10 @@ export class OverworldScreen implements Screen {
   private avatar!: THREE.Object3D;
   private animator!: CharacterAnimatorLike;
   private dirLight!: THREE.DirectionalLight;
+  private ambientLight!: THREE.AmbientLight;
+  private hemiLight!: THREE.HemisphereLight;
+  /** Cache of the last-applied worldMoodFactor (see applyWorldMood) — lets the per-frame check in update() skip re-writing light intensities/the vignette uniform on every single frame when nothing about WorldState has changed since. -1 (impossible for a 0..1 factor) forces the first call after mount to always apply. */
+  private lastAppliedWorldMood = -1;
   private npcSlots: NpcSlot[] = [];
   private wildlife: WildlifeSlot[] = [];
   private combat!: OverworldCombat;
@@ -323,9 +328,10 @@ export class OverworldScreen implements Screen {
     this.buildingColliders = buildingColliders;
     this.scene.add(group);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
-    const hemi = new THREE.HemisphereLight(0x8ec9e8, 0x4c8a3f, 0.55);
-    this.scene.add(ambient, hemi);
+    this.ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    this.hemiLight = new THREE.HemisphereLight(0x8ec9e8, 0x4c8a3f, 0.55);
+    this.scene.add(this.ambientLight, this.hemiLight);
+    this.applyWorldMood();
 
     this.dirLight = new THREE.DirectionalLight(0xfff4e0, 1.0);
     this.dirLight.castShadow = true;
@@ -472,6 +478,28 @@ export class OverworldScreen implements Screen {
     this.updateMinimap();
     this.updateQuestIndicator();
     this.refreshHud();
+    this.applyWorldMood();
+  }
+
+  /**
+   * Reads worldMoodFactor(player.worldState) (0 = as dark/oppressive as
+   * Ipêra's corrupted baseline, 1 = fully hopeful/restored) and nudges the
+   * overworld's ambient/hemisphere light and the shared vignette darkness
+   * around their tuned defaults — subtly enough that a fresh, neutral
+   * (mood 0.5) game looks identical to before this system existed. Cheap
+   * per-frame check (a couple of subtractions), but the actual THREE.js
+   * writes only happen when the mood has genuinely moved since the last
+   * applied value, so completing a quest is what actually triggers a
+   * change, not every single frame.
+   */
+  private applyWorldMood(): void {
+    const mood = worldMoodFactor(this.player.worldState);
+    if (Math.abs(mood - this.lastAppliedWorldMood) < 0.001) return;
+    this.lastAppliedWorldMood = mood;
+    const moodDelta = (mood - 0.5) * 2; // -1 (fully corrupted) .. 1 (fully hopeful)
+    this.ambientLight.intensity = 0.4 + moodDelta * 0.12;
+    this.hemiLight.intensity = 0.55 + moodDelta * 0.12;
+    this.game.setVignetteDarkness(1.15 - moodDelta * 0.15);
   }
 
   private animateWater(): void {

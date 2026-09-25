@@ -1,3 +1,4 @@
+import { applyChoiceEffect } from './ChoiceSystem';
 import { createStarterItem } from '../data/equipment';
 import { getNpcById } from '../data/npcs';
 import {
@@ -88,6 +89,12 @@ function completeQuest(player: Player, quest: QuestDefinition): string {
   if (quest.rewardItem) {
     player.addLoot(createStarterItem(quest.rewardItem.templateId, quest.rewardItem.rarity, Math.max(1, player.level)));
   }
+  // Beyond the player's own XP/gold/item reward, some quests also nudge
+  // Ipêra's own WorldState (see data/quests.ts's onCompleteEffect doc
+  // comment) — applied silently here rather than folded into the toast
+  // below, so the completion message's shape stays exactly what existing
+  // tests (unit + e2e) already assert on.
+  if (quest.onCompleteEffect) applyChoiceEffect(player, quest.onCompleteEffect);
   return `Missão concluída: ${quest.title}! +${quest.rewardXp} XP, +${quest.rewardGold} ouro${quest.rewardItem ? ', 1 item recebido' : ''}.`;
 }
 
