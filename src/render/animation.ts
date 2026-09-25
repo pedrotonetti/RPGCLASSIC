@@ -23,10 +23,16 @@ export type ActionName = 'attack' | 'defend' | 'cast' | 'eat' | 'hit' | 'victory
  * Callers depend only on this interface, so the player's actual animator
  * implementation can be swapped without touching them.
  */
+/** Extra context a caller can give `play()` to pick a more specific clip variant — see `GltfCharacterAnimator`'s own per-class cast/ultimate tables. Purely advisory: an implementer (e.g. the procedural `CharacterAnimator`, which has no such variants) is free to ignore it. */
+export interface PlayOptions {
+  /** Set when the triggering skill is the class's own ultimate — some classes get a distinct, more dramatic clip variant for it. */
+  isUltimate?: boolean;
+}
+
 export interface CharacterAnimatorLike {
   setMoving(moving: boolean): void;
   setMounted(mounted: boolean): void;
-  play(action: ActionName, onDone?: () => void): void;
+  play(action: ActionName, onDone?: () => void, opts?: PlayOptions): void;
   readonly currentAction: ActionName | null;
   update(dt: number): void;
 }

@@ -1,4 +1,4 @@
-import type { SkillDefinition, SkillKind, SkillLevelStats, SkillTarget, Stats } from '../config/types';
+import type { SkillDefinition, SkillKind, SkillLevelStats, SkillTarget, Stats, StatusInflict } from '../config/types';
 
 /** Regular skills are leveled 1-10 by spending skill points. */
 export const REGULAR_SKILL_MAX_LEVEL = 10;
@@ -38,6 +38,7 @@ interface SkillCore {
   baseCost: number;
   basePower: number;
   buffStat?: keyof Stats;
+  inflicts?: StatusInflict;
 }
 
 /** A regular tree skill: levels 1-10 via skill points, moderate scaling. */

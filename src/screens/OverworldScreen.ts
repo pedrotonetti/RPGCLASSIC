@@ -353,7 +353,7 @@ export class OverworldScreen implements Screen {
     this.scene.add(this.dirLight.target);
 
     this.playerModel = this.avatarData.scene;
-    this.animator = new GltfCharacterAnimator(this.avatarData.actor, this.avatarData.weaponKind);
+    this.animator = new GltfCharacterAnimator(this.avatarData.actor, this.avatarData.weaponKind, this.avatarData.classId);
     this.avatar = this.playerModel;
     this.scene.add(this.playerModel);
     this.avatar.position.set(this.player.mapX, 0, this.player.mapY);

@@ -121,7 +121,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     goldReward: 20,
     actionInterval: 2.3,
     skills: [
-      makeSkill({ id: 'spider_venom', name: 'Picada Venenosa', description: 'Injeta veneno corrosivo no alvo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.7 }),
+      makeSkill({ id: 'spider_venom', name: 'Picada Venenosa', description: 'Injeta veneno corrosivo no alvo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.7, inflicts: { type: 'bleed', chance: 0.5 } }),
     ],
     level: 7,
   },
@@ -149,7 +149,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     goldReward: 30,
     actionInterval: 2.6,
     skills: [
-      makeSkill({ id: 'elemental_flame_burst', name: 'Explosão Flamejante', description: 'Libera uma onda de fogo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.9 }),
+      makeSkill({ id: 'elemental_flame_burst', name: 'Explosão Flamejante', description: 'Libera uma onda de fogo que deixa o alvo queimando.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.9, inflicts: { type: 'burn', chance: 0.55 } }),
     ],
     level: 9,
   },
@@ -193,7 +193,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     actionInterval: 2.6,
     skills: [
       makeSkill({ id: 'dragon_claw', name: 'Garras Afiadas', description: 'Um ataque veloz com as garras.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 6, baseCost: 0, basePower: 1.8 }),
-      makeSkill({ id: 'dragon_breath', name: 'Sopro Flamejante', description: 'Um sopro de fogo que atinge tudo à frente.', kind: 'magical', target: 'allEnemies', unlockLevel: 1, baseCooldown: 11, baseCost: 0, basePower: 1.9 }),
+      makeSkill({ id: 'dragon_breath', name: 'Sopro Flamejante', description: 'Um sopro de fogo que atinge tudo à frente e deixa queimaduras.', kind: 'magical', target: 'allEnemies', unlockLevel: 1, baseCooldown: 11, baseCost: 0, basePower: 1.9, inflicts: { type: 'burn', chance: 0.45 } }),
     ],
     level: 18,
   },

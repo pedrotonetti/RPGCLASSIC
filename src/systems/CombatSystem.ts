@@ -1,14 +1,28 @@
 import { generateLoot } from '../data/equipment';
 import { MATERIAL_DEFINITIONS, MATERIAL_DROP_CHANCE } from '../data/materials';
-import type { EquipmentInstance, SkillDefinition, Stats } from '../config/types';
+import type { EquipmentInstance, SkillDefinition, StatusEffectType, Stats } from '../config/types';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
 import { computeSkillLevelStats } from './skillMath';
+import { applyStatusEffect, tickStatusEffects } from './statusEffects';
 
 export type CombatOutcome = 'ongoing' | 'victory' | 'defeat' | 'fled';
 
 export interface CombatEvent {
-  kind: 'damage' | 'heal' | 'miss' | 'buff' | 'defeated' | 'victory' | 'defeat' | 'fled' | 'info' | 'telegraph' | 'stagger';
+  kind:
+    | 'damage'
+    | 'heal'
+    | 'miss'
+    | 'buff'
+    | 'defeated'
+    | 'victory'
+    | 'defeat'
+    | 'fled'
+    | 'info'
+    | 'telegraph'
+    | 'stagger'
+    | 'statusApplied'
+    | 'statusTick';
   text: string;
   actorIsPlayer: boolean;
   actorIndex?: number;
@@ -25,7 +39,17 @@ export interface CombatEvent {
   materialsGained?: Record<string, number>;
   /** How an incoming hit on the player was mitigated, if at all — lets the UI cue the right sound/feedback without parsing text. */
   mitigation?: 'block' | 'perfectBlock' | 'dodge';
+  /** Set on `statusApplied`/`statusTick` events — which affliction this is about, for VFX/UI. */
+  statusType?: StatusEffectType;
+  /** Set on `damage`/`heal`/`buff` events raised by an actual skill (not a DoT tick) — lets the UI pick the right shared hit/impact VFX without re-deriving it from the skill id. */
+  skillKind?: 'physical' | 'magical' | 'heal' | 'buff';
 }
+
+const STATUS_LABEL: Record<StatusEffectType, string> = {
+  bleed: 'sangramento',
+  burn: 'queimadura',
+  slow: 'lentidão',
+};
 
 export type UseSkillResult =
   | { ok: true; events: CombatEvent[] }
@@ -225,13 +249,14 @@ export class CombatEngine {
         targetIsPlayer: true,
         amount: healed,
         targetHpAfter: this.player.currentHp,
+        skillKind: 'heal',
       });
     } else if (skill.kind === 'buff') {
       const stat = skill.buffStat ?? 'attack';
       const mult = 1 + levelStats.power * 0.18;
       const duration = BUFF_BASE_DURATION + level * BUFF_DURATION_PER_LEVEL;
       this.buffs.push({ stat, mult, expiresAt: this.clock + duration });
-      events.push({ kind: 'buff', text: `Você usou ${skill.name}!`, actorIsPlayer: true });
+      events.push({ kind: 'buff', text: `Você usou ${skill.name}!`, actorIsPlayer: true, targetIsPlayer: true, skillKind: 'buff' });
     } else {
       const kind = skill.kind === 'magical' ? 'magical' : 'physical';
       const targets =
@@ -261,12 +286,23 @@ export class CombatEngine {
           amount: dealt,
           crit: roll.crit,
           targetHpAfter: enemy.currentHp,
+          skillKind: kind,
         });
         if (!enemy.isAlive()) {
           events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
           this.staggerStacks.delete(enemy);
         } else {
           this.registerHitForStagger(enemy, index, events);
+          if (skill.inflicts && Math.random() < skill.inflicts.chance) {
+            applyStatusEffect(enemy, skill.inflicts.type, dealt);
+            events.push({
+              kind: 'statusApplied',
+              text: `${enemy.name} sofre ${STATUS_LABEL[skill.inflicts.type]}!`,
+              actorIsPlayer: true,
+              targetIndex: index,
+              statusType: skill.inflicts.type,
+            });
+          }
         }
       }
     }
@@ -350,13 +386,19 @@ export class CombatEngine {
     if (this.outcome !== 'ongoing') return [];
     this.clock += dt;
 
+    // A `slow` affliction on the player scales down how fast their own
+    // cooldowns recover — their practical "attack speed" while iced up.
+    const playerCooldownRate = dt * this.player.speedMultiplier;
     for (const key of Object.keys(this.cooldowns)) {
-      this.cooldowns[key] = Math.max(0, this.cooldowns[key] - dt);
+      this.cooldowns[key] = Math.max(0, this.cooldowns[key] - playerCooldownRate);
     }
     this.buffs = this.buffs.filter((b) => b.expiresAt > this.clock);
     this.player.regenMp(dt);
 
     const events: CombatEvent[] = [];
+
+    this.tickStatusDamage(dt, events);
+    if (this.outcome !== 'ongoing') return events;
 
     // Resolve any enemy attacks whose telegraph window has elapsed first.
     for (const [enemy, pending] of [...this.pendingAttacks]) {
@@ -369,7 +411,11 @@ export class CombatEngine {
     if (this.outcome === 'ongoing') {
       for (const enemy of this.aliveEnemies()) {
         if (this.pendingAttacks.has(enemy)) continue; // already winding up
-        enemy.actionTimer -= dt;
+        // A `slow` affliction scales down how fast this enemy's own action
+        // timer counts down — both its attack speed AND (via the same
+        // `speedMultiplier`, read by `OverworldCombat`'s own chase logic)
+        // its overworld movement speed.
+        enemy.actionTimer -= dt * enemy.speedMultiplier;
         if (enemy.actionTimer > 0) continue;
         enemy.actionTimer = enemy.def.actionInterval * (0.85 + Math.random() * 0.3);
         this.beginEnemyAction(enemy, events);
@@ -378,6 +424,48 @@ export class CombatEngine {
 
     if (this.outcome === 'ongoing') this.checkVictory(events);
     return events;
+  }
+
+  /** Ticks every active bleed/burn on both sides, applying DoT damage and emitting `statusTick` events — run once per frame, before anything else that could also end the battle this same tick. */
+  private tickStatusDamage(dt: number, events: CombatEvent[]): void {
+    for (const enemy of this.aliveEnemies()) {
+      const result = tickStatusEffects(enemy, dt);
+      if (result.damage <= 0) continue;
+      const index = this.enemies.indexOf(enemy);
+      const dealt = enemy.takeDamage(result.damage);
+      events.push({
+        kind: 'statusTick',
+        text: `${enemy.name} sofre ${result.ticked.map((t) => STATUS_LABEL[t]).join(' e ')}.`,
+        actorIsPlayer: true,
+        targetIndex: index,
+        amount: dealt,
+        targetHpAfter: enemy.currentHp,
+        statusType: result.ticked[0],
+      });
+      if (!enemy.isAlive()) {
+        events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
+        this.staggerStacks.delete(enemy);
+      }
+    }
+    if (this.outcome === 'ongoing') this.checkVictory(events);
+    if (this.outcome !== 'ongoing') return;
+
+    const playerResult = tickStatusEffects(this.player, dt);
+    if (playerResult.damage <= 0) return;
+    const dealt = this.player.takeDamage(playerResult.damage);
+    events.push({
+      kind: 'statusTick',
+      text: `Você sofre ${playerResult.ticked.map((t) => STATUS_LABEL[t]).join(' e ')}.`,
+      actorIsPlayer: false,
+      targetIsPlayer: true,
+      amount: dealt,
+      targetHpAfter: this.player.currentHp,
+      statusType: playerResult.ticked[0],
+    });
+    if (!this.player.isAlive()) {
+      this.outcome = 'defeat';
+      events.push({ kind: 'defeat', text: 'Você foi derrotado...', actorIsPlayer: false });
+    }
   }
 
   /** Picks the enemy's next move and opens a short, telegraphed wind-up before it actually lands — the player's real window to block. */
@@ -452,7 +540,19 @@ export class CombatEngine {
       crit: roll.crit,
       targetHpAfter: this.player.currentHp,
       mitigation,
+      skillKind: kind,
     });
+
+    if (dealt > 0 && activeSkill.inflicts && Math.random() < activeSkill.inflicts.chance) {
+      applyStatusEffect(this.player, activeSkill.inflicts.type, dealt);
+      events.push({
+        kind: 'statusApplied',
+        text: `Você sofre ${STATUS_LABEL[activeSkill.inflicts.type]}!`,
+        actorIsPlayer: false,
+        targetIsPlayer: true,
+        statusType: activeSkill.inflicts.type,
+      });
+    }
 
     if (!this.player.isAlive()) {
       this.outcome = 'defeat';
