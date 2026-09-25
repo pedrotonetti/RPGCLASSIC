@@ -125,7 +125,13 @@ export function notifyTalkedTo(player: Player, npcId: string): string | null {
   return completeQuest(player, quest);
 }
 
-/** Call once per defeated enemy after a battle victory. */
+/**
+ * Call once per defeated enemy after a battle victory. Always returns a
+ * message when this kill counted toward the active objective — not just on
+ * the final one — so the tracker's "(have/amount)" count changing is
+ * accompanied by a toast the player actually notices mid-battle, the same
+ * way completing the quest already got one.
+ */
 export function notifyEnemyDefeated(player: Player, enemyId: string): string | null {
   const quest = currentQuest(player);
   if (!quest || quest.objective.kind !== 'defeat') return null;
@@ -133,7 +139,7 @@ export function notifyEnemyDefeated(player: Player, enemyId: string): string | n
   const have = (player.questProgress[quest.id] ?? 0) + 1;
   player.questProgress[quest.id] = have;
   if (have >= quest.objective.amount) return completeQuest(player, quest);
-  return null;
+  return `${quest.title}: ${have}/${quest.objective.amount}`;
 }
 
 /** Call after any level-up to check "reach level N" objectives. */

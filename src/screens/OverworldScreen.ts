@@ -329,7 +329,11 @@ export class OverworldScreen implements Screen {
 
     this.dirLight = new THREE.DirectionalLight(0xfff4e0, 1.0);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.set(2048, 2048);
+    // Halved on phones/tablets (see Game.lowPowerTier) — this map re-renders
+    // every frame (the frustum recenters on the avatar below), so its
+    // resolution is a continuous per-frame cost, not a one-time one.
+    const shadowRes = this.game.lowPowerTier ? 1024 : 2048;
+    this.dirLight.shadow.mapSize.set(shadowRes, shadowRes);
     const cam = this.dirLight.shadow.camera as THREE.OrthographicCamera;
     // The shadow frustum recenters on the avatar every frame (see
     // updateCamera below), but buildings/trees are static — a house's roof

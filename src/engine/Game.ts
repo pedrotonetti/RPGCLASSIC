@@ -5,6 +5,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type { Screen } from './Screen';
+import { isTouchDevice } from '../ui/device';
 
 /**
  * Aspect-ratio-corrected vignette — three.js's own stock VignetteShader
@@ -60,12 +61,22 @@ export class Game {
   private renderPass: RenderPass;
   private vignettePass: ShaderPass;
 
+  /**
+   * Phones/tablets get a cheaper render-quality tier: a 2048px soft shadow
+   * map that re-centers on the avatar every frame (see OverworldScreen's
+   * dirLight setup) means a full-resolution shadow depth pass every single
+   * frame, on top of bloom + MSAA — a PC-tier cost that reads as "the game
+   * is heavy" specifically on the weaker GPUs phones/tablets carry. Desktop
+   * (mouse/trackpad) keeps the original full-quality settings unchanged.
+   */
+  readonly lowPowerTier = isTouchDevice();
+
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.uiRoot = uiRoot;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !this.lowPowerTier });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.lowPowerTier ? 1.5 : 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = this.lowPowerTier ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     // Filmic tone mapping alone is one of the cheapest, highest-impact moves
     // away from a flat/cartoon look — it rolls off highlights and deepens
     // contrast the way a real camera/game-engine tonemapper does.
@@ -75,7 +86,13 @@ export class Game {
 
     // Placeholder scene/camera until the first screen mounts via goTo().
     this.renderPass = new RenderPass(new THREE.Scene(), new THREE.PerspectiveCamera());
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.4, 0.55, 0.86);
+    // UnrealBloomPass's internal render targets are sized off this
+    // resolution — halving it on the low-power tier cuts the bloom pass's
+    // own GPU cost roughly 4x, on top of the shadow/AA/pixel-ratio savings above.
+    const bloomResolution = this.lowPowerTier
+      ? new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2)
+      : new THREE.Vector2(window.innerWidth, window.innerHeight);
+    const bloomPass = new UnrealBloomPass(bloomResolution, 0.4, 0.55, 0.86);
     // Subtle vignette: darkens the far corners a little to draw the eye
     // toward the center, another cheap trick real engines lean on to avoid
     // a flat, uniformly-lit "cartoon" frame. Kept light — this isn't meant

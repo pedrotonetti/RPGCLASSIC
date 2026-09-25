@@ -79,8 +79,8 @@ describe('notifyEnemyDefeated', () => {
     const player = freshPlayer();
     player.activeQuestId = 'q2_first_steps'; // defeat, no targetId, amount 3
 
-    expect(notifyEnemyDefeated(player, 'slime')).toBeNull();
-    expect(notifyEnemyDefeated(player, 'goblin')).toBeNull();
+    expect(notifyEnemyDefeated(player, 'slime')).not.toBeNull();
+    expect(notifyEnemyDefeated(player, 'goblin')).not.toBeNull();
     expect(player.questProgress['q2_first_steps']).toBe(2);
 
     const message = notifyEnemyDefeated(player, 'bat');
@@ -96,7 +96,7 @@ describe('notifyEnemyDefeated', () => {
     expect(player.questProgress['q4_goblin_hunt'] ?? 0).toBe(0);
 
     for (let i = 0; i < 4; i++) {
-      expect(notifyEnemyDefeated(player, 'goblin')).toBeNull();
+      expect(notifyEnemyDefeated(player, 'goblin')).not.toBeNull();
     }
     expect(player.questProgress['q4_goblin_hunt']).toBe(4);
 
@@ -202,7 +202,7 @@ describe('CLASS_CALLING_QUESTS chains', () => {
     expect(player.activeQuestId).toBe('warrior_pc2_convoy_defense');
 
     for (let i = 0; i < 5; i++) {
-      expect(notifyEnemyDefeated(player, 'dark_wolf')).toBeNull();
+      expect(notifyEnemyDefeated(player, 'dark_wolf')).not.toBeNull();
     }
     expect(notifyEnemyDefeated(player, 'dark_wolf')).not.toBeNull();
     expect(player.activeQuestId).toBe('warrior_pc3_first_line');
@@ -233,7 +233,7 @@ describe('CLASS_CALLING_QUESTS chains', () => {
     expect(player.activeQuestId).toBe('mage_pc3_seal_broken');
 
     for (let i = 0; i < 5; i++) {
-      expect(notifyEnemyDefeated(player, 'skeleton')).toBeNull();
+      expect(notifyEnemyDefeated(player, 'skeleton')).not.toBeNull();
     }
     const finalMessage = notifyEnemyDefeated(player, 'skeleton');
 
@@ -289,7 +289,7 @@ describe('AMARA_REVEAL_QUESTS chain', () => {
     expect(player.activeQuestId).toBe('amara_r3_proof');
 
     for (let i = 0; i < 3; i++) {
-      expect(notifyEnemyDefeated(player, 'skeleton')).toBeNull();
+      expect(notifyEnemyDefeated(player, 'skeleton')).not.toBeNull();
     }
     expect(notifyEnemyDefeated(player, 'skeleton')).not.toBeNull();
     expect(player.activeQuestId).toBe('amara_r4_confession');
@@ -348,7 +348,7 @@ describe('offerSideQuest', () => {
     expect(player.activeQuestId).toBe('relicario_r1_guardioes');
 
     for (let i = 0; i < 3; i++) {
-      expect(notifyEnemyDefeated(player, 'skeleton')).toBeNull();
+      expect(notifyEnemyDefeated(player, 'skeleton')).not.toBeNull();
     }
     expect(notifyEnemyDefeated(player, 'skeleton')).not.toBeNull();
     expect(player.activeQuestId).toBe('relicario_r2_heranca');
@@ -399,7 +399,7 @@ describe('offerSideQuest', () => {
     expect(player.activeQuestId).toBe('gareth_r1_memorial');
 
     for (let i = 0; i < 4; i++) {
-      expect(notifyEnemyDefeated(player, 'skeleton')).toBeNull();
+      expect(notifyEnemyDefeated(player, 'skeleton')).not.toBeNull();
     }
     const message = notifyEnemyDefeated(player, 'skeleton');
 
@@ -416,7 +416,7 @@ describe('offerSideQuest', () => {
     expect(player.activeQuestId).toBe('nilza_r1_barracas');
 
     for (let i = 0; i < 4; i++) {
-      expect(notifyEnemyDefeated(player, 'bandit')).toBeNull();
+      expect(notifyEnemyDefeated(player, 'bandit')).not.toBeNull();
     }
     const message = notifyEnemyDefeated(player, 'bandit');
 

@@ -742,7 +742,7 @@ body {
 }
 
 .tutorial-overlay {
-  position: absolute;
+  position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -750,6 +750,15 @@ body {
   text-align: center;
   min-width: 280px;
   max-width: min(480px, 90vw);
+  /* Built (and appended to uiRoot) before the HUD/quest-tracker elements —
+     without an explicit stacking order those later-appended elements would
+     paint over this "translucent" panel instead of behind it, letting their
+     text visibly ghost through the very overlay meant to explain them. The
+     box-shadow trick dims the whole viewport behind the panel without a
+     second backdrop element, and z-index guarantees it stacks above every
+     other HUD piece regardless of DOM append order. */
+  z-index: 50;
+  box-shadow: 0 0 0 9999px rgba(10, 8, 14, 0.65);
 }
 .tutorial-overlay h2 {
   margin: 0 0 14px;
