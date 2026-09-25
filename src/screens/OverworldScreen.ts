@@ -8,7 +8,7 @@ import { getGemById } from '../data/gems';
 import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
-import { dialogueLinesFor, NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
+import { dialogueLinesFor, getNpcById, NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
 import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, subAreaNameAt, type ZoneDefinition, type ZoneExit } from '../data/zones';
 import { dungeonsInHostZone, getDungeonById, type DungeonDefinition } from '../data/dungeons';
 import { rarityTier, rarityToHex } from '../config/rarity';
@@ -26,6 +26,7 @@ import { OverworldCombat } from '../systems/OverworldCombat';
 import { buildWalkabilityGrid, pathfindToClick } from '../systems/Pathfinding';
 import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
 import {
+  currentQuest,
   ensureAct3Started,
   ensureAmaraRevealStarted,
   ensureClassCallingStarted,
@@ -34,6 +35,7 @@ import {
   offerSideQuest,
   questTrackerText,
 } from '../systems/QuestSystem';
+import type { QuestDefinition } from '../data/quests';
 import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
 import { el, goToLazy } from '../ui/dom';
@@ -275,11 +277,17 @@ export class OverworldScreen implements Screen {
   private dialogueLineEl!: HTMLElement;
   private pauseOverlay!: HTMLElement;
   private questTrackerEl!: HTMLElement;
+  private questZoneHintEl!: HTMLElement;
+  /** Directional pointer toward the current quest's objective — see updateQuestIndicator. Hidden whenever there's nothing in the current zone to point at. */
+  private questArrowEl!: HTMLElement;
   private mountSectionEl!: HTMLElement;
   private shopOverlay!: HTMLElement;
   private shopTitleEl!: HTMLElement;
   private shopBodyEl!: HTMLElement;
   private shopGoldEl!: HTMLElement;
+  private tutorialOverlayEl: HTMLElement | null = null;
+  /** True while the first-time tutorial overlay is up — blocks movement/interaction the same way a dialogue box does, but dismisses on its own button rather than Escape. */
+  private showingTutorial = false;
 
   constructor(
     private game: Game,
@@ -401,6 +409,7 @@ export class OverworldScreen implements Screen {
       this.buildDungeonHud();
       this.buildDungeonCompleteOverlay();
     }
+    this.buildTutorialOverlay();
 
     window.addEventListener('keydown', this.keydownHandler);
     window.addEventListener('keyup', this.keyupHandler);
@@ -421,7 +430,7 @@ export class OverworldScreen implements Screen {
   update(dt: number): void {
     this.time += dt;
 
-    if (!this.paused && !this.dialogueNpc && !this.shopNpc) {
+    if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial) {
       this.updateMovement(dt);
       this.updateInteraction();
       this.combat.update(dt, this.avatar.position, this.camera);
@@ -445,6 +454,7 @@ export class OverworldScreen implements Screen {
     this.updateNpcLabels();
     this.updateDungeonPortals();
     this.updateMinimap();
+    this.updateQuestIndicator();
     this.refreshHud();
   }
 
@@ -470,6 +480,11 @@ export class OverworldScreen implements Screen {
 
   private onKeyDown(e: KeyboardEvent): void {
     this.heldKeys.add(e.key.toLowerCase());
+
+    if (this.showingTutorial) {
+      if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') this.dismissTutorial();
+      return;
+    }
 
     if (this.shopNpc) {
       if (e.key === 'Escape') this.closeShop();
@@ -501,7 +516,7 @@ export class OverworldScreen implements Screen {
 
   /** Shared by the [E] key and the on-screen interact-prompt tap — the only two ways to talk to an NPC or enter a dungeon, on keyboard and touch respectively. */
   private tryInteract(): void {
-    if (this.shopNpc || this.dialogueNpc || this.paused) return;
+    if (this.shopNpc || this.dialogueNpc || this.paused || this.showingTutorial) return;
     if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
     else if (this.nearbyDungeon) this.enterDungeon(this.nearbyDungeon);
   }
@@ -822,7 +837,7 @@ export class OverworldScreen implements Screen {
 
   /** Converts a click/tap on the minimap canvas into world tile coordinates — the exact inverse of renderMinimapBackground's world-to-pixel scale — and kicks off a pathfind there. Reads the canvas's own displayed (CSS) size via getBoundingClientRect rather than its fixed internal MINIMAP_SIZE resolution, so this still maps correctly once the phone breakpoints in style.css shrink the minimap down (110px/90px). */
   private handleMinimapClick(ev: MouseEvent): void {
-    if (!this.minimapBg || this.paused || this.dialogueNpc || this.shopNpc) return;
+    if (!this.minimapBg || this.paused || this.dialogueNpc || this.shopNpc || this.showingTutorial) return;
     const rect = this.minimapCanvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
     const fracX = (ev.clientX - rect.left) / rect.width;
@@ -1130,6 +1145,43 @@ export class OverworldScreen implements Screen {
     this.act3EpilogueEl.hidden = true;
 
     this.game.uiRoot.append(this.act3ChoiceEl, this.act3EpilogueEl);
+  }
+
+  // --- first-time tutorial overlay ---------------------------------------
+
+  /**
+   * A one-time "how to play" overlay for a brand-new character — gated on
+   * Player.hasSeenTutorial (persisted, so it never reappears once
+   * dismissed, on this or any later mount/reload). Styled like every other
+   * modal overlay in this file (.pause-overlay/.dungeon-complete-overlay);
+   * only ever built here, once, and just left hidden for good afterward on
+   * a character that has already seen it — cheap enough not to bother
+   * skipping the DOM build entirely.
+   */
+  private buildTutorialOverlay(): void {
+    const closeBtn = el('div', { className: 'btn primary', text: 'Entendi!', onClick: () => this.dismissTutorial() });
+    this.tutorialOverlayEl = el('div', { className: 'panel tutorial-overlay' }, [
+      el('h2', { text: 'Bem-vindo(a) a Ipêra' }),
+      el('ul', { className: 'tutorial-steps' }, [
+        el('li', { text: 'Mova-se com WASD, as setas do teclado, ou o joystick na tela.' }),
+        el('li', { text: 'Enfrente as criaturas pelo caminho para ganhar XP e subir de nível.' }),
+        el('li', { text: 'Siga a seta de missão para encontrar o alvo do seu objetivo atual.' }),
+        el('li', { text: 'Aproxime-se de um NPC e pressione E (ou toque nele) para conversar.' }),
+      ]),
+      closeBtn,
+    ]);
+    this.tutorialOverlayEl.hidden = this.player.hasSeenTutorial;
+    this.showingTutorial = !this.player.hasSeenTutorial;
+    this.game.uiRoot.append(this.tutorialOverlayEl);
+  }
+
+  private dismissTutorial(): void {
+    this.showingTutorial = false;
+    if (this.tutorialOverlayEl) this.tutorialOverlayEl.hidden = true;
+    if (!this.player.hasSeenTutorial) {
+      this.player.hasSeenTutorial = true;
+      saveGame(this.player);
+    }
   }
 
   // --- dungeon instances (fixed entrance portals + the run itself) -------
@@ -1809,6 +1861,18 @@ export class OverworldScreen implements Screen {
 
   private buildHud(): void {
     this.questTrackerEl = el('div', { className: 'quest-tracker', text: questTrackerText(this.player) });
+    // "Different zone" case for a talkTo objective (see updateQuestIndicator)
+    // — named separately from questTrackerEl so questTrackerText's own output
+    // (asserted on by tests/e2e/quest.spec.ts) never has to change shape.
+    this.questZoneHintEl = el('div', { className: 'quest-zone-hint', text: '' });
+    this.questZoneHintEl.hidden = true;
+    // Directional pointer toward the objective's world position — a single
+    // reused DOM element repositioned/rotated every frame (see
+    // updateQuestIndicator), same "one element, many frames" pattern as
+    // every other world-anchored label in this file (dungeon portals, NPC
+    // nameplates).
+    this.questArrowEl = el('div', { className: 'quest-arrow' });
+    this.questArrowEl.hidden = true;
 
     this.hpEl = el('div', { className: 'hud-hp' });
     this.mpEl = el('div', { className: 'hud-mp' });
@@ -1830,7 +1894,7 @@ export class OverworldScreen implements Screen {
     // button those screens were completely unreachable on mobile.
     const menuBtn = el('div', { className: 'menu-btn', text: '☰', onClick: () => this.togglePause() });
 
-    this.game.uiRoot.append(panel, hint, menuBtn, this.questTrackerEl, this.promptEl);
+    this.game.uiRoot.append(panel, hint, menuBtn, this.questTrackerEl, this.questZoneHintEl, this.questArrowEl, this.promptEl);
   }
 
   /** Keeps the always-visible HP/MP/gold readout live now that combat happens in-place instead of in a separate screen with its own status bar. */
@@ -1843,6 +1907,119 @@ export class OverworldScreen implements Screen {
 
   private refreshQuestTracker(): void {
     this.questTrackerEl.textContent = questTrackerText(this.player);
+  }
+
+  // --- quest-follow indicator --------------------------------------------
+
+  /**
+   * World-space (x,z) of the current quest's objective, if it has one THIS
+   * SCREEN can actually point at — null for a `reachLevel` objective (no
+   * location at all), a `talkTo` NPC standing in a different zone (see
+   * questZoneHint for that case instead), or a `defeat` objective with
+   * nothing currently alive to match. `talkTo` reads the NPC's own fixed
+   * tile (data/npcs.ts); `defeat` reuses the exact live monster positions
+   * the minimap's own marker layer already tracks (OverworldCombat).
+   */
+  private questIndicatorTarget(quest: QuestDefinition | null): { x: number; z: number } | null {
+    if (!quest) return null;
+    const obj = quest.objective;
+    if (obj.kind === 'reachLevel') return null;
+    if (obj.kind === 'talkTo') {
+      const npc = getNpcById(obj.targetId!);
+      if (npc.zoneId !== this.player.zoneId) return null;
+      const pos = tileCenterWorld(npc.mapX, npc.mapY);
+      return { x: pos.x, z: pos.z };
+    }
+    return this.combat.nearestAliveMonsterPosition({ x: this.avatar.position.x, z: this.avatar.position.z }, obj.targetId);
+  }
+
+  /** "Go to this zone" text for a `talkTo` objective whose NPC lives outside the player's current zone — the one case questIndicatorTarget can't offer a world position for. */
+  private questIndicatorZoneHint(quest: QuestDefinition | null): string | null {
+    if (!quest || quest.objective.kind !== 'talkTo') return null;
+    const npc = getNpcById(quest.objective.targetId!);
+    if (npc.zoneId === this.player.zoneId) return null;
+    return `Siga para: ${getZoneById(npc.zoneId).name}`;
+  }
+
+  /**
+   * Keeps the quest-follow arrow/hint live — called every frame (position
+   * and rotation depend on the avatar's current position, which changes
+   * continuously). Cheap: at most one nearest-monster scan reusing
+   * OverworldCombat's own live list, no scene traversal.
+   *
+   * The arrow's bearing is computed analytically from the fixed camera yaw
+   * (CAMERA_YAW never rotates with the avatar — see its own doc comment)
+   * rather than by projecting through THREE.Camera, so it stays well-defined
+   * even for a target far outside the frustum. Visibility (to decide
+   * "highlight in place" vs "clamp to the edge") still uses the same
+   * project()-based check every other world-anchored label in this file
+   * uses (updateNpcLabels/updateDungeonPortals), so "on screen" means the
+   * same thing everywhere.
+   */
+  private updateQuestIndicator(): void {
+    const quest = currentQuest(this.player);
+    const zoneHint = this.questIndicatorZoneHint(quest);
+    this.questZoneHintEl.hidden = !zoneHint;
+    if (zoneHint) this.questZoneHintEl.textContent = zoneHint;
+
+    const target = this.questIndicatorTarget(quest);
+    if (!target) {
+      this.questArrowEl.hidden = true;
+      return;
+    }
+
+    const dx = target.x - this.avatar.position.x;
+    const dz = target.z - this.avatar.position.z;
+    if (Math.hypot(dx, dz) < 0.05) {
+      // Standing right on top of it — nothing useful to point at.
+      this.questArrowEl.hidden = true;
+      return;
+    }
+
+    const forward = { x: Math.sin(CAMERA_YAW), z: Math.cos(CAMERA_YAW) };
+    const right = { x: -Math.cos(CAMERA_YAW), z: Math.sin(CAMERA_YAW) };
+    const compForward = dx * forward.x + dz * forward.z;
+    const compRight = dx * right.x + dz * right.z;
+    // Screen-space bearing: +compForward reads as "up" on screen (Y grows
+    // downward, hence the negation), +compRight as "right" — the exact
+    // inverse of computeInputAxis's own forward/right recombination.
+    const screenDX = compRight;
+    const screenDY = -compForward;
+    const bearingLen = Math.hypot(screenDX, screenDY) || 1;
+    const dirX = screenDX / bearingLen;
+    const dirY = screenDY / bearingLen;
+    // 0deg = pointing up, matching the arrow glyph's own neutral orientation.
+    const angleDeg = (Math.atan2(dirX, -dirY) * 180) / Math.PI;
+
+    this.questArrowEl.hidden = false;
+
+    const anchor = new THREE.Vector3(target.x, 1.4, target.z);
+    const proj = anchor.project(this.camera);
+    const onScreen = proj.z < 1 && proj.x >= -1 && proj.x <= 1 && proj.y >= -1 && proj.y <= 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    if (onScreen) {
+      const sx = (proj.x * 0.5 + 0.5) * w;
+      const sy = (-proj.y * 0.5 + 0.5) * h;
+      this.questArrowEl.classList.add('on-target');
+      this.questArrowEl.style.left = `${sx}px`;
+      this.questArrowEl.style.top = `${sy}px`;
+      this.questArrowEl.style.transform = 'translate(-50%, -50%) rotate(0deg)';
+    } else {
+      this.questArrowEl.classList.remove('on-target');
+      const margin = 42;
+      const halfW = w / 2 - margin;
+      const halfH = h / 2 - margin;
+      const scaleX = dirX !== 0 ? halfW / Math.abs(dirX) : Infinity;
+      const scaleY = dirY !== 0 ? halfH / Math.abs(dirY) : Infinity;
+      const scale = Math.min(scaleX, scaleY);
+      const sx = w / 2 + dirX * scale;
+      const sy = h / 2 + dirY * scale;
+      this.questArrowEl.style.left = `${sx}px`;
+      this.questArrowEl.style.top = `${sy}px`;
+      this.questArrowEl.style.transform = `translate(-50%, -50%) rotate(${angleDeg}deg)`;
+    }
   }
 
   // --- minimap -----------------------------------------------------------
@@ -2107,6 +2284,17 @@ export class OverworldScreen implements Screen {
         });
       },
     });
+    const questLogBtn = el('div', {
+      className: 'btn',
+      text: 'Missões',
+      onClick: () => {
+        saveGame(this.player);
+        goToLazy(this.game, async () => {
+          const { QuestLogScreen } = await import('./QuestLogScreen');
+          return new QuestLogScreen(this.game, this.player);
+        });
+      },
+    });
     const exitBtn = el('div', {
       className: 'btn',
       text: 'Salvar e Sair ao Menu',
@@ -2123,7 +2311,7 @@ export class OverworldScreen implements Screen {
 
     this.pauseOverlay = el('div', { className: 'panel pause-overlay' }, [
       el('h2', { text: 'Pausado' }),
-      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn]),
+      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn, questLogBtn]),
       el('div', { className: 'pause-divider' }),
       this.mountSectionEl,
       el('div', { className: 'pause-divider' }),
@@ -2155,6 +2343,7 @@ export class OverworldScreen implements Screen {
   }
 
   private togglePause(): void {
+    if (this.showingTutorial) return;
     this.paused = !this.paused;
     this.pauseOverlay.hidden = !this.paused;
     if (this.paused) saveGame(this.player);

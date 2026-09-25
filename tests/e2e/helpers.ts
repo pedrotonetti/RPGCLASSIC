@@ -63,6 +63,13 @@ export function buildSave(overrides: Partial<PlayerSaveData> & { classId: string
     completedQuestIds: [],
     activeQuestId: null,
     questProgress: {},
+    // A seeded save simulates a character already in progress, not a
+    // brand-new one — real character creation is what exercises the actual
+    // first-time state (see OverworldScreen's tutorial overlay, gated on
+    // this exact field). Without this, every seeded save would show that
+    // overlay on mount and block movement input, which every other helper
+    // here (holdKey, etc.) relies on working immediately.
+    hasSeenTutorial: true,
     ...overrides,
   };
 }

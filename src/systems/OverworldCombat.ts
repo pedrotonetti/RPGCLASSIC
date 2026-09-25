@@ -289,6 +289,30 @@ export class OverworldCombat {
     return this.monsters.filter((m) => m.state !== 'dead').map((m) => ({ x: m.model.position.x, z: m.model.position.z }));
   }
 
+  /**
+   * World-space (x,z) of the nearest currently-alive monster matching
+   * `enemyId` (any alive monster if omitted), or null if none exist — read
+   * by OverworldScreen's quest-follow indicator to point at a concrete
+   * "defeat" objective target. Reuses the same live `monsters` list
+   * `aliveMonsterPositions` already tracks; equally cheap.
+   */
+  nearestAliveMonsterPosition(from: { x: number; z: number }, enemyId?: string): { x: number; z: number } | null {
+    let best: { x: number; z: number } | null = null;
+    let bestDistSq = Infinity;
+    for (const m of this.monsters) {
+      if (m.state === 'dead') continue;
+      if (enemyId && m.enemy.definitionId !== enemyId) continue;
+      const dx = m.model.position.x - from.x;
+      const dz = m.model.position.z - from.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        best = { x: m.model.position.x, z: m.model.position.z };
+      }
+    }
+    return best;
+  }
+
   /** Advances monster AI, the active fight (if any), and refreshes all combat HUD elements. Call every frame. */
   update(dt: number, playerPos: THREE.Vector3, camera: THREE.Camera): void {
     this.clock += dt;
