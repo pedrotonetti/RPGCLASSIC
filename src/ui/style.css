@@ -661,6 +661,44 @@ body {
   border-radius: 4px;
 }
 
+/* Tier-choice panel at an already-cleared dungeon's portal — same floating,
+   world-anchored spirit as .dungeon-portal-label (see updateDungeonPortals),
+   just centered like the game's other small modal choices (.act3-choice-overlay)
+   since it needs room for several stacked options. */
+.dungeon-tier-picker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 16px 20px;
+  text-align: center;
+  min-width: 220px;
+  max-width: 90vw;
+}
+.dungeon-tier-picker .dname {
+  font-weight: bold;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.tier-picker-row {
+  padding: 8px 10px;
+  margin: 4px 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.tier-picker-row:hover {
+  background: rgba(242, 193, 78, 0.12);
+}
+.tier-picker-close {
+  color: var(--text-dim);
+}
+.tier-picker-cap {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 4px 0;
+}
+
 .dungeon-complete-overlay {
   position: absolute;
   top: 50%;
@@ -1234,6 +1272,33 @@ body {
 .rank-divider {
   border-top: 1px solid var(--panel-border);
   margin: 6px 0;
+}
+
+/* Endgame-loop readout: highest repeatable-dungeon tier cleared per instance
+   (see systems/DungeonTierSystem.ts) — kept small, right below the rival
+   list, instead of a whole separate screen. */
+.dungeon-tiers-panel {
+  width: min(720px, 92vw);
+  padding: 10px 16px;
+  margin-bottom: 12px;
+}
+.dungeon-tiers-panel h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  color: var(--accent);
+}
+.dungeon-tier-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 4px;
+  font-size: 15px;
+}
+.dungeon-tier-value {
+  color: var(--text-dim);
+}
+.dungeon-tier-value.maxed {
+  color: var(--accent);
 }
 
 /* --- Inventory -------------------------------------------------- */
