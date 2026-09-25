@@ -5,6 +5,7 @@ import type { CharacterClassDefinition, EquipmentInstance, EquipmentSlot, SkillD
 import { computeEquipmentBonus, createStarterItem, getEquipmentTemplate } from '../data/equipment';
 import { getItemById } from '../data/items';
 import { computeSkillLevelStats, skillPointsForLevel, ultimateLevelForCharacter } from '../systems/skillMath';
+import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder } from '../systems/statusEffects';
 import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, startZoneForClass } from '../data/zones';
 import { computeStatsAtLevel } from './statMath';
 
@@ -40,7 +41,7 @@ export type Act3Ending = 'corte' | 'cura' | 'abraco';
 
 const MAX_BAG_SIZE = 40;
 
-export class Player {
+export class Player implements StatusEffectHolder {
   name: string;
   classId: string;
   level = 1;
@@ -67,6 +68,8 @@ export class Player {
   unlockedMounts: string[];
   activeMountId: string | null;
   act3Ending: Act3Ending | null;
+  /** Active bleed/burn/slow afflictions — never persisted (battle-scoped only; `OverworldCombat` clears it when a fight ends). */
+  statusEffects: ActiveStatusEffect[] = [];
 
   private constructor(name: string, classId: string, data?: Partial<PlayerSaveData>) {
     this.name = name;
@@ -132,6 +135,11 @@ export class Player {
       }
     }
     return withGear;
+  }
+
+  /** <1 while `slow` is active — scales how fast this player's own cooldowns recover in `CombatEngine.tick` (their "attack speed" while afflicted). */
+  get speedMultiplier(): number {
+    return statusSpeedMultiplier(this);
   }
 
   get mpRegenPerSecond(): number {

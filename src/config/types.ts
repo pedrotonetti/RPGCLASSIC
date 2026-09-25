@@ -12,6 +12,16 @@ export interface Stats {
 export type SkillTarget = 'enemy' | 'allEnemies' | 'self';
 export type SkillKind = 'physical' | 'magical' | 'heal' | 'buff';
 
+/** A real, ongoing affliction a skill can inflict on a hit target — see `systems/statusEffects.ts` for the mechanics. */
+export type StatusEffectType = 'bleed' | 'burn' | 'slow';
+
+/** Carried on a `SkillDefinition` that can inflict a status effect on a successful damaging hit. */
+export interface StatusInflict {
+  type: StatusEffectType;
+  /** 0-1 chance to apply per hit target, rolled independently for `allEnemies` skills. */
+  chance: number;
+}
+
 /**
  * A skill in a class's tree. Regular skills level from 1 to `maxLevel` (10)
  * by spending skill points. The one skill per class with `isUltimate: true`
@@ -44,6 +54,8 @@ export interface SkillDefinition {
   minCooldown: number;
   /** For `kind: 'buff'` skills: which stat the temporary buff multiplies. */
   buffStat?: keyof Stats;
+  /** A status effect this skill can inflict on a hit target (physical/magical skills only — never buff/heal). */
+  inflicts?: StatusInflict;
 }
 
 export interface SkillLevelStats {

@@ -269,3 +269,98 @@ describe('CombatEngine loot scaling by enemy tier', () => {
     expect(high.avgItemLevel).toBeGreaterThan(low.avgItemLevel + 3);
   });
 });
+
+describe('CombatEngine status effects', () => {
+  it('a skill with `inflicts` applies a status effect on a successful hit, which then deals damage over time via tick()', () => {
+    // 0.45 clears the miss check (capped at 0.25) and the crit check (capped
+    // at 0.5) without triggering either, while still being under
+    // warrior_charge's own 0.5 inflict chance — so the bleed always lands.
+    mockRandom(0.45);
+    const player = freshPlayer('warrior');
+    player.currentMp = 100;
+    const enemy = new Enemy('slime');
+    enemy.currentHp = 1000; // stays alive through the DoT ticks that follow
+    const engine = new CombatEngine(player, [enemy]);
+
+    const result = engine.useSkill('warrior_charge', 0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.events.some((e) => e.kind === 'statusApplied' && e.statusType === 'bleed')).toBe(true);
+    expect(enemy.statusEffects.some((s) => s.type === 'bleed')).toBe(true);
+
+    const hpBeforeTick = enemy.currentHp;
+    const tickEvents = engine.tick(1.0); // one full bleed tick interval
+    expect(enemy.currentHp).toBeLessThan(hpBeforeTick);
+    expect(tickEvents.some((e) => e.kind === 'statusTick' && e.statusType === 'bleed')).toBe(true);
+  });
+
+  it('bleed never duplicates into a second instance, and falls off entirely once its duration elapses', () => {
+    mockRandom(0.45);
+    const player = freshPlayer('warrior');
+    player.currentMp = 100;
+    const enemy = new Enemy('slime');
+    enemy.currentHp = 1000;
+    const engine = new CombatEngine(player, [enemy]);
+
+    engine.useSkill('warrior_charge', 0);
+    expect(enemy.statusEffects.filter((s) => s.type === 'bleed')).toHaveLength(1);
+
+    engine.tick(20); // comfortably past bleed's own duration (well past warrior_charge's own cooldown too)
+    expect(enemy.statusEffects.some((s) => s.type === 'bleed')).toBe(false);
+  });
+
+  it('slow scales down an afflicted enemy\'s action timer countdown (attack speed) and its own speedMultiplier reads <1', () => {
+    mockRandom(0.45); // under mage_ice_lance's 0.6 inflict chance, same as above
+    const player = freshPlayer('mage');
+    player.currentMp = 100;
+    const enemy = new Enemy('slime');
+    enemy.currentHp = 1000; // stays alive through the hit so slow actually gets applied (not skipped by an outright kill)
+    const engine = new CombatEngine(player, [enemy]);
+
+    const result = engine.useSkill('mage_ice_lance', 0);
+    expect(result.ok).toBe(true);
+    expect(enemy.statusEffects.some((s) => s.type === 'slow')).toBe(true);
+    expect(enemy.speedMultiplier).toBeLessThan(1);
+
+    const before = enemy.actionTimer;
+    engine.tick(1.0);
+    const slowedDelta = before - enemy.actionTimer;
+    expect(slowedDelta).toBeCloseTo(1.0 * enemy.speedMultiplier, 5);
+    expect(slowedDelta).toBeLessThan(1.0); // strictly slower than an unaffected dt=1 countdown
+  });
+
+  it('a status tick that finishes off its target still resolves victory and emits "defeated"', () => {
+    mockRandom(0.45);
+    const player = freshPlayer('warrior');
+    player.currentMp = 100;
+    const enemy = new Enemy('slime');
+    enemy.currentHp = 1000; // stays alive through the initial hit so bleed actually gets applied
+    const engine = new CombatEngine(player, [enemy]);
+
+    engine.useSkill('warrior_charge', 0);
+    enemy.currentHp = 1; // now let the next bleed tick alone finish it off
+    const events = engine.tick(1.0);
+
+    expect(enemy.isAlive()).toBe(false);
+    expect(events.some((e) => e.kind === 'defeated')).toBe(true);
+    expect(engine.outcome).toBe('victory');
+  });
+
+  it('an enemy skill with `inflicts` can apply a status effect back onto the player, which then ticks down their HP', () => {
+    mockRandom(0.45); // under giant_spider\'s spider_venom 0.5 inflict chance
+    const player = freshPlayer('warrior');
+    const enemy = new Enemy('giant_spider');
+    enemy.actionTimer = 0;
+    enemy.currentMp = enemy.stats.maxMp; // affords spider_venom's own mana cost
+    const engine = new CombatEngine(player, [enemy]);
+
+    engine.tick(0.1); // begins the telegraphed attack
+    engine.tick(1.0); // resolves it
+
+    expect(player.statusEffects.some((s) => s.type === 'bleed')).toBe(true);
+    const hpBeforeTick = player.currentHp;
+    const tickEvents = engine.tick(1.0);
+    expect(player.currentHp).toBeLessThan(hpBeforeTick);
+    expect(tickEvents.some((e) => e.kind === 'statusTick' && e.targetIsPlayer && e.statusType === 'bleed')).toBe(true);
+  });
+});

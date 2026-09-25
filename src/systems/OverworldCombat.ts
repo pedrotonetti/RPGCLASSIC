@@ -9,9 +9,11 @@ import type { Player } from '../entities/Player';
 import { getItemById, ITEM_DEFINITIONS } from '../data/items';
 import { buildEnemyModel } from '../render/characterModel';
 import type { CharacterAnimatorLike, ActionName } from '../render/animation';
+import { VfxManager } from '../render/vfx';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from './CombatSystem';
 import { audio } from './AudioSystem';
 import { computeSkillLevelStats } from './skillMath';
+import { activeStatusTypes } from './statusEffects';
 import { pickEncounterEnemyIds } from './EncounterSystem';
 import { notifyEnemyDefeated, notifyLevelChanged } from './QuestSystem';
 import { saveGame } from './SaveSystem';
@@ -132,13 +134,23 @@ export class OverworldCombat {
 
   private pendingTargetPick: ((monster: WorldMonster) => void) | null = null;
 
+  /** Status-effect overlays + shared hit/impact and per-class ultimate bursts — see `render/vfx.ts`. */
+  private vfx: VfxManager;
+  /** A floating anchor (no visible mesh of its own) tracking the player's world position every frame — lets bleed/burn/slow show on the PLAYER too (see `render/vfx.ts`'s own doc comment on reciprocated afflictions) without this module needing a reference to the player's actual avatar model. */
+  private playerVfxAnchor: THREE.Object3D;
+  private playerWorldPos = new THREE.Vector3();
+
   constructor(
     private game: Game,
     private player: Player,
     private scene: THREE.Scene,
     private animator: CharacterAnimatorLike,
     private onDefeat: () => void,
-  ) {}
+  ) {
+    this.vfx = new VfxManager(this.scene);
+    this.playerVfxAnchor = new THREE.Object3D();
+    this.scene.add(this.playerVfxAnchor);
+  }
 
   get inCombat(): boolean {
     return this.engine !== null;
@@ -292,6 +304,8 @@ export class OverworldCombat {
   /** Advances monster AI, the active fight (if any), and refreshes all combat HUD elements. Call every frame. */
   update(dt: number, playerPos: THREE.Vector3, camera: THREE.Camera): void {
     this.clock += dt;
+    this.playerWorldPos.copy(playerPos);
+    this.playerVfxAnchor.position.set(playerPos.x, playerPos.y + 1.1, playerPos.z);
 
     for (const m of this.monsters) {
       this.updateMonster(m, dt, playerPos);
@@ -312,14 +326,25 @@ export class OverworldCombat {
         this.processEvents(events);
         this.refreshHotbarCooldowns();
         this.refreshCombo();
+        this.refreshStatusOverlays();
         if (this.engine.outcome !== 'ongoing') this.endEngagement(this.engine.outcome);
       }
     }
+
+    this.vfx.update(dt, this.clock);
 
     if (this.messageHideAt > 0 && this.clock >= this.messageHideAt) {
       this.messageEl.hidden = true;
       this.messageHideAt = 0;
     }
+  }
+
+  /** Keeps every engaged monster's and the player's own bleed/burn/slow overlay in sync with their current status effects — see `render/vfx.ts`. */
+  private refreshStatusOverlays(): void {
+    for (const m of this.engagedMonsters) {
+      this.vfx.syncStatusOverlay(m.model, activeStatusTypes(m.enemy), { radius: 0.3 * m.baseScale, height: 1.0 * m.baseScale });
+    }
+    this.vfx.syncStatusOverlay(this.playerVfxAnchor, activeStatusTypes(this.player), { radius: 0.28, height: 0.9 });
   }
 
   private updateMonster(m: WorldMonster, dt: number, playerPos: THREE.Vector3): void {
@@ -475,8 +500,17 @@ export class OverworldCombat {
         // Wasn't killed (fight ended some other way) — let it resume noticing the player normally.
         m.state = 'chase';
       }
+      // Status effects are only ever ticked/expired by the (now-discarded)
+      // CombatEngine — clearing them here (rather than leaving them frozen
+      // forever on a monster that survives the fight, e.g. one the player
+      // fled from mid-bleed) and explicitly dropping its VFX overlay too,
+      // instead of waiting for a re-engagement that may never come.
+      m.enemy.statusEffects = [];
+      this.vfx.syncStatusOverlay(m.model, []);
     }
     this.engagedMonsters = [];
+    this.player.statusEffects = [];
+    this.vfx.syncStatusOverlay(this.playerVfxAnchor, []);
     this.engine = null;
     this.hotbar = [];
     this.itemHotbar = [];
@@ -611,6 +645,7 @@ export class OverworldCombat {
 
   private tryUseSkill(skillId: string, targetIndex?: number): void {
     if (!this.engine) return;
+    const skill = this.hotbar.find((h) => h.skill.id === skillId)?.skill ?? null;
     const result = this.engine.useSkill(skillId, targetIndex);
     if (!result.ok) {
       if (result.reason === 'cooldown') this.showMessage('Habilidade ainda em recarga...', 1200);
@@ -618,10 +653,11 @@ export class OverworldCombat {
       return;
     }
     const action = this.actionForSkill(skillId);
-    this.animator.play(action);
+    this.animator.play(action, undefined, { isUltimate: skill?.isUltimate });
     if (action === 'cast') audio.castSpell();
     else audio.attackSwing();
     this.processEvents(result.events);
+    if (skill?.isUltimate) this.playUltimateVfx(skill, targetIndex);
     this.refreshHotbarCooldowns();
   }
 
@@ -631,6 +667,21 @@ export class OverworldCombat {
     if (skill.kind === 'magical' || skill.kind === 'heal') return 'cast';
     if (skill.kind === 'buff') return 'defend';
     return 'attack';
+  }
+
+  /** Plays that class's own bespoke ultimate burst (see `render/vfx.ts`'s `ULTIMATE_BUILDERS`) at every position the ultimate actually connected with. */
+  private playUltimateVfx(skill: SkillDefinition, targetIndex?: number): void {
+    let positions: THREE.Vector3[];
+    if (skill.target === 'self') {
+      positions = [this.playerWorldPos.clone()];
+    } else if (skill.target === 'allEnemies') {
+      positions = this.engagedMonsters.map((m) => m.model.position.clone());
+    } else {
+      const enemy = this.engine && targetIndex !== undefined ? this.engine.enemies[targetIndex] : undefined;
+      const m = enemy ? this.monsterForEnemy(enemy) : undefined;
+      positions = m ? [m.model.position.clone()] : [];
+    }
+    if (positions.length > 0) this.vfx.spawnUltimateVfx(this.player.classId, positions);
   }
 
   private onItemClicked(itemId: string): void {
@@ -708,6 +759,9 @@ export class OverworldCombat {
           if (event.targetHpAfter !== undefined) this.setMonsterHp(m, event.targetHpAfter);
           this.triggerFlash(enemy);
           this.popupForEvent(event, this.labelAnchor(m));
+          if (event.kind === 'damage' || event.kind === 'statusApplied' || event.kind === 'statusTick') {
+            this.vfx.spawnHitImpact(m.model.position, event.skillKind ?? 'physical', event.statusType);
+          }
         }
         if (event.kind === 'damage') audio.hitImpact(event.crit);
         if (event.kind === 'defeated' && m) {
@@ -722,6 +776,9 @@ export class OverworldCombat {
           } else if (event.mitigation !== 'dodge') {
             audio.hitImpact(event.crit);
           }
+        }
+        if (event.kind === 'damage' || event.kind === 'heal' || event.kind === 'buff' || event.kind === 'statusApplied' || event.kind === 'statusTick') {
+          this.vfx.spawnHitImpact(this.playerWorldPos, event.skillKind ?? 'physical', event.statusType);
         }
       }
 

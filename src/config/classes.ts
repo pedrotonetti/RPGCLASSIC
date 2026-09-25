@@ -20,9 +20,9 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
     basicAttack: makeBasicAttack('physical'),
     skills: [
       makeSkill({ id: 'warrior_power_strike', name: 'Golpe Poderoso', description: 'Um ataque físico devastador em um inimigo.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 4, basePower: 1.6 }),
-      makeSkill({ id: 'warrior_charge', name: 'Investida Brutal', description: 'Avança com força total contra o alvo.', kind: 'physical', target: 'enemy', unlockLevel: 5, baseCooldown: 8, baseCost: 7, basePower: 1.9 }),
+      makeSkill({ id: 'warrior_charge', name: 'Investida Brutal', description: 'Avança com força total contra o alvo, abrindo um corte profundo.', kind: 'physical', target: 'enemy', unlockLevel: 5, baseCooldown: 8, baseCost: 7, basePower: 1.9, inflicts: { type: 'bleed', chance: 0.5 } }),
       makeSkill({ id: 'warrior_war_cry', name: 'Grito de Guerra', description: 'Eleva sua fúria, aumentando o dano dos próximos golpes.', kind: 'buff', target: 'self', unlockLevel: 10, baseCooldown: 16, baseCost: 11, basePower: 1.2, buffStat: 'attack' }),
-      makeSkill({ id: 'warrior_sweep', name: 'Fúria Implacável', description: 'Um golpe giratório que acerta todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 15, baseCooldown: 14, baseCost: 15, basePower: 1.3 }),
+      makeSkill({ id: 'warrior_sweep', name: 'Fúria Implacável', description: 'Um golpe giratório de machado que acerta todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 15, baseCooldown: 14, baseCost: 15, basePower: 1.3, inflicts: { type: 'bleed', chance: 0.35 } }),
       makeUltimate({ id: 'warrior_ultimate', name: 'Golpe do Titã', description: 'Concentra toda sua força em um golpe devastador.', kind: 'physical', target: 'enemy', unlockLevel: 20, baseCooldown: 25, baseCost: 20, basePower: 4.0 }),
     ],
   },
@@ -36,11 +36,11 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
     growth: { maxHp: 3, maxMp: 5, attack: 0, magicAttack: 3, defense: 1, magicDefense: 2, speed: 1, luck: 1 },
     basicAttack: makeBasicAttack('magical'),
     skills: [
-      makeSkill({ id: 'mage_fireball', name: 'Bola de Fogo', description: 'Lança uma bola de fogo que causa dano mágico.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.8 }),
-      makeSkill({ id: 'mage_ice_lance', name: 'Lança de Gelo', description: 'Uma lâmina de gelo perfurante.', kind: 'magical', target: 'enemy', unlockLevel: 5, baseCooldown: 7, baseCost: 14, basePower: 2.0 }),
-      makeSkill({ id: 'mage_blizzard', name: 'Nevasca', description: 'Congela todos os inimigos com dano mágico em área.', kind: 'magical', target: 'allEnemies', unlockLevel: 10, baseCooldown: 12, baseCost: 20, basePower: 1.3 }),
+      makeSkill({ id: 'mage_fireball', name: 'Bola de Fogo', description: 'Lança uma bola de fogo que causa dano mágico e queima o alvo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.8, inflicts: { type: 'burn', chance: 0.6 } }),
+      makeSkill({ id: 'mage_ice_lance', name: 'Lança de Gelo', description: 'Uma lâmina de gelo perfurante que retarda o alvo.', kind: 'magical', target: 'enemy', unlockLevel: 5, baseCooldown: 7, baseCost: 14, basePower: 2.0, inflicts: { type: 'slow', chance: 0.6 } }),
+      makeSkill({ id: 'mage_blizzard', name: 'Nevasca', description: 'Congela todos os inimigos com dano mágico em área, retardando-os.', kind: 'magical', target: 'allEnemies', unlockLevel: 10, baseCooldown: 12, baseCost: 20, basePower: 1.3, inflicts: { type: 'slow', chance: 0.5 } }),
       makeSkill({ id: 'mage_arcane_shield', name: 'Escudo Arcano', description: 'Envolve-se em energia que reduz o dano recebido.', kind: 'buff', target: 'self', unlockLevel: 15, baseCooldown: 18, baseCost: 16, basePower: 1.5, buffStat: 'defense' }),
-      makeUltimate({ id: 'mage_ultimate', name: 'Meteoro Arcano', description: 'Invoca um meteoro que arrasa todos os inimigos.', kind: 'magical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 28, baseCost: 45, basePower: 2.6 }),
+      makeUltimate({ id: 'mage_ultimate', name: 'Meteoro Arcano', description: 'Invoca um meteoro flamejante que arrasa e queima todos os inimigos.', kind: 'magical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 28, baseCost: 45, basePower: 2.6, inflicts: { type: 'burn', chance: 0.55 } }),
     ],
   },
   {
@@ -54,10 +54,10 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
     basicAttack: makeBasicAttack('physical'),
     skills: [
       makeSkill({ id: 'archer_precise_shot', name: 'Tiro Certeiro', description: 'Uma flecha certeira com alta chance de acerto crítico.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 4, baseCost: 8, basePower: 1.7 }),
-      makeSkill({ id: 'archer_piercing_shot', name: 'Tiro Perfurante', description: 'Atravessa a armadura do alvo.', kind: 'physical', target: 'enemy', unlockLevel: 5, baseCooldown: 7, baseCost: 12, basePower: 2.0 }),
+      makeSkill({ id: 'archer_piercing_shot', name: 'Tiro Perfurante', description: 'Atravessa a armadura do alvo, abrindo um ferimento que sangra.', kind: 'physical', target: 'enemy', unlockLevel: 5, baseCooldown: 7, baseCost: 12, basePower: 2.0, inflicts: { type: 'bleed', chance: 0.55 } }),
       makeSkill({ id: 'archer_arrow_rain', name: 'Chuva de Flechas', description: 'Dispara flechas contra todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 10, baseCooldown: 11, baseCost: 18, basePower: 1.2 }),
       makeSkill({ id: 'archer_agile_step', name: 'Passo Ágil', description: 'Aumenta sua velocidade e precisão por um tempo.', kind: 'buff', target: 'self', unlockLevel: 15, baseCooldown: 15, baseCost: 14, basePower: 1.4, buffStat: 'speed' }),
-      makeUltimate({ id: 'archer_ultimate', name: 'Tempestade de Flechas', description: 'Um dilúvio de flechas cobre todo o campo de batalha.', kind: 'physical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 24, baseCost: 38, basePower: 2.4 }),
+      makeUltimate({ id: 'archer_ultimate', name: 'Tempestade de Flechas', description: 'Um dilúvio de flechas cobre todo o campo de batalha, deixando feridas abertas.', kind: 'physical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 24, baseCost: 38, basePower: 2.4, inflicts: { type: 'bleed', chance: 0.4 } }),
     ],
   },
   {
@@ -91,7 +91,7 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
       makeSkill({ id: 'paladin_divine_shield', name: 'Escudo Divino', description: 'Uma barreira sagrada reduz o dano recebido.', kind: 'buff', target: 'self', unlockLevel: 5, baseCooldown: 10, baseCost: 14, basePower: 1.6, buffStat: 'defense' }),
       makeSkill({ id: 'paladin_judgement_hammer', name: 'Martelo da Justiça', description: 'Um golpe pesado com energia sagrada.', kind: 'physical', target: 'enemy', unlockLevel: 10, baseCooldown: 9, baseCost: 16, basePower: 2.1 }),
       makeSkill({ id: 'paladin_aura', name: 'Aura de Proteção', description: 'Uma aura sagrada restaura parte da sua vida.', kind: 'heal', target: 'self', unlockLevel: 15, baseCooldown: 16, baseCost: 18, basePower: 2.0 }),
-      makeUltimate({ id: 'paladin_ultimate', name: 'Julgamento Celestial', description: 'Convoca a fúria dos céus sobre todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 26, baseCost: 42, basePower: 2.8 }),
+      makeUltimate({ id: 'paladin_ultimate', name: 'Julgamento Celestial', description: 'Convoca fogo sagrado dos céus sobre todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 26, baseCost: 42, basePower: 2.8, inflicts: { type: 'burn', chance: 0.45 } }),
     ],
   },
   {
@@ -104,11 +104,11 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
     growth: { maxHp: 3, maxMp: 2, attack: 3, magicAttack: 0, defense: 1, magicDefense: 1, speed: 2, luck: 2 },
     basicAttack: makeBasicAttack('physical'),
     skills: [
-      makeSkill({ id: 'assassin_quick_stab', name: 'Facada Rápida', description: 'Um golpe rápido e certeiro.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 3.5, baseCost: 8, basePower: 1.5 }),
-      makeSkill({ id: 'assassin_backstab', name: 'Golpe Traiçoeiro', description: 'Ataca um ponto vulnerável do inimigo.', kind: 'physical', target: 'enemy', unlockLevel: 5, baseCooldown: 6, baseCost: 12, basePower: 2.1 }),
+      makeSkill({ id: 'assassin_quick_stab', name: 'Facada Rápida', description: 'Um golpe rápido e certeiro que corta fundo.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 3.5, baseCost: 8, basePower: 1.5, inflicts: { type: 'bleed', chance: 0.4 } }),
+      makeSkill({ id: 'assassin_backstab', name: 'Golpe Traiçoeiro', description: 'Ataca um ponto vulnerável do inimigo, abrindo um corte grave.', kind: 'physical', target: 'enemy', unlockLevel: 5, baseCooldown: 6, baseCost: 12, basePower: 2.1, inflicts: { type: 'bleed', chance: 0.65 } }),
       makeSkill({ id: 'assassin_shadow_step', name: 'Passos das Sombras', description: 'Move-se pelas sombras, ganhando velocidade.', kind: 'buff', target: 'self', unlockLevel: 10, baseCooldown: 14, baseCost: 14, basePower: 1.6, buffStat: 'speed' }),
-      makeSkill({ id: 'assassin_blade_dance', name: 'Dança das Lâminas', description: 'Uma sequência de cortes contra todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 15, baseCooldown: 12, baseCost: 20, basePower: 1.3 }),
-      makeUltimate({ id: 'assassin_ultimate', name: 'Execução Sombria', description: 'Um golpe fatal contra um único alvo.', kind: 'physical', target: 'enemy', unlockLevel: 20, baseCooldown: 22, baseCost: 36, basePower: 4.5 }),
+      makeSkill({ id: 'assassin_blade_dance', name: 'Dança das Lâminas', description: 'Uma sequência de cortes contra todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 15, baseCooldown: 12, baseCost: 20, basePower: 1.3, inflicts: { type: 'bleed', chance: 0.45 } }),
+      makeUltimate({ id: 'assassin_ultimate', name: 'Execução Sombria', description: 'Um golpe fatal contra um único alvo, uma ferida que não estanca.', kind: 'physical', target: 'enemy', unlockLevel: 20, baseCooldown: 22, baseCost: 36, basePower: 4.5, inflicts: { type: 'bleed', chance: 0.8 } }),
     ],
   },
   {
@@ -121,9 +121,9 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
     growth: { maxHp: 3, maxMp: 5, attack: 0, magicAttack: 3, defense: 1, magicDefense: 1, speed: 1, luck: 1 },
     basicAttack: makeBasicAttack('magical'),
     skills: [
-      makeSkill({ id: 'necro_dark_touch', name: 'Toque Sombrio', description: 'Corrompe o alvo com energia sombria.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.7 }),
+      makeSkill({ id: 'necro_dark_touch', name: 'Toque Sombrio', description: 'Corrompe o alvo com energia sombria que continua a apodrecê-lo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.7, inflicts: { type: 'bleed', chance: 0.5 } }),
       makeSkill({ id: 'necro_drain', name: 'Drenar Vida', description: 'Rouba a força vital do inimigo.', kind: 'magical', target: 'enemy', unlockLevel: 5, baseCooldown: 8, baseCost: 14, basePower: 1.8 }),
-      makeSkill({ id: 'necro_curse', name: 'Maldição', description: 'Amaldiçoa todos os inimigos com energia sombria.', kind: 'magical', target: 'allEnemies', unlockLevel: 10, baseCooldown: 12, baseCost: 18, basePower: 1.3 }),
+      makeSkill({ id: 'necro_curse', name: 'Maldição', description: 'Amaldiçoa todos os inimigos com energia sombria que os corrói lentamente.', kind: 'magical', target: 'allEnemies', unlockLevel: 10, baseCooldown: 12, baseCost: 18, basePower: 1.3, inflicts: { type: 'bleed', chance: 0.4 } }),
       makeSkill({ id: 'necro_bone_armor', name: 'Armadura Óssea', description: 'Invoca ossos para se proteger.', kind: 'buff', target: 'self', unlockLevel: 15, baseCooldown: 16, baseCost: 16, basePower: 1.5, buffStat: 'defense' }),
       makeUltimate({ id: 'necro_ultimate', name: 'Exército dos Mortos', description: 'Invoca legiões sombrias contra todos os inimigos.', kind: 'magical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 27, baseCost: 44, basePower: 2.5 }),
     ],
