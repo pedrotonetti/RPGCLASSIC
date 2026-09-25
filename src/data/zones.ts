@@ -1,7 +1,16 @@
 import { TILE_SIZE } from '../config/gameConfig';
 import { CLASS_ZONE_THEMES, getClassZoneTheme } from './classZones';
 import { DUNGEON_DEFINITIONS } from './dungeons';
-import { generateDungeonMap, generateOverworldMap, generateVillageMap, mainCityArrivalTile, MAIN_CITY_GATES, type GeneratedMap } from '../systems/MapGenerator';
+import {
+  generateDungeonMap,
+  generateOverworldMap,
+  generateVillageMap,
+  mainCityArrivalTile,
+  MAIN_CITY_DOWNTOWN_BOUNDS,
+  MAIN_CITY_GATES,
+  MAIN_CITY_OLD_TOWN_BOUNDS,
+  type GeneratedMap,
+} from '../systems/MapGenerator';
 
 export const MAIN_CITY_ID = 'main_city';
 
@@ -161,4 +170,34 @@ export function startZoneForClass(classId: string): string {
 /** World-space (not tile) position for a zone's arrival tile — the center of that tile. */
 export function arriveWorldPosition(arriveTile: { x: number; y: number }): { x: number; z: number } {
   return { x: arriveTile.x * TILE_SIZE + TILE_SIZE / 2, z: arriveTile.y * TILE_SIZE + TILE_SIZE / 2 };
+}
+
+/**
+ * The main city's two named plazas surfaced so far only through NPC
+ * dialogue (see the archivist's and guard's lines in `data/npcs.ts`) —
+ * "Praça da Fundação" (the old-town square) and "Praça do Mercado" (the
+ * newer downtown one) — plus "o Verdegal", the name Zaya's dialogue gives
+ * the wider field/forest surrounding Pedravale out to where each class's own
+ * territory begins. Bounds are read straight from MapGenerator's own layout
+ * constants (never duplicated here) so this can't drift out of sync with
+ * the actual generated map.
+ */
+function withinBounds(b: { x0: number; y0: number; x1: number; y1: number }, x: number, y: number): boolean {
+  return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
+}
+
+/**
+ * The zone's own settlement/sub-area name for a given tile — used by the
+ * minimap's location label. Every zone falls back to its plain
+ * `ZoneDefinition.name`; only the main city currently subdivides further,
+ * since it's the one zone whose own NPCs name distinct plazas within it.
+ */
+export function subAreaNameAt(zoneId: string, tileX: number, tileY: number): string {
+  const zone = getZoneById(zoneId);
+  if (zoneId === MAIN_CITY_ID) {
+    if (withinBounds(MAIN_CITY_OLD_TOWN_BOUNDS, tileX, tileY)) return 'Praça da Fundação';
+    if (withinBounds(MAIN_CITY_DOWNTOWN_BOUNDS, tileX, tileY)) return 'Praça do Mercado';
+    return 'o Verdegal';
+  }
+  return zone.name;
 }
