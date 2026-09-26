@@ -9,7 +9,8 @@ import type { Player } from '../entities/Player';
 import { getItemById, ITEM_DEFINITIONS } from '../data/items';
 import { buildEnemyModel } from '../render/characterModel';
 import type { CharacterAnimatorLike, ActionName } from '../render/animation';
-import { VfxManager } from '../render/vfx';
+import { HELD_MESHES, DEFAULT_CLASS } from '../render/playerAvatar';
+import { VfxManager, hitImpactColor } from '../render/vfx';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from './CombatSystem';
 import { audio } from './AudioSystem';
 import { computeSkillLevelStats } from './skillMath';
@@ -89,6 +90,24 @@ interface ItemHotbarSlot {
   countEl: HTMLElement;
 }
 
+/**
+ * Which of a class's own skillKinds get a travelling `launchProjectile`
+ * instead of the shared instant hit-impact burst alone — mage/necromancer/
+ * cleric cast a magic bolt, archer looses an arrow; everyone else (warrior/
+ * paladin/assassin/monk) is a melee class, and gets `spawnMeleeSlash`
+ * (see `showTargetImpact`) instead of a floating projectile.
+ */
+const RANGED_STYLE_BY_CLASS: Partial<Record<string, 'bolt' | 'arrow'>> = {
+  mage: 'bolt',
+  necromancer: 'bolt',
+  cleric: 'bolt',
+  archer: 'arrow',
+};
+/** Roughly when the cast/attack clip's hands (or bow) actually extend, not the very start of its wind-up — see `tryUseSkill`. */
+const PROJECTILE_LAUNCH_DELAY_MS = 120;
+/** Short and readable — a fireball that took a full second to cross a fight this size would read as sluggish, not weighty. */
+const PROJECTILE_FLIGHT_DURATION = 0.3;
+
 const FLASH_DURATION = 0.16;
 const MONSTER_COUNT = 12;
 const MIN_SPAWN_DIST_FROM_START = 6; // tiles
@@ -146,6 +165,8 @@ export class OverworldCombat {
     private scene: THREE.Scene,
     private animator: CharacterAnimatorLike,
     private onDefeat: () => void,
+    /** The player's own real GLTF avatar (`playerAvatar.ts`'s `PlayerAvatar.scene`) — used to snap the caster's facing toward the current target and to find the weapon-tip node a ranged skill's projectile should leave from (see `projectileOrigin`/`faceTarget`). */
+    private avatarModel: THREE.Object3D,
   ) {
     this.vfx = new VfxManager(this.scene);
     this.playerVfxAnchor = new THREE.Object3D();
@@ -683,13 +704,109 @@ export class OverworldCombat {
       else if (result.reason === 'mana') this.showMessage('Mana insuficiente!', 1200);
       return;
     }
+
+    // Snap the caster to actually face whoever this skill is aimed at BEFORE
+    // it plays — nothing about ordinary movement-facing (OverworldScreen)
+    // ever turns the avatar toward a stationary combat target, so without
+    // this a ranged skill's projectile could visibly launch sideways from
+    // wherever the avatar last happened to be facing.
+    if (skill && (skill.target === 'enemy' || skill.target === 'allEnemies')) this.faceCurrentTarget(targetIndex);
+
     const action = this.actionForSkill(skillId);
     this.animator.play(action, undefined, { isUltimate: skill?.isUltimate });
     if (action === 'cast') audio.castSpell();
     else audio.attackSwing();
-    this.processEvents(result.events);
+
+    const rangedStyle = this.rangedStyleForSkill(skill);
+    if (rangedStyle) {
+      this.fireRangedSkillProjectiles(result.events, rangedStyle);
+    } else {
+      this.processEvents(result.events);
+    }
     if (skill?.isUltimate) this.playUltimateVfx(skill, targetIndex);
     this.refreshHotbarCooldowns();
+  }
+
+  /** Whether `skill` should get a travelling `launchProjectile` instead of the shared instant hit-impact burst alone — see `RANGED_STYLE_BY_CLASS`. Ultimates are excluded: they already get their own bigger, bespoke burst (`ULTIMATE_BUILDERS`) instead. */
+  private rangedStyleForSkill(skill: SkillDefinition | null): 'bolt' | 'arrow' | undefined {
+    if (!skill || skill.isUltimate) return undefined;
+    if (skill.kind !== 'physical' && skill.kind !== 'magical') return undefined;
+    if (skill.target !== 'enemy' && skill.target !== 'allEnemies') return undefined;
+    return RANGED_STYLE_BY_CLASS[this.player.classId];
+  }
+
+  /** Turns the avatar to face `targetIndex` (or, for a skill with no explicit single target — e.g. one auto-resolved against the sole engaged enemy — the first alive engaged enemy), and drops a brief "target lock" pulse under it. */
+  private faceCurrentTarget(targetIndex?: number): void {
+    if (!this.engine) return;
+    const enemy = targetIndex !== undefined ? this.engine.enemies[targetIndex] : this.engagedMonsters.find((m) => m.enemy.isAlive())?.enemy;
+    if (enemy) this.faceTarget(enemy);
+  }
+
+  private faceTarget(enemy: Enemy): void {
+    const m = this.monsterForEnemy(enemy);
+    if (!m) return;
+    const dx = m.model.position.x - this.playerWorldPos.x;
+    const dz = m.model.position.z - this.playerWorldPos.z;
+    if (Math.hypot(dx, dz) > 0.001) this.avatarModel.rotation.y = Math.atan2(dx, dz);
+    this.vfx.spawnTargetLock(m.model.position);
+  }
+
+  /**
+   * The ranged counterpart to `processEvents(result.events)`: the skill's
+   * actual hit/damage was already resolved synchronously by
+   * `CombatEngine.useSkill` above (this never touches that, or its timing —
+   * only how the RESULT is revealed), so this still runs `processEvents`
+   * immediately for everything (HP bars, audio, defeated/victory, ...)
+   * except each target's own popup + hit-impact burst, which it holds back
+   * (`onDeferrableImpact`) and instead fires once a purely cosmetic
+   * projectile visibly reaches that target — so the burst reads as the
+   * projectile actually connecting instead of popping before it arrives.
+   */
+  private fireRangedSkillProjectiles(events: CombatEvent[], style: 'bolt' | 'arrow'): void {
+    if (!this.engine) {
+      this.processEvents(events);
+      return;
+    }
+    const deferredByTarget = new Map<number, Array<() => void>>();
+    this.processEvents(events, {
+      onDeferrableImpact: (targetIndex, reveal) => {
+        const list = deferredByTarget.get(targetIndex);
+        if (list) list.push(reveal);
+        else deferredByTarget.set(targetIndex, [reveal]);
+      },
+    });
+    if (deferredByTarget.size === 0) return;
+
+    const origin = this.projectileOrigin();
+    for (const [targetIndex, reveals] of deferredByTarget) {
+      const runReveals = () => reveals.forEach((r) => r());
+      const enemy = this.engine.enemies[targetIndex];
+      const m = this.monsterForEnemy(enemy);
+      if (!m) {
+        runReveals();
+        continue;
+      }
+      const to = m.model.position.clone().add(new THREE.Vector3(0, 0.75, 0));
+      const color = this.projectileColorForTarget(events, targetIndex);
+      setTimeout(() => {
+        this.vfx.launchProjectile(origin, to, style, color, PROJECTILE_FLIGHT_DURATION, runReveals);
+      }, PROJECTILE_LAUNCH_DELAY_MS);
+    }
+  }
+
+  /** The color a ranged skill's projectile (and the burst it triggers on arrival) should be, derived from that same skill call's own events for this target — matches whatever `spawnHitImpact` would have picked had it fired instantly. */
+  private projectileColorForTarget(events: CombatEvent[], targetIndex: number): number {
+    const damageEvent = events.find((e) => e.targetIndex === targetIndex && e.kind === 'damage');
+    const statusEvent = events.find((e) => e.targetIndex === targetIndex && e.kind === 'statusApplied');
+    return hitImpactColor(damageEvent?.skillKind ?? 'physical', statusEvent?.statusType);
+  }
+
+  /** World-space point a ranged skill's projectile should visibly leave from — the class's own socketed-weapon-gem anchor node (`playerAvatar.ts`'s `HELD_MESHES`, e.g. the mage's staff tip), so a fireball actually leaves the staff instead of the avatar's chest/center. Falls back to a rough chest-height point only if that node is somehow missing. */
+  private projectileOrigin(): THREE.Vector3 {
+    const anchorName = HELD_MESHES[this.player.classId]?.gemAnchor ?? HELD_MESHES[DEFAULT_CLASS].gemAnchor;
+    const node = anchorName ? this.avatarModel.getObjectByName(anchorName) : null;
+    if (node) return node.getWorldPosition(new THREE.Vector3());
+    return this.playerWorldPos.clone().add(new THREE.Vector3(0, 1.1, 0));
   }
 
   private actionForSkill(skillId: string): ActionName {
@@ -768,7 +885,14 @@ export class OverworldCombat {
     return this.engagedMonsters.find((m) => m.enemy === enemy);
   }
 
-  private processEvents(events: CombatEvent[]): void {
+  /**
+   * `onDeferrableImpact`, when given (only `fireRangedSkillProjectiles`
+   * passes it), lets the caller hold back a specific target's own popup +
+   * hit-impact burst instead of showing it right away — everything else
+   * here (HP bars, audio, defeated/victory, ...) always runs immediately,
+   * unaffected either way.
+   */
+  private processEvents(events: CombatEvent[], opts?: { onDeferrableImpact?: (targetIndex: number, reveal: () => void) => void }): void {
     if (!this.engine) return;
     for (const event of events) {
       if (event.text) this.showMessage(event.text, 2600);
@@ -789,10 +913,30 @@ export class OverworldCombat {
         if (m) {
           if (event.targetHpAfter !== undefined) this.setMonsterHp(m, event.targetHpAfter);
           this.triggerFlash(enemy);
-          this.popupForEvent(event, this.labelAnchor(m));
-          if (event.kind === 'damage' || event.kind === 'statusApplied' || event.kind === 'statusTick') {
-            this.vfx.spawnHitImpact(m.model.position, event.skillKind ?? 'physical', event.statusType);
-          }
+          const revealImpact = () => {
+            this.popupForEvent(event, this.labelAnchor(m));
+            if (event.kind === 'damage' || event.kind === 'statusApplied' || event.kind === 'statusTick') {
+              this.vfx.spawnHitImpact(m.model.position, event.skillKind ?? 'physical', event.statusType);
+              // A melee class's own physical hit gets an extra slash flourish on top of the shared burst — a ranged class's physical hit (e.g. an archer's arrow) already got its own travelling projectile instead, so it doesn't also need this.
+              if (event.kind === 'damage' && event.skillKind === 'physical' && !RANGED_STYLE_BY_CLASS[this.player.classId]) {
+                this.vfx.spawnMeleeSlash(m.model.position, hitImpactColor('physical'));
+              }
+            }
+          };
+          // 'defeated' deliberately stays OUT of this deferral (unlike
+          // 'damage'/'statusApplied'/'miss' below): `OverworldCombat.update`
+          // tears the whole engagement down (`endEngagement`) the very next
+          // frame once `CombatEngine.outcome` leaves 'ongoing', and that
+          // teardown resets every still-`'engaged'` monster's state to
+          // `'chase'` assuming nothing killed it — if this target's own
+          // `killMonster` were still waiting on a projectile a few hundred ms
+          // out, that reset would have it resume wandering, dead-but-walking,
+          // after "Vitória!" already showed. A one-hit kill's target
+          // disappearing an instant before its own killing shot visibly
+          // lands is a far smaller, safer glitch than that.
+          const deferrable = event.kind === 'damage' || event.kind === 'statusApplied' || event.kind === 'miss';
+          if (opts?.onDeferrableImpact && deferrable) opts.onDeferrableImpact(event.targetIndex, revealImpact);
+          else revealImpact();
         }
         if (event.kind === 'damage') audio.hitImpact(event.crit);
         if (event.kind === 'defeated' && m) {

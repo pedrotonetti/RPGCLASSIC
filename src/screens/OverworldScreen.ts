@@ -459,7 +459,7 @@ export class OverworldScreen implements Screen {
     this.buildChests();
     this.positionCameraImmediate();
 
-    this.combat = new OverworldCombat(this.game, this.player, this.scene, this.animator, () => this.handleDefeat());
+    this.combat = new OverworldCombat(this.game, this.player, this.scene, this.animator, () => this.handleDefeat(), this.playerModel);
     if (this.activeDungeon) {
       const dungeon = this.activeDungeon;
       // Consumed immediately (reset to 1) so it can only ever apply to THIS

@@ -10,7 +10,8 @@ import type { StatusEffectType } from '../config/types';
  * their own doc comments).
  *
  * Deliberately NOT one bespoke effect per skill (~40 of those would be a lot
- * of hand-authored one-offs for the value): three things live here instead —
+ * of hand-authored one-offs for the value): a handful of things live here
+ * instead —
  *
  *  1. `StatusEffectOverlay` — ONE persistent look per status-effect TYPE
  *     (bleed/burn/slow), applied to whichever target currently carries it.
@@ -20,6 +21,11 @@ import type { StatusEffectType } from '../config/types';
  *  3. `ULTIMATE_BUILDERS` — one bespoke burst per CLASS, played only when
  *     that class's own signature ultimate connects (8 total, a bounded,
  *     deliberately hand-authored set — see the task's own scoping).
+ *  4. `launchProjectile` — a small travelling shot bridging caster→target for
+ *     a RANGED skill (`OverworldCombat` decides which skillKinds are ranged
+ *     per class), plus `spawnMeleeSlash`/`spawnTargetLock`, two small
+ *     one-shots for melee's own "point of contact" flourish and the caster's
+ *     "target lock" cue at the moment a skill is aimed.
  */
 
 // ---------------------------------------------------------------------------
@@ -55,6 +61,11 @@ const HIT_COLOR: Record<'physical' | 'magical' | 'heal' | 'buff', number> = {
   heal: 0x6bff8e,
   buff: 0xf2c14e,
 };
+
+/** Same color pick `spawnHitImpact` uses internally — exported so a caster-to-target projectile (`launchProjectile`, spawned well before the hit lands) can be tinted to match the burst that plays once it arrives. */
+export function hitImpactColor(kind: 'physical' | 'magical' | 'heal' | 'buff', statusType?: StatusEffectType): number {
+  return statusType ? STATUS_COLOR[statusType] : HIT_COLOR[kind];
+}
 
 // ---------------------------------------------------------------------------
 // 1. Persistent per-target status overlay — one distinct look per TYPE.
@@ -343,6 +354,85 @@ function makeRisingSpike(opts: { color: number; life: number; height?: number; r
   };
 }
 
+/**
+ * A small glowing shot that travels in a straight line (a slight arc for
+ * `'bolt'`, none for `'arrow'`) from `from` to `to` over `duration`, then
+ * fires `onArrive` once, right before finishing — the piece that was
+ * genuinely missing before this: something visibly leaving the caster and
+ * crossing the gap to the target for a RANGED skill, instead of the target
+ * just flashing on its own. `position` is meaningless for this one (it
+ * manages its own absolute world position every frame instead of the usual
+ * "spawn once at a point" pattern every other primitive here uses), so it's
+ * added to the scene directly by `launchProjectile` rather than through
+ * `spawnAt`.
+ */
+function makeProjectile(opts: {
+  from: THREE.Vector3;
+  to: THREE.Vector3;
+  duration: number;
+  color: number;
+  style: 'bolt' | 'arrow';
+  onArrive?: () => void;
+}): OneShotEffect {
+  const { from, to, duration, color, style, onArrive } = opts;
+  const group = new THREE.Group();
+  group.position.copy(from);
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  if (Math.hypot(dx, dz) > 0.001) group.rotation.y = Math.atan2(dx, dz);
+
+  const coreGeometry = style === 'bolt' ? new THREE.SphereGeometry(0.09, 8, 6) : new THREE.ConeGeometry(0.05, 0.3, 6);
+  const coreMaterial = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 2, roughness: 0.25, transparent: true, opacity: 1 });
+  const core = new THREE.Mesh(coreGeometry, coreMaterial);
+  if (style === 'arrow') core.rotation.x = Math.PI / 2; // the cone's local +Y (its point) now faces the group's local +Z, i.e. the travel direction.
+  group.add(core);
+
+  // A short, fixed trailing wake (in the shot's own local space, so it never needs recomputing) — reuses the same shared-dot-sprite look every other particle here uses instead of a second visual language.
+  const trailCount = 5;
+  const trailPositions = new Float32Array(trailCount * 3);
+  for (let i = 0; i < trailCount; i++) trailPositions[i * 3 + 2] = -0.08 * (i + 1);
+  const trailGeometry = new THREE.BufferGeometry();
+  trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+  const trailMaterial = new THREE.PointsMaterial({
+    color,
+    size: 0.07,
+    map: dotTexture(),
+    transparent: true,
+    opacity: 0.75,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  });
+  const trail = new THREE.Points(trailGeometry, trailMaterial);
+  trail.frustumCulled = false;
+  group.add(trail);
+
+  let t = 0;
+  let arrived = false;
+  return {
+    group,
+    update(dt: number): boolean {
+      t += dt;
+      const k = Math.min(1, t / duration);
+      const pos = from.clone().lerp(to, k);
+      if (style === 'bolt') pos.y += Math.sin(k * Math.PI) * 0.15; // a gentle lob reads better for a cast bolt than a perfectly flat line; an arrow stays flat.
+      group.position.copy(pos);
+      if (k > 0.85) coreMaterial.opacity = Math.max(0, 1 - (k - 0.85) / 0.15);
+      if (k >= 1 && !arrived) {
+        arrived = true;
+        onArrive?.();
+      }
+      return k >= 1;
+    },
+    dispose() {
+      coreGeometry.dispose();
+      coreMaterial.dispose();
+      trailGeometry.dispose();
+      trailMaterial.dispose();
+    },
+  };
+}
+
 /** Runs several effects together as one, finishing only once every child has. */
 function combineEffects(effects: OneShotEffect[]): OneShotEffect {
   const group = new THREE.Group();
@@ -438,12 +528,47 @@ export class VfxManager {
 
   /** The shared hit/impact library — one look per skill KIND, reused by every skill that isn't a class's own ultimate. `statusType` (if the hit also inflicted an affliction) tints the burst with that status's own color instead, so the moment an affliction lands still reads distinctly even off the shared library. */
   spawnHitImpact(position: THREE.Vector3, kind: 'physical' | 'magical' | 'heal' | 'buff', statusType?: StatusEffectType): void {
-    const color = statusType ? STATUS_COLOR[statusType] : HIT_COLOR[kind];
+    const color = hitImpactColor(kind, statusType);
     const effect =
       kind === 'heal' || kind === 'buff'
         ? makeBurst({ color, count: 10, speed: 1.3, size: 0.08, life: 0.5, upBias: 1.6, gravity: 0.5 })
         : makeBurst({ color, count: kind === 'magical' ? 13 : 9, speed: 1.9, size: 0.07, life: 0.4 });
     this.spawnAt(effect, position.clone().add(new THREE.Vector3(0, 0.75, 0)));
+  }
+
+  /**
+   * A purely cosmetic travelling shot for a RANGED skill (a mage's fireball,
+   * an archer's arrow, ...) — bridges the caster→target gap `spawnHitImpact`
+   * alone never did. It does not gate or apply anything itself: the caller
+   * (`OverworldCombat`) already resolved the actual hit/damage the instant
+   * the skill was used, and decides for itself what `onArrive` reveals (e.g.
+   * the floating damage number and the matching `spawnHitImpact` burst,
+   * timed to land together with this).
+   */
+  launchProjectile(from: THREE.Vector3, to: THREE.Vector3, style: 'bolt' | 'arrow', color: number, duration: number, onArrive?: () => void): void {
+    const effect = makeProjectile({ from, to, duration, color, style, onArrive });
+    this.scene.add(effect.group);
+    this.oneShots.push(effect);
+  }
+
+  /**
+   * A brief slash-arc flourish layered on top of the shared physical
+   * hit-impact burst — for MELEE hits specifically (a ranged physical hit,
+   * e.g. an arrow, gets `launchProjectile` instead of this), giving a sword/
+   * axe/fist connect a bit more weight than the bare particle burst alone.
+   */
+  spawnMeleeSlash(position: THREE.Vector3, color: number): void {
+    this.spawnAt(makeSlash({ color, life: 0.28 }), position.clone().add(new THREE.Vector3(0, 0.7, 0)));
+  }
+
+  /**
+   * A brief pulsing ring under a target the instant a skill is aimed at it —
+   * the modest "target lock" cue `OverworldCombat` pairs with snapping the
+   * caster to face that target. Not a persistent hover reticle: it fires
+   * once per cast, same as every other one-shot effect in this file.
+   */
+  spawnTargetLock(position: THREE.Vector3): void {
+    this.spawnAt(makeRing({ color: 0xfff3c4, maxRadius: 0.5, life: 0.32, thickness: 0.045 }), position.clone().add(new THREE.Vector3(0, 0.03, 0)));
   }
 
   /** One bespoke burst per class, played once per target when that class's own ultimate connects. No-op for a class id this library doesn't recognize (never expected, but safe). */
