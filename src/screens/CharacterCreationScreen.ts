@@ -1,11 +1,22 @@
 import * as THREE from 'three';
 import { getClassById } from '../config/classes';
-import { HEIGHT_NOTCHES, defaultAppearance, randomizeAppearance, type CharacterAppearance, type ChoiceOption } from '../config/customization';
+import {
+  GARMENT_COLORS,
+  HAIR_COLORS,
+  HAIR_STYLES,
+  HEAD_ACCESSORIES,
+  HEIGHT_NOTCHES,
+  defaultAppearance,
+  randomizeAppearance,
+  type CharacterAppearance,
+  type ChoiceOption,
+  type SwatchOption,
+} from '../config/customization';
 import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { Player } from '../entities/Player';
 import { GltfActor } from '../render/gltfModel';
-import { loadPreviewAvatar } from '../render/playerAvatar';
+import { applyCosmeticVisual, cosmeticSlotsForClass, loadPreviewAvatar } from '../render/playerAvatar';
 import { el, goToLazy } from '../ui/dom';
 import { CharacterSelectScreen } from './CharacterSelectScreen';
 
@@ -15,19 +26,24 @@ const HEIGHT_LABELS = ['Baixo', 'Médio-', 'Médio', 'Médio+', 'Alto'];
  * The preview here is the same real rigged GLTF model the adventure itself
  * uses (`render/playerAvatar.ts`), not a stand-in — except it loads
  * asynchronously (see `loadShowcase`), so `mount()` adds an empty placeholder
- * group first and swaps the real model in once its file resolves. Of every
- * `CharacterAppearance` field, only `heightScale` has anywhere to go on this
- * model (a uniform scale) — skin tone, face, hair, markings and garment
- * colors have no home on the class's single pre-baked texture atlas, so this
- * screen no longer offers controls for them at all.
+ * group first and swaps the real model in once its file resolves.
  *
- * They aren't wasted, though: the rest of `CharacterAppearance` still drives
- * the separate procedural mannequin `render/characterModel.ts` builds for the
- * Inventário/Habilidades showcases (see `buildPlayerCharacter`), which has no
- * such texture-atlas limit. `randomizeAppearance` below is what gives each
- * new hero its own hair/face/body/skin/palette there — otherwise every hero
- * would render identically in those two screens regardless of class or
- * player choice.
+ * 6 `CharacterAppearance` fields now have a real, visible home on this model
+ * (see `playerAvatar.ts`'s `applyCosmeticVisual` for exactly how/why): height
+ * (uniform scale), whether the class's own headwear mesh is worn
+ * (`headAccessory`) and its tint (`primaryColor`), the class's own cape tint
+ * (`secondaryColor`), and an attached hair accent for a few long-hair picks
+ * (`hairStyle`+`hairColor`). Those 6 get their own picker below.
+ *
+ * The rest of `CharacterAppearance` (gender, skin tone, body type, face
+ * shape, eyebrows, facial hair, scars, tattoos, eye color) has no separate
+ * mesh or material slot on the class's single pre-baked texture atlas to
+ * live on — that's the genuine ceiling of this asset pack, not an oversight
+ * — so this screen doesn't offer pickers for them. They aren't wasted,
+ * though: `randomizeAppearance` below still rolls them, and they still drive
+ * the separate procedural mannequin `render/characterModel.ts` builds for
+ * the Inventário/Habilidades showcases (see `buildPlayerCharacter`), which
+ * has no such texture-atlas limit.
  */
 export class CharacterCreationScreen implements Screen {
   scene = new THREE.Scene();
@@ -105,9 +121,9 @@ export class CharacterCreationScreen implements Screen {
    */
   private loadShowcase(): void {
     const gen = ++this.showcaseGen;
-    loadPreviewAvatar(this.classId, this.appearance.heightScale)
+    loadPreviewAvatar(this.classId, this.appearance)
       .then((avatar) => {
-        if (gen !== this.showcaseGen) return; // superseded by a newer height change
+        if (gen !== this.showcaseGen) return; // superseded by a newer appearance change
         this.scene.remove(this.showcase);
         this.showcase = avatar.scene;
         this.showcaseActor = avatar.actor;
@@ -116,8 +132,14 @@ export class CharacterCreationScreen implements Screen {
       .catch((err) => console.error('Falha ao carregar modelo do herói', err));
   }
 
-  private onHeightChanged(): void {
+  /** Height (and "Aleatorizar", which may change it) needs a full model reload — it's a scale applied at load time. Every other cosmetic pick just gets re-applied to the already-loaded model instead — see `onCosmeticChanged`/`applyCosmeticVisual`. */
+  private reloadShowcase(): void {
     this.loadShowcase();
+    this.renderPanel();
+  }
+
+  private onCosmeticChanged(): void {
+    applyCosmeticVisual({ scene: this.showcase, classId: this.classId }, this.appearance);
     this.renderPanel();
   }
 
@@ -127,11 +149,19 @@ export class CharacterCreationScreen implements Screen {
     this.scrollEl = el('div', { className: 'creation-scroll' });
 
     const backBtn = el('div', { className: 'btn', text: '< Voltar', onClick: () => this.game.goTo(new CharacterSelectScreen(this.game)) });
+    const randomBtn = el('div', {
+      className: 'btn',
+      text: 'Aleatorizar',
+      onClick: () => {
+        this.appearance = randomizeAppearance(this.appearance);
+        this.reloadShowcase();
+      },
+    });
     const confirmBtn = el('div', { className: 'btn primary', text: 'Começar Aventura >', onClick: () => this.confirm() });
 
     const panel = el('div', { className: 'creation-panel' }, [
       this.scrollEl,
-      el('div', { className: 'creation-footer' }, [backBtn, confirmBtn]),
+      el('div', { className: 'creation-footer' }, [backBtn, randomBtn, confirmBtn]),
     ]);
 
     const screen = el('div', { className: 'creation-screen screen' }, [
@@ -172,7 +202,50 @@ export class CharacterCreationScreen implements Screen {
             text: opt.label,
             onClick: () => {
               a.heightScale = Number(opt.id);
-              this.onHeightChanged();
+              this.reloadShowcase();
+            },
+          }),
+        ),
+      ),
+    ]);
+  }
+
+  /** Recolor/toggle pickers whose swatch is one of `SwatchOption`'s literal color values (hair color, primary/secondary garment color). */
+  private swatchCategory(label: string, options: SwatchOption[], get: () => number, set: (v: number) => void): HTMLElement {
+    return el('div', { className: 'creation-category' }, [
+      el('div', { className: 'cat-label', text: label }),
+      el(
+        'div',
+        { className: 'creation-options' },
+        options.map((opt) =>
+          el('div', {
+            className: `swatch ${get() === opt.value ? 'selected' : ''}`,
+            style: { background: `#${opt.value.toString(16).padStart(6, '0')}` },
+            attrs: { title: opt.label },
+            onClick: () => {
+              set(opt.value);
+              this.onCosmeticChanged();
+            },
+          }),
+        ),
+      ),
+    ]);
+  }
+
+  /** Named-choice pickers (hair style, head accessory) — a labeled button per option instead of a color swatch. */
+  private choiceCategory(label: string, options: ChoiceOption[], get: () => string, set: (v: string) => void): HTMLElement {
+    return el('div', { className: 'creation-category' }, [
+      el('div', { className: 'cat-label', text: label }),
+      el(
+        'div',
+        { className: 'creation-options' },
+        options.map((opt) =>
+          el('div', {
+            className: `choice-btn ${get() === opt.id ? 'selected' : ''}`,
+            text: opt.label,
+            onClick: () => {
+              set(opt.id);
+              this.onCosmeticChanged();
             },
           }),
         ),
@@ -181,6 +254,8 @@ export class CharacterCreationScreen implements Screen {
   }
 
   private renderPanel(): void {
+    const a = this.appearance;
+    const slots = cosmeticSlotsForClass(this.classId);
     const nameInput = el('input', {
       className: 'btn creation-name-input',
       attrs: { type: 'text', value: this.heroName, maxlength: '16', placeholder: 'Nome do herói' },
@@ -190,13 +265,31 @@ export class CharacterCreationScreen implements Screen {
       this.heroName = nameInput.value;
     });
 
+    const categories: HTMLElement[] = [this.heightCategory()];
+    // Head accessory + its tint only shown for classes whose model actually
+    // has a headwear mesh to toggle/tint (`cosmeticSlotsForClass`) — hidden
+    // rather than left clickable-but-inert for the rest.
+    if (slots.headwear) {
+      categories.push(
+        this.choiceCategory('Acessório de Cabeça', HEAD_ACCESSORIES, () => a.headAccessory, (v) => (a.headAccessory = v as CharacterAppearance['headAccessory'])),
+        this.swatchCategory('Cor Primária (acessório)', GARMENT_COLORS, () => a.primaryColor, (v) => (a.primaryColor = v)),
+      );
+    }
+    if (slots.cape) {
+      categories.push(this.swatchCategory('Cor Secundária (capa)', GARMENT_COLORS, () => a.secondaryColor, (v) => (a.secondaryColor = v)));
+    }
+    categories.push(
+      this.choiceCategory('Estilo de Cabelo', HAIR_STYLES, () => a.hairStyle, (v) => (a.hairStyle = v as CharacterAppearance['hairStyle'])),
+      this.swatchCategory('Cor do Cabelo', HAIR_COLORS, () => a.hairColor, (v) => (a.hairColor = v)),
+    );
+
     this.scrollEl.replaceChildren(
       nameInput,
       el('div', {
         className: 'creation-note',
-        text: 'A aparência do herói segue o modelo da classe — só a altura é ajustável.',
+        text: 'Estas escolhas aparecem no herói real da aventura. Acessório de cabeça liga/desliga o item já modelado da sua classe (sem mudar de formato). Estilos de cabelo compridos/presos ganham uma mecha anexada na cor escolhida; estilos curtos usam o cabelo já pintado no modelo. Traços que sua classe não tem como mostrar ficam ocultos aqui — e rosto, corpo, tom de pele e olhos só aparecem no mostruário do Inventário/Habilidades.',
       }),
-      this.heightCategory(),
+      ...categories,
     );
   }
 
