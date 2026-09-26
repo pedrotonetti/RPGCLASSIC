@@ -16,7 +16,7 @@ import type { EquipmentSlot, ItemRarity } from '../config/types';
 import { Player, type Act3Ending } from '../entities/Player';
 import type { CharacterAnimatorLike } from '../render/animation';
 import { GltfCharacterAnimator } from '../render/gltfCharacterAnimator';
-import { buildMountModel } from '../render/characterModel';
+import { allMountModelFiles, loadMountVisual } from '../render/mountModel';
 import { animateDungeonPortal, buildDungeonPortalMesh } from '../render/dungeonPortal';
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
 import { loadNpcAvatar } from '../render/npcAvatar';
@@ -127,12 +127,10 @@ const ACT3_EPILOGUE_TEXT: Record<Act3Ending, string> = {
 
 const INTERACT_RANGE = TILE_SIZE * 1.3;
 const NPC_COLLISION_RADIUS = 0.4;
-// The player model's local origin is at its feet, but its hip pivot (where a
-// straddling rider's weight actually rests) is ~0.84 above that. So the
-// offset that lands the hip on the mount's back sits well below zero, not
-// above it — this is the position of the character's ROOT, not the seat.
-const MOUNT_SEAT_OFFSET = new THREE.Vector3(0, -0.08, -0.05);
-const FLYING_HOVER_HEIGHT = 0.9;
+// Per-mount seat offset/scale/hover height now live with the glTF creature
+// itself in render/mountModel.ts (MountVisualConfig) — a goat and a
+// pterodactyl need very different numbers, so one flat constant here no
+// longer fits both.
 
 interface NpcSlot {
   def: NpcDefinition;
@@ -214,6 +212,10 @@ export class OverworldScreen implements Screen {
   private minimapBg: HTMLCanvasElement | null = null;
   private playerModel!: THREE.Group;
   private mountModel: THREE.Group | null = null;
+  /** Drives the currently-mounted creature's own idle/walk clip (see animateMount) — null whenever unmounted. */
+  private mountActor: GltfActor | null = null;
+  /** Bumped on every setMounted(...) call that starts a mount load — see attachMountVisual's own comment on why a stale load must be able to tell it lost the race. */
+  private mountLoadToken = 0;
   /** Whichever object currently moves through the world — the rider alone, or the mount carrying them. */
   private avatar!: THREE.Object3D;
   private animator!: CharacterAnimatorLike;
@@ -368,6 +370,7 @@ export class OverworldScreen implements Screen {
     this.scene.add(this.playerModel);
     this.avatar.position.set(this.player.mapX, 0, this.player.mapY);
 
+    this.prefetchMountModels();
     if (this.player.activeMountId) this.setMounted(this.player.activeMountId, true);
 
     this.buildNpcs();
@@ -509,15 +512,11 @@ export class OverworldScreen implements Screen {
     this.waterMaterial.emissiveIntensity = 0.15 + Math.max(0, shimmer);
   }
 
+  /** Drives the mounted creature's own baked idle/walk clip — real animation from its glTF (see render/mountModel.ts), not the old hand-coded wing-flap sine wave. */
   private animateMount(dt: number): void {
-    if (!this.mountModel) return;
-    const wings = this.mountModel.userData.wings as THREE.Object3D[] | undefined;
-    if (wings) {
-      const flap = Math.sin(this.time * 9) * 0.35;
-      wings[0].rotation.z = -0.25 + flap;
-      wings[1].rotation.z = 0.25 - flap;
-    }
-    void dt;
+    if (!this.mountActor) return;
+    this.mountActor.play(this.isMoving ? 'walk' : 'idle');
+    this.mountActor.update(dt);
   }
 
   // --- input -----------------------------------------------------------
@@ -653,64 +652,102 @@ export class OverworldScreen implements Screen {
   private setMounted(mountId: string | null, instant = false): void {
     if (mountId !== null && !this.player.unlockedMounts.includes(mountId)) return;
 
+    // Bumped unconditionally (mount OR dismount) so a still-in-flight
+    // attachMountVisual from whatever the player asked for just before this
+    // call can tell it lost the race — see that method's own comment. Without
+    // this, mounting then immediately dismounting before the glTF finished
+    // loading would silently attach the mount right after the dismount, with
+    // nothing on screen showing anything happened in between.
+    this.mountLoadToken++;
+
     if (mountId === null) {
-      if (!this.mountModel) return;
-      const worldPos = new THREE.Vector3();
-      this.mountModel.getWorldPosition(worldPos);
-      this.mountModel.remove(this.playerModel);
-      this.scene.remove(this.mountModel);
-      disposeGroup(this.mountModel);
-      this.mountModel = null;
-      this.playerModel.position.copy(worldPos);
-      this.playerModel.position.y = 0;
-      this.scene.add(this.playerModel);
-      this.avatar = this.playerModel;
+      const wasMounted = this.mountModel !== null || this.player.activeMountId !== null;
+      if (!wasMounted) return;
       this.player.setMount(null);
+      if (this.mountModel) {
+        const worldPos = new THREE.Vector3();
+        this.mountModel.getWorldPosition(worldPos);
+        this.mountModel.remove(this.playerModel);
+        this.scene.remove(this.mountModel);
+        disposeGroup(this.mountModel);
+        this.mountModel = null;
+        this.mountActor = null;
+        this.playerModel.position.copy(worldPos);
+        this.playerModel.position.y = 0;
+        this.scene.add(this.playerModel);
+        this.avatar = this.playerModel;
+      }
       if (instant) this.animator.setMounted(false);
       else {
         this.animator.setMounted(false);
         this.animator.play('dismount');
       }
     } else {
-      const def = getMountById(mountId);
       if (this.mountModel) this.setMounted(null, true);
 
       const worldPos = new THREE.Vector3();
       this.avatar.getWorldPosition(worldPos);
-      // buildLlama/buildCondor build their creature facing local +X (body
-      // capsule rotated onto that axis, neck/head/legs placed along it), but
-      // every other facing convention in this file (the player model's own
-      // face, and the yaw math in updateMovement) treats +Z as "forward".
-      // Wrapping the built model in its own group and rotating just that
-      // inner group compensates for the mismatch, while the outer
-      // `mountGroup` — the one movement code actually spins to face the
-      // travel direction — stays in the +Z-forward convention everyone else
-      // expects. Without this, the mount was visually rotated 90° off its
-      // real heading: it read as a small, unrecognizable blob instead of a
-      // creature facing the way it walks.
-      const innerModel = buildMountModel(mountId, def.color);
-      innerModel.rotation.y = -Math.PI / 2;
-      const mountGroup = new THREE.Group();
-      mountGroup.add(innerModel);
-      if (innerModel.userData.wings) mountGroup.userData.wings = innerModel.userData.wings;
-      mountGroup.position.copy(worldPos);
-      if (def.kind === 'voadora') mountGroup.position.y = FLYING_HOVER_HEIGHT;
-      mountGroup.rotation.y = this.avatar.rotation.y;
-
-      this.scene.remove(this.playerModel);
-      this.playerModel.position.copy(MOUNT_SEAT_OFFSET);
-      this.playerModel.rotation.y = 0;
-      mountGroup.add(this.playerModel);
-
-      this.scene.add(mountGroup);
-      this.mountModel = mountGroup;
-      this.avatar = mountGroup;
+      const facingY = this.avatar.rotation.y;
       this.player.setMount(mountId);
-      if (instant) this.animator.setMounted(true);
-      else this.animator.play('mount', () => this.animator.setMounted(true));
+      // The glTF creature load is async (network fetch + parse the first
+      // time; near-instant afterwards via loadSkinnedInstance's own cache —
+      // see prefetchMountModels), so the actual scene swap happens in
+      // attachMountVisual once it resolves.
+      const token = this.mountLoadToken;
+      void this.attachMountVisual(mountId, worldPos, facingY, instant, token);
     }
     if (!instant) audio.mountToggle();
     this.refreshMountSection();
+  }
+
+  /** The async second half of mounting — see setMounted's else-branch. Builds the real glTF creature, seats the rider on its back at that mount's own tuned offset (see `render/mountModel.ts`'s `MountVisualConfig`), and starts its idle/walk animation. */
+  private async attachMountVisual(
+    mountId: string,
+    worldPos: THREE.Vector3,
+    facingY: number,
+    instant: boolean,
+    token: number,
+  ): Promise<void> {
+    let visual;
+    try {
+      visual = await loadMountVisual(mountId);
+    } catch (err) {
+      console.error(`Falha ao carregar o modelo da montaria "${mountId}"`, err);
+      return;
+    }
+    // The player cycled mounts again (or dismounted) before this load
+    // finished — the load that "won" already set up its own mountGroup, or
+    // there's none wanted any more; either way, don't attach this stale one.
+    if (token !== this.mountLoadToken) return;
+
+    const mountGroup = new THREE.Group();
+    mountGroup.add(visual.scene);
+    mountGroup.position.copy(worldPos);
+    mountGroup.position.y = visual.config.hoverHeight;
+    mountGroup.rotation.y = facingY;
+
+    this.scene.remove(this.playerModel);
+    this.playerModel.position.copy(visual.config.seatOffset);
+    this.playerModel.rotation.y = 0;
+    mountGroup.add(this.playerModel);
+
+    this.scene.add(mountGroup);
+    this.mountModel = mountGroup;
+    this.mountActor = visual.actor;
+    this.avatar = mountGroup;
+    if (instant) this.animator.setMounted(true);
+    else this.animator.play('mount', () => this.animator.setMounted(true));
+    // audio.mountToggle()/refreshMountSection() already fired synchronously
+    // from setMounted the moment the player asked to mount — not repeated
+    // here once the glTF itself finishes loading, or a real mount would play
+    // its toggle sound twice.
+  }
+
+  /** Fire-and-forget cache warm-up so the first time the player actually mounts, `loadSkinnedInstance`'s own promise cache (see `render/gltfModel.ts`) already has both creature files parsed instead of stalling the swap on a network fetch — same idea as `spawnFoxAt`'s prefetch, just without anything to add to the scene yet. */
+  private prefetchMountModels(): void {
+    for (const file of allMountModelFiles()) {
+      loadSkinnedInstance(file).catch((err) => console.error(`Falha ao pré-carregar montaria "${file}"`, err));
+    }
   }
 
   /**

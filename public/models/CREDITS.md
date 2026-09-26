@@ -40,6 +40,28 @@ this commit — intended to replace/extend the procedural player model in
 Knight → warrior/paladin, Mage → mage/necromancer/cleric, Rogue →
 archer/assassin/monk, Barbarian as an alternate/heavier build).
 
+## mounts/goat.glb, mounts/pterodactylus.glb
+
+Source: [Gobkit Free Animal Pack Vol. 2](https://gobkit.itch.io/gobkit-free-animal-pack-vol-2)
+(`Goat.glb`) and [Gobkit Free Dinosaur Pack](https://gobkit.itch.io/gobkit-free-dinosaur-pack)
+(`Pterodactylus.glb`), both by Gobkit ([gobkit.com](https://gobkit.com)),
+fetched directly from `gobkit.com/freebies/...` (no login/purchase gate —
+confirmed CC0 on both the itch.io listing's own "Asset license" field and the
+pack's own machine-readable manifest at
+[gobkit.com/api/free](https://gobkit.com/api/free)), unmodified.
+
+- [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/legalcode)
+  — public domain, free for any use, no attribution required.
+
+Rigged, ~165KB/~186KB each. Stand in for the two `MountDefinition`s in
+`data/mounts.ts` (`llama` → goat, `condor` → pterodactyl — see that file's own
+comment on why the display name changed to match while the save-compatible
+`id` didn't) as a real ridden creature, replacing the low-poly primitive
+llama/condor `render/characterModel.ts` used to build by hand. Each ships its
+own already-sliced `idle`/`walk`/`attack`/`dead` clips, driven by
+`render/mountModel.ts` + the same `GltfActor` (`render/gltfModel.ts`) used for
+the player avatar and the ambient fox.
+
 ## weapons/*.gltf
 
 Source: same KayKit Adventurers Character Pack as above (the pack's
@@ -50,7 +72,7 @@ for the matching class. Not yet wired in.
 
 ---
 
-Everything else in the game (enemies, mounts, environment props) is still
-built procedurally in code (`render/characterModel.ts`,
+Everything else in the game (enemies, NPCs' non-avatar visuals, environment
+props) is still built procedurally in code (`render/characterModel.ts`,
 `render/worldBuilder.ts`) — no external assets. This file exists so we have
 one place tracking license terms as we bring in more real 3D assets.
