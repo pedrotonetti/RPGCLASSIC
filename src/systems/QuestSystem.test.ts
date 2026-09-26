@@ -4,6 +4,8 @@ import { getEquipmentTemplate } from '../data/equipment';
 import { getNpcById } from '../data/npcs';
 import { firstCallingQuestIdForClass, firstQuestIdForClass, getQuestById, lastCallingQuestIdForClass, SIDE_QUEST_STARTERS } from '../data/quests';
 import {
+  activeQuests,
+  ensureAct3Started,
   ensureAmaraRevealStarted,
   ensureClassCallingStarted,
   ensureQuestStarted,
@@ -11,6 +13,7 @@ import {
   notifyLevelChanged,
   notifyTalkedTo,
   offerSideQuest,
+  questTrackerText,
 } from './QuestSystem';
 import { getFactionReputation } from './WorldStateSystem';
 
@@ -309,26 +312,118 @@ describe('AMARA_REVEAL_QUESTS chain', () => {
   });
 });
 
+describe('ACT3_QUESTS chain (the "Cerco a Ilva" extension)', () => {
+  it('walks the full eleven-quest arc end to end: golem trail -> three seals (with their own report beats) -> gathering -> final march -> gates -> confrontation', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push('amara_r4_confession');
+    ensureAct3Started(player);
+    expect(player.activeQuestId).toBe('act3_q1_trail');
+
+    for (let i = 0; i < 4; i++) {
+      expect(notifyEnemyDefeated(player, 'stone_golem')).not.toBeNull();
+    }
+    expect(notifyEnemyDefeated(player, 'stone_golem')).not.toBeNull();
+    expect(player.activeQuestId).toBe('act3_q2_signs');
+
+    expect(notifyTalkedTo(player, 'tobias')).not.toBeNull();
+    expect(player.activeQuestId).toBe('act3_q3_north_seal');
+
+    for (let i = 0; i < 5; i++) {
+      expect(notifyEnemyDefeated(player, 'orc')).not.toBeNull();
+    }
+    expect(notifyEnemyDefeated(player, 'orc')).not.toBeNull();
+    expect(player.activeQuestId).toBe('act3_q4_north_report');
+    expect(player.worldState.corruption).toBeLessThan(50);
+
+    expect(notifyTalkedTo(player, 'escrivao_aldo')).not.toBeNull();
+    expect(player.activeQuestId).toBe('act3_q5_east_seal');
+
+    for (let i = 0; i < 4; i++) {
+      expect(notifyEnemyDefeated(player, 'fire_elemental')).not.toBeNull();
+    }
+    expect(notifyEnemyDefeated(player, 'fire_elemental')).not.toBeNull();
+    expect(player.activeQuestId).toBe('act3_q6_east_report');
+
+    expect(notifyTalkedTo(player, 'zeladora_sable')).not.toBeNull();
+    expect(player.activeQuestId).toBe('act3_q7_south_seal');
+
+    for (let i = 0; i < 2; i++) {
+      expect(notifyEnemyDefeated(player, 'troll')).not.toBeNull();
+    }
+    expect(notifyEnemyDefeated(player, 'troll')).not.toBeNull();
+    expect(player.activeQuestId).toBe('act3_q8_gathering');
+    expect(getFactionReputation(player.worldState, 'pedravale')).toBeGreaterThan(0);
+
+    player.level = 19;
+    expect(notifyLevelChanged(player)).toBeNull();
+    player.level = 20;
+    expect(notifyLevelChanged(player)).not.toBeNull();
+    expect(player.activeQuestId).toBe('act3_q9_final_march');
+
+    for (let i = 0; i < 3; i++) {
+      expect(notifyEnemyDefeated(player, 'stone_golem')).not.toBeNull();
+    }
+    expect(notifyEnemyDefeated(player, 'stone_golem')).not.toBeNull();
+    expect(player.activeQuestId).toBe('act3_q10_gates');
+
+    expect(notifyTalkedTo(player, 'tobias')).not.toBeNull();
+    expect(player.activeQuestId).toBe('act3_q2_confront');
+
+    const finalMessage = notifyTalkedTo(player, 'ilva');
+    expect(finalMessage).not.toBeNull();
+    expect(player.activeQuestId).toBeNull();
+    expect(player.completedQuestIds).toEqual(
+      expect.arrayContaining([
+        'act3_q1_trail',
+        'act3_q2_signs',
+        'act3_q3_north_seal',
+        'act3_q4_north_report',
+        'act3_q5_east_seal',
+        'act3_q6_east_report',
+        'act3_q7_south_seal',
+        'act3_q8_gathering',
+        'act3_q9_final_march',
+        'act3_q10_gates',
+        'act3_q2_confront',
+      ]),
+    );
+  });
+});
+
 describe('offerSideQuest', () => {
   it('does nothing before the prerequisite quest is completed', () => {
     const player = freshPlayer();
     expect(offerSideQuest(player, 'baltazar_relicario')).toBeNull();
-    expect(player.activeQuestId).toBeNull();
+    expect(player.sideQuestId).toBeNull();
   });
 
-  it('does nothing while a main-chain (or any other) quest is already active', () => {
+  it('starts a side quest concurrently with an already-active main-chain quest, in its own independent slot', () => {
     const player = freshPlayer();
     player.completedQuestIds.push('q6_dragon');
     player.activeQuestId = 'amara_r1_evasion';
-    expect(offerSideQuest(player, 'baltazar_relicario')).toBeNull();
+
+    const message = offerSideQuest(player, 'baltazar_relicario');
+
+    expect(message).not.toBeNull();
+    // The main chain's own slot is untouched...
     expect(player.activeQuestId).toBe('amara_r1_evasion');
+    // ...while the side quest lands in its own independent slot.
+    expect(player.sideQuestId).toBe('relicario_r1_guardioes');
+  });
+
+  it('does nothing while the side slot itself is already occupied, regardless of the main chain', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push('q6_dragon');
+    player.sideQuestId = 'contrato_troll_lagoa';
+    expect(offerSideQuest(player, 'baltazar_relicario')).toBeNull();
+    expect(player.sideQuestId).toBe('contrato_troll_lagoa');
   });
 
   it('does nothing for an NPC that is not a side quest giver', () => {
     const player = freshPlayer();
     player.completedQuestIds.push('q6_dragon');
     expect(offerSideQuest(player, 'tobias')).toBeNull();
-    expect(player.activeQuestId).toBeNull();
+    expect(player.sideQuestId).toBeNull();
   });
 
   it('starts a lost NPC\'s own chain once its prerequisite is met and no quest is active', () => {
@@ -338,14 +433,14 @@ describe('offerSideQuest', () => {
     const message = offerSideQuest(player, 'baltazar_relicario');
 
     expect(message).not.toBeNull();
-    expect(player.activeQuestId).toBe('relicario_r1_guardioes');
+    expect(player.sideQuestId).toBe('relicario_r1_guardioes');
   });
 
   it('never restarts a side quest chain once its first quest is already completed', () => {
     const player = freshPlayer();
     player.completedQuestIds.push('q6_dragon', 'relicario_r1_guardioes');
     expect(offerSideQuest(player, 'baltazar_relicario')).toBeNull();
-    expect(player.activeQuestId).toBeNull();
+    expect(player.sideQuestId).toBeNull();
   });
 
   it('walks a two-quest lost-NPC chain end to end using the same generic nextQuestId/notifyTalkedTo/notifyEnemyDefeated machinery as the main chain', () => {
@@ -353,17 +448,17 @@ describe('offerSideQuest', () => {
     player.completedQuestIds.push('q6_dragon');
 
     expect(offerSideQuest(player, 'baltazar_relicario')).not.toBeNull();
-    expect(player.activeQuestId).toBe('relicario_r1_guardioes');
+    expect(player.sideQuestId).toBe('relicario_r1_guardioes');
 
     for (let i = 0; i < 3; i++) {
       expect(notifyEnemyDefeated(player, 'skeleton')).not.toBeNull();
     }
     expect(notifyEnemyDefeated(player, 'skeleton')).not.toBeNull();
-    expect(player.activeQuestId).toBe('relicario_r2_heranca');
+    expect(player.sideQuestId).toBe('relicario_r2_heranca');
 
     const finalMessage = notifyTalkedTo(player, 'baltazar_relicario');
     expect(finalMessage).not.toBeNull();
-    expect(player.activeQuestId).toBeNull();
+    expect(player.sideQuestId).toBeNull();
     expect(player.completedQuestIds).toEqual(expect.arrayContaining(['relicario_r1_guardioes', 'relicario_r2_heranca']));
   });
 
@@ -372,12 +467,12 @@ describe('offerSideQuest', () => {
     player.completedQuestIds.push('q6_dragon');
 
     expect(offerSideQuest(player, 'bram')).not.toBeNull();
-    expect(player.activeQuestId).toBe('contrato_troll_lagoa');
+    expect(player.sideQuestId).toBe('contrato_troll_lagoa');
 
     const message = notifyEnemyDefeated(player, 'troll');
 
     expect(message).not.toBeNull();
-    expect(player.activeQuestId).toBeNull();
+    expect(player.sideQuestId).toBeNull();
     expect(player.completedQuestIds).toContain('contrato_troll_lagoa');
   });
 
@@ -396,7 +491,7 @@ describe('offerSideQuest', () => {
     const message = offerSideQuest(player, 'cacador_ren');
 
     expect(message).not.toBeNull();
-    expect(player.activeQuestId).toBe('contrato_cinzas_elemental');
+    expect(player.sideQuestId).toBe('contrato_cinzas_elemental');
   });
 
   it('closes the paladin gap: offers and completes Gareth\'s memorial chain', () => {
@@ -404,7 +499,7 @@ describe('offerSideQuest', () => {
     player.completedQuestIds.push('q6_dragon');
 
     expect(offerSideQuest(player, 'gareth_escudo')).not.toBeNull();
-    expect(player.activeQuestId).toBe('gareth_r1_memorial');
+    expect(player.sideQuestId).toBe('gareth_r1_memorial');
 
     for (let i = 0; i < 4; i++) {
       expect(notifyEnemyDefeated(player, 'skeleton')).not.toBeNull();
@@ -412,7 +507,7 @@ describe('offerSideQuest', () => {
     const message = notifyEnemyDefeated(player, 'skeleton');
 
     expect(message).not.toBeNull();
-    expect(player.activeQuestId).toBeNull();
+    expect(player.sideQuestId).toBeNull();
     expect(player.completedQuestIds).toContain('gareth_r1_memorial');
   });
 
@@ -421,7 +516,7 @@ describe('offerSideQuest', () => {
     player.completedQuestIds.push('q6_dragon');
 
     expect(offerSideQuest(player, 'nilza_mercado')).not.toBeNull();
-    expect(player.activeQuestId).toBe('nilza_r1_barracas');
+    expect(player.sideQuestId).toBe('nilza_r1_barracas');
 
     for (let i = 0; i < 4; i++) {
       expect(notifyEnemyDefeated(player, 'bandit')).not.toBeNull();
@@ -429,7 +524,7 @@ describe('offerSideQuest', () => {
     const message = notifyEnemyDefeated(player, 'bandit');
 
     expect(message).not.toBeNull();
-    expect(player.activeQuestId).toBeNull();
+    expect(player.sideQuestId).toBeNull();
     expect(player.completedQuestIds).toContain('nilza_r1_barracas');
   });
 
@@ -444,4 +539,77 @@ describe('offerSideQuest', () => {
       }
     },
   );
+});
+
+describe('concurrent main-chain + side quest tracking', () => {
+  it('activeQuests returns both tracked quests (main chain first, side quest second) when both slots are occupied', () => {
+    const player = freshPlayer();
+    player.activeQuestId = 'q4_goblin_hunt';
+    player.completedQuestIds.push('q6_dragon');
+    expect(offerSideQuest(player, 'bram')).not.toBeNull();
+    expect(player.sideQuestId).toBe('contrato_troll_lagoa');
+
+    const quests = activeQuests(player);
+
+    expect(quests.map((q) => q.id)).toEqual(['q4_goblin_hunt', 'contrato_troll_lagoa']);
+  });
+
+  it('activeQuests returns only the main quest when no side quest is running, and vice versa', () => {
+    const soloMain = freshPlayer();
+    soloMain.activeQuestId = 'q1_awaken';
+    expect(activeQuests(soloMain).map((q) => q.id)).toEqual(['q1_awaken']);
+
+    const soloSide = freshPlayer();
+    soloSide.sideQuestId = 'contrato_troll_lagoa';
+    expect(activeQuests(soloSide).map((q) => q.id)).toEqual(['contrato_troll_lagoa']);
+  });
+
+  it('questTrackerText shows one line per tracked quest when a side quest runs alongside the main chain', () => {
+    const player = freshPlayer();
+    player.activeQuestId = 'q4_goblin_hunt';
+    player.sideQuestId = 'contrato_troll_lagoa';
+
+    const text = questTrackerText(player);
+
+    expect(text).toContain('Rastros da Sede');
+    expect(text).toContain('Contrato: O Troll da Lagoa');
+    expect(text.split('\n')).toHaveLength(2);
+  });
+
+  it('a single kill advances two independent defeat objectives (main + side) at once when both target the same enemy', () => {
+    const player = freshPlayer();
+    player.activeQuestId = 'q4_goblin_hunt'; // defeat goblin x5
+    player.sideQuestId = 'renato_r1_armazens'; // defeat goblin x5 (side)
+
+    const message = notifyEnemyDefeated(player, 'goblin');
+
+    expect(message).not.toBeNull();
+    expect(player.questProgress['q4_goblin_hunt']).toBe(1);
+    expect(player.questProgress['renato_r1_armazens']).toBe(1);
+  });
+
+  it('completing the main-chain quest while a side quest is active only clears the main slot', () => {
+    const player = freshPlayer();
+    player.activeQuestId = 'q1_awaken'; // talkTo tobias
+    player.sideQuestId = 'contrato_troll_lagoa';
+
+    const message = notifyTalkedTo(player, 'tobias');
+
+    expect(message).not.toBeNull();
+    expect(player.activeQuestId).toBe('q2_first_steps');
+    expect(player.sideQuestId).toBe('contrato_troll_lagoa');
+  });
+
+  it('completing the side quest while a main-chain quest is active only clears the side slot', () => {
+    const player = freshPlayer();
+    player.activeQuestId = 'q1_awaken'; // talkTo tobias — untouched by the troll kill below
+    player.sideQuestId = 'contrato_troll_lagoa';
+
+    const message = notifyEnemyDefeated(player, 'troll');
+
+    expect(message).not.toBeNull();
+    expect(player.sideQuestId).toBeNull();
+    expect(player.activeQuestId).toBe('q1_awaken');
+    expect(player.completedQuestIds).toContain('contrato_troll_lagoa');
+  });
 });

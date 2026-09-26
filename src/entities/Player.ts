@@ -30,6 +30,16 @@ export interface PlayerSaveData {
   skillPoints: number;
   completedQuestIds: string[];
   activeQuestId: string | null;
+  /**
+   * A second, independent quest slot — a side/optional quest (see
+   * `data/quests.ts`'s SIDE_QUESTS/SIDE_QUEST_STARTERS and
+   * `systems/QuestSystem.ts`'s `offerSideQuest`) tracked ALONGSIDE whatever
+   * `activeQuestId` holds (the main chain/calling/reveal/Act3 story), rather
+   * than only ever while that slot was empty. Absent on any save from before
+   * this field existed — defaulted the same way `hasSeenTutorial`/
+   * `dungeonTiers` were.
+   */
+  sideQuestId: string | null;
   questProgress: Record<string, number>;
   unlockedMounts: string[];
   activeMountId: string | null;
@@ -54,6 +64,8 @@ export interface PlayerSaveData {
    * — defaulted the same way `hasSeenTutorial`/`dungeonTiers` were.
    */
   worldState: WorldState;
+  /** Ids of `data/chests.ts` ChestDefinitions already looted — a chest in this list stays depleted (no second reward) on every later mount/reload. Absent on any save from before this field existed — defaulted the same way `hasSeenTutorial`/`dungeonTiers` were. */
+  openedChestIds: string[];
 }
 
 /** The three closures Ato 3 branches into — see LORE.md's "O final". */
@@ -84,6 +96,7 @@ export class Player implements StatusEffectHolder {
   skillPoints: number;
   completedQuestIds: string[];
   activeQuestId: string | null;
+  sideQuestId: string | null;
   questProgress: Record<string, number>;
   unlockedMounts: string[];
   activeMountId: string | null;
@@ -91,6 +104,8 @@ export class Player implements StatusEffectHolder {
   hasSeenTutorial: boolean;
   dungeonTiers: Record<string, number>;
   worldState: WorldState;
+  /** Ids of `data/chests.ts` ChestDefinitions already looted — a chest in this list stays depleted (no second reward) on every later mount/reload. Absent on any save from before this field existed — defaulted the same way `hasSeenTutorial`/`dungeonTiers` were. */
+  openedChestIds: string[];
   /**
    * Session-only "enter the next dungeon at this tier" hand-off — set by
    * OverworldScreen.enterDungeon just before swapping to the dungeon's own
@@ -124,6 +139,7 @@ export class Player implements StatusEffectHolder {
     this.skillPoints = data?.skillPoints ?? 0;
     this.completedQuestIds = data?.completedQuestIds ?? [];
     this.activeQuestId = data?.activeQuestId ?? null;
+    this.sideQuestId = data?.sideQuestId ?? null;
     this.questProgress = data?.questProgress ?? {};
     // Both mounts are unlocked by default in this build (see data/mounts.ts).
     this.unlockedMounts = data?.unlockedMounts ?? ['llama', 'condor'];
@@ -132,6 +148,7 @@ export class Player implements StatusEffectHolder {
     this.hasSeenTutorial = data?.hasSeenTutorial ?? false;
     this.dungeonTiers = data?.dungeonTiers ?? {};
     this.worldState = data?.worldState ?? createInitialWorldState();
+    this.openedChestIds = data?.openedChestIds ?? [];
     this.currentHp = data?.currentHp ?? this.stats.maxHp;
     this.currentMp = data?.currentMp ?? this.stats.maxMp;
   }
@@ -358,6 +375,7 @@ export class Player implements StatusEffectHolder {
       skillPoints: this.skillPoints,
       completedQuestIds: [...this.completedQuestIds],
       activeQuestId: this.activeQuestId,
+      sideQuestId: this.sideQuestId,
       questProgress: { ...this.questProgress },
       unlockedMounts: [...this.unlockedMounts],
       activeMountId: this.activeMountId,
@@ -372,6 +390,7 @@ export class Player implements StatusEffectHolder {
         completedEvents: { ...this.worldState.completedEvents },
         zoneStates: { ...this.worldState.zoneStates },
       },
+      openedChestIds: [...this.openedChestIds],
     };
   }
 }

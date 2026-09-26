@@ -3,7 +3,8 @@ import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { TILE_SIZE } from '../config/gameConfig';
 import { isWalkable, TileType } from '../config/tiles';
-import { createStarterItem, getEquipmentTemplate } from '../data/equipment';
+import { createStarterItem, generateLoot, getEquipmentTemplate } from '../data/equipment';
+import { chestsInZone, type ChestDefinition } from '../data/chests';
 import { getGemById } from '../data/gems';
 import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
@@ -18,16 +19,17 @@ import type { CharacterAnimatorLike } from '../render/animation';
 import { GltfCharacterAnimator } from '../render/gltfCharacterAnimator';
 import { allMountModelFiles, loadMountVisual } from '../render/mountModel';
 import { animateDungeonPortal, buildDungeonPortalMesh } from '../render/dungeonPortal';
+import { animateChestGlow, buildTreasureChestMesh, setChestOpened, type TreasureChestMesh } from '../render/treasureChest';
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
 import { loadNpcAvatar } from '../render/npcAvatar';
 import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
 import { OverworldCombat } from '../systems/OverworldCombat';
-import { buildWalkabilityGrid, pathfindToClick } from '../systems/Pathfinding';
+import { buildWalkabilityGrid, findNearestWalkable, pathfindToClick } from '../systems/Pathfinding';
 import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
 import { DUNGEON_TIER_CAP, dungeonTierStatMultiplier, selectableDungeonTiers } from '../systems/DungeonTierSystem';
 import {
-  currentQuest,
+  activeQuests,
   ensureAct3Started,
   ensureAmaraRevealStarted,
   ensureClassCallingStarted,
@@ -160,6 +162,13 @@ interface DungeonPortalSlot {
 /** Glow tint shared by every dungeon entrance portal — a corrupted violet distinct from any class's own accent color, so it always reads as "instance, not open world" from across the map. */
 const DUNGEON_PORTAL_GLOW = 0x8a5cf5;
 
+interface ChestSlot {
+  def: ChestDefinition;
+  mesh: TreasureChestMesh;
+  labelEl: HTMLElement;
+  opened: boolean;
+}
+
 interface WildlifeSlot {
   model: THREE.Group;
   actor: GltfActor;
@@ -271,6 +280,8 @@ export class OverworldScreen implements Screen {
 
   private dungeonPortals: DungeonPortalSlot[] = [];
   private nearbyDungeon: DungeonDefinition | null = null;
+  private chestSlots: ChestSlot[] = [];
+  private nearbyChest: ChestDefinition | null = null;
   /** Set only when the CURRENT zone is a dungeon instance (see mount()) — null in any open-world zone, including one that hosts other dungeons' portals. */
   private activeDungeon: DungeonDefinition | null = null;
   private dungeonRunState: DungeonRunState | null = null;
@@ -445,6 +456,7 @@ export class OverworldScreen implements Screen {
 
     this.spawnWildlife();
     this.buildDungeonPortals();
+    this.buildChests();
     this.positionCameraImmediate();
 
     this.combat = new OverworldCombat(this.game, this.player, this.scene, this.animator, () => this.handleDefeat());
@@ -533,6 +545,7 @@ export class OverworldScreen implements Screen {
     this.updateCamera(dt);
     this.updateNpcLabels();
     this.updateDungeonPortals();
+    this.updateChests();
     this.updateMinimap();
     this.updateQuestIndicator();
     this.refreshHud();
@@ -626,6 +639,7 @@ export class OverworldScreen implements Screen {
     if (this.shopNpc || this.dialogueNpc || this.paused || this.showingTutorial) return;
     if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
     else if (this.nearbyDungeon) this.interactWithDungeonPortal(this.nearbyDungeon);
+    else if (this.nearbyChest) this.openChest(this.nearbyChest);
   }
 
   private cycleMount(): void {
@@ -946,28 +960,35 @@ export class OverworldScreen implements Screen {
   }
 
   /**
-   * The minimap's click-to-walk entry point: converts a clicked tile into a
-   * path (reusing the exact same walkability rules canOccupy applies to
-   * every other movement — plain tile walkability from config/tiles.ts, plus
-   * this zone's own building footprints — never a separately-defined notion
-   * of "blocked") and hands the result to the per-frame follower above.
-   * Fails silently (a brief on-screen hint, no crash) if the click landed
-   * somewhere no route can reach.
+   * This zone's current walkability grid — plain tile walkability from
+   * config/tiles.ts, plus this zone's own building footprints (a building's
+   * tiles are still stamped Path/Grass at the grid level, see MapGenerator's
+   * stampFootprint; their real blocking is this exact list of AABBs, the
+   * same one canOccupy checks). Shared by startAutoWalkTo (click-to-walk) and
+   * buildChests (snapping a hidden chest's desired tile onto solid ground
+   * that's actually walkable) so both use the exact same notion of
+   * "blocked" — never two independently-drifting definitions.
    */
-  private startAutoWalkTo(clickedTile: { x: number; y: number }): void {
-    const startTile = { x: Math.floor(this.avatar.position.x / TILE_SIZE), y: Math.floor(this.avatar.position.z / TILE_SIZE) };
-    // Buildings occupy tiles the grid still calls Path/Grass (see
-    // MapGenerator's stampFootprint) — their real blocking is this exact
-    // list of AABBs, the same one canOccupy checks. Converting world units
-    // back to tile space here mirrors renderMinimapBackground's own
-    // building-footprint conversion just below.
+  private currentWalkabilityGrid() {
     const buildingFootprints = this.buildingColliders.map((b) => ({
       x: Math.floor(b.minX / TILE_SIZE),
       y: Math.floor(b.minZ / TILE_SIZE),
       w: Math.max(1, Math.round((b.maxX - b.minX) / TILE_SIZE)),
       h: Math.max(1, Math.round((b.maxZ - b.minZ) / TILE_SIZE)),
     }));
-    const grid = buildWalkabilityGrid(this.tiles, buildingFootprints);
+    return buildWalkabilityGrid(this.tiles, buildingFootprints);
+  }
+
+  /**
+   * The minimap's click-to-walk entry point: converts a clicked tile into a
+   * path (reusing the exact same walkability rules canOccupy applies to
+   * every other movement — see currentWalkabilityGrid) and hands the result
+   * to the per-frame follower above. Fails silently (a brief on-screen hint,
+   * no crash) if the click landed somewhere no route can reach.
+   */
+  private startAutoWalkTo(clickedTile: { x: number; y: number }): void {
+    const startTile = { x: Math.floor(this.avatar.position.x / TILE_SIZE), y: Math.floor(this.avatar.position.z / TILE_SIZE) };
+    const grid = this.currentWalkabilityGrid();
     const path = pathfindToClick(grid, startTile, clickedTile, AUTO_WALK_SNAP_RADIUS);
     if (!path || path.length === 0) {
       this.combat.showBanner('Sem caminho até ali.', 1400);
@@ -1197,6 +1218,9 @@ export class OverworldScreen implements Screen {
     this.nearbyDungeon = foundPortal?.def ?? null;
     if (this.dungeonTierPickerDungeon && this.nearbyDungeon !== this.dungeonTierPickerDungeon) this.closeDungeonTierPicker();
 
+    const foundChest = this.chestSlots.find((c) => !c.opened && c.mesh.group.position.distanceTo(this.avatar.position) <= INTERACT_RANGE);
+    this.nearbyChest = foundChest?.def ?? null;
+
     const touch = isTouchDevice();
     if (this.nearbyNpc) {
       this.promptEl.hidden = false;
@@ -1206,6 +1230,9 @@ export class OverworldScreen implements Screen {
       const verb = alreadyCleared ? 'escolher o tier de' : 'entrar em';
       this.promptEl.hidden = false;
       this.promptEl.textContent = touch ? `Toque para ${verb} ${this.nearbyDungeon.name}` : `[E] ${alreadyCleared ? 'Escolher tier de' : 'Entrar em'} ${this.nearbyDungeon.name}`;
+    } else if (this.nearbyChest) {
+      this.promptEl.hidden = false;
+      this.promptEl.textContent = touch ? `Toque para abrir ${this.nearbyChest.name}` : `[E] Abrir ${this.nearbyChest.name}`;
     } else {
       this.promptEl.hidden = true;
     }
@@ -1215,19 +1242,22 @@ export class OverworldScreen implements Screen {
     this.dialogueNpc = npc;
     this.dialogueLineIndex = 0;
     // Unlike notifyTalkedTo below (which completes whichever quest is
-    // ALREADY active), offerSideQuest can only ever START a fresh, unrelated
-    // side quest (a lost NPC's own chain, a bounty), and only while
-    // activeQuestId is free — see QuestSystem.offerSideQuest. Deliberately
-    // run BEFORE dialogueLinesFor (the opposite order from notifyTalkedTo's
-    // own placement below) so a chain that starts on this exact conversation
-    // shows its own briefing line immediately, instead of this NPC's generic
-    // default dialogue for one more visit.
+    // ALREADY active, in either slot), offerSideQuest can only ever START a
+    // fresh, unrelated side quest (a lost NPC's own chain, a bounty), and
+    // only while the SIDE slot (player.sideQuestId) is free — it runs
+    // alongside the main chain, not just while that one is idle — see
+    // QuestSystem.offerSideQuest. Deliberately run BEFORE dialogueLinesFor
+    // (the opposite order from notifyTalkedTo's own placement below) so a
+    // chain that starts on this exact conversation shows its own briefing
+    // line immediately, instead of this NPC's generic default dialogue for
+    // one more visit.
     const sideQuestMsg = offerSideQuest(this.player, npc.id);
-    // Captured BEFORE notifyTalkedTo, which can complete the active quest and
-    // change activeQuestId out from under us — the lines a quest-conditioned
-    // NPC shows for this conversation reflect the state the player walked up
-    // with, not whatever quest they're handed immediately after.
-    this.dialogueLines = dialogueLinesFor(npc, this.player.activeQuestId, this.player.completedQuestIds);
+    // Captured BEFORE notifyTalkedTo, which can complete an active quest and
+    // change activeQuestId/sideQuestId out from under us — the lines a
+    // quest-conditioned NPC shows for this conversation reflect the state
+    // the player walked up with, not whatever quest they're handed
+    // immediately after.
+    this.dialogueLines = dialogueLinesFor(npc, [this.player.activeQuestId, this.player.sideQuestId], this.player.completedQuestIds);
     this.dialogueOverlay.hidden = false;
     this.promptEl.hidden = true;
     this.renderDialogueLine();
@@ -1408,6 +1438,72 @@ export class OverworldScreen implements Screen {
       return;
     }
     this.openDungeonTierPicker(dungeon, bestTier);
+  }
+
+  // --- hidden treasure chests (map secrets) -------------------------------
+
+  /**
+   * Places every `data/chests.ts` chest whose `zoneId` matches this zone.
+   * `atTile` is a desired position, not a hand-verified one (see that file's
+   * own doc comment) — snapped onto the nearest actually-walkable tile with
+   * `findNearestWalkable`, the same helper click-to-walk already uses to
+   * recover from an unwalkable click, off the same `currentWalkabilityGrid`
+   * click-to-walk uses, so both share one notion of "blocked". A chest this
+   * save already has in `player.openedChestIds` is built already-opened
+   * (dull trim, lid open, no glow) instead of skipped entirely, so walking
+   * back up to a looted chest still shows it sitting there, depleted.
+   */
+  private buildChests(): void {
+    const grid = this.currentWalkabilityGrid();
+    for (const def of chestsInZone(this.player.zoneId)) {
+      const snapped = findNearestWalkable(grid, def.atTile) ?? def.atTile;
+      const mesh = buildTreasureChestMesh();
+      const pos = tileCenterWorld(snapped.x, snapped.y);
+      mesh.group.position.copy(pos);
+      this.scene.add(mesh.group);
+
+      const opened = this.player.openedChestIds.includes(def.id);
+      if (opened) setChestOpened(mesh, true);
+
+      const labelEl = el('div', { className: 'chest-label', text: def.name });
+      labelEl.hidden = true;
+      this.game.uiRoot.append(labelEl);
+
+      this.chestSlots.push({ def, mesh, labelEl, opened });
+    }
+  }
+
+  /** Keeps every unopened chest's glint pulsing and its label tracking screen position — mirrors updateDungeonPortals/updateNpcLabels. An opened chest's label still tracks position (so it's still readable up close) but its glow stays off. */
+  private updateChests(): void {
+    for (const c of this.chestSlots) {
+      if (!c.opened) animateChestGlow(c.mesh.glowMaterial, this.time);
+
+      const anchor = c.mesh.group.position.clone().add(new THREE.Vector3(0, 0.9, 0));
+      const proj = anchor.project(this.camera);
+      if (proj.z > 1 || anchor.distanceTo(this.avatar.position) > INTERACT_RANGE * 2.5) {
+        c.labelEl.hidden = true;
+        continue;
+      }
+      c.labelEl.hidden = false;
+      c.labelEl.style.left = `${(proj.x * 0.5 + 0.5) * window.innerWidth}px`;
+      c.labelEl.style.top = `${(-proj.y * 0.5 + 0.5) * window.innerHeight}px`;
+    }
+  }
+
+  /** The single entry point for the [E]/tap interact prompt (see tryInteract) — grants the chest's fixed gold plus one rolled loot item, marks it depleted for good (persisted in player.openedChestIds), and flips its mesh to the opened look. A no-op if this exact chest is somehow already opened (defensive — nearbyChest's own detection already excludes opened chests). */
+  private openChest(def: ChestDefinition): void {
+    const slot = this.chestSlots.find((c) => c.def.id === def.id);
+    if (!slot || slot.opened) return;
+    slot.opened = true;
+    setChestOpened(slot.mesh, true);
+    this.player.openedChestIds.push(def.id);
+    this.player.gold += def.goldReward;
+    this.player.addLoot(generateLoot(def.lootLevel, this.player.level));
+    this.nearbyChest = null;
+    this.promptEl.hidden = true;
+    saveGame(this.player);
+    audio.chestOpen();
+    this.combat.showBanner(`${def.name}: +${def.goldReward} ouro, 1 item recebido.`);
   }
 
   /** Walks the player into a dungeon's own instance zone — same "arrive at a fixed tile" mechanics as any other zone transition, just triggered by an interact prompt instead of stepping on an exit tile. */
@@ -2225,9 +2321,20 @@ export class OverworldScreen implements Screen {
    * project()-based check every other world-anchored label in this file
    * uses (updateNpcLabels/updateDungeonPortals), so "on screen" means the
    * same thing everywhere.
+   *
+   * With a side quest now able to run alongside the main chain (see
+   * QuestSystem's QuestSlot), there can be two tracked quests at once but
+   * still only one arrow — this picks whichever tracked quest currently HAS
+   * something to point at (a `talkTo`/`defeat` objective, in that tracking
+   * order: main chain first, side quest second), so a main-chain
+   * `reachLevel` objective (no location at all) doesn't leave the arrow
+   * blank while a perfectly point-able side quest sits right there. Both
+   * quests still get their own line in `.quest-tracker` (questTrackerText)
+   * regardless of which one the arrow is currently following.
    */
   private updateQuestIndicator(): void {
-    const quest = currentQuest(this.player);
+    const quests = activeQuests(this.player);
+    const quest = quests.find((q) => this.questIndicatorTarget(q) || this.questIndicatorZoneHint(q)) ?? quests[0] ?? null;
     const zoneHint = this.questIndicatorZoneHint(quest);
     this.questZoneHintEl.hidden = !zoneHint;
     if (zoneHint) this.questZoneHintEl.textContent = zoneHint;
