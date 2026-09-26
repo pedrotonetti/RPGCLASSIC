@@ -11,7 +11,7 @@ import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
 import { dialogueLinesFor, getNpcById, NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
 import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, subAreaNameAt, type ZoneDefinition, type ZoneExit } from '../data/zones';
-import { dungeonsInHostZone, getDungeonById, type DungeonDefinition } from '../data/dungeons';
+import { dungeonsInHostZone, getDungeonById, getDungeonByZoneId, type DungeonDefinition } from '../data/dungeons';
 import { rarityTier, rarityToHex } from '../config/rarity';
 import type { EquipmentSlot, ItemRarity } from '../config/types';
 import { Player, type Act3Ending } from '../entities/Player';
@@ -44,6 +44,7 @@ import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
 import { el, goToLazy } from '../ui/dom';
 import { isTouchDevice } from '../ui/device';
+import { buildGlobeIconSvg, buildWorldMapOverlay, type WorldMapOverlayHandle } from '../ui/worldMap';
 
 const SLOT_LABELS: Record<EquipmentSlot, string> = { arma: 'Arma', armadura: 'Armadura', acessorio: 'Acessório' };
 
@@ -257,6 +258,14 @@ export class OverworldScreen implements Screen {
   private minimapExpandBtn!: HTMLElement;
   private minimapBackdropEl!: HTMLElement;
   private minimapCloseBtn!: HTMLElement;
+  /** The minimap's second corner badge — opens the "Mapa Mundi" world-map overlay (see openWorldMap). */
+  private worldMapOpenBtn!: HTMLElement;
+  /** Built lazily on first open (see openWorldMap) — a player who never looks at it never pays for its DOM. */
+  private worldMap: WorldMapOverlayHandle | null = null;
+  /** True while the world-map overlay is up — gates movement/combat in update() exactly like minimapExpanded does. */
+  private worldMapOpen = false;
+  /** Whether the pause menu was showing when the world map was opened from it — closeWorldMap puts it back, so closing reads as "back" rather than dropping straight into gameplay. */
+  private worldMapReturnToPause = false;
   private playerModel!: THREE.Group;
   private mountModel: THREE.Group | null = null;
   /** Drives the currently-mounted creature's own idle/walk clip (see animateMount) — null whenever unmounted. */
@@ -522,7 +531,7 @@ export class OverworldScreen implements Screen {
   update(dt: number): void {
     this.time += dt;
 
-    if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial && !this.minimapExpanded) {
+    if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial && !this.minimapExpanded && !this.worldMapOpen) {
       this.updateMovement(dt);
       this.updateInteraction();
       this.combat.update(dt, this.avatar.position, this.camera);
@@ -603,6 +612,14 @@ export class OverworldScreen implements Screen {
     // already offers, without also pausing (and saving) underneath it.
     if (this.minimapExpanded) {
       if (e.key === 'Escape') this.setMinimapExpanded(false);
+      return;
+    }
+
+    // Same for the world map — Escape closes it (back to the pause menu if
+    // that's where it was opened from), and swallows every other key so
+    // nothing (E, M, a skill hotkey) acts on the frozen world behind it.
+    if (this.worldMapOpen) {
+      if (e.key === 'Escape') this.closeWorldMap();
       return;
     }
 
@@ -2448,7 +2465,17 @@ export class OverworldScreen implements Screen {
       onClick: () => this.setMinimapExpanded(false),
       attrs: { title: 'Fechar mapa', 'aria-label': 'Fechar mapa' },
     });
-    this.game.uiRoot.append(this.minimapBackdropEl, this.minimapExpandBtn, this.minimapCloseBtn);
+    // "Mapa Mundi" — the expand badge's twin on the minimap's other top
+    // corner (see .worldmap-open-btn in style.css), for the whole world's
+    // layout rather than this zone's terrain. Also reachable from the pause
+    // menu; this is just the one-tap route.
+    this.worldMapOpenBtn = el('div', {
+      className: 'worldmap-open-btn',
+      onClick: () => this.openWorldMap(),
+      attrs: { title: 'Mapa Mundi', 'aria-label': 'Abrir mapa mundi' },
+    });
+    this.worldMapOpenBtn.append(buildGlobeIconSvg());
+    this.game.uiRoot.append(this.minimapBackdropEl, this.minimapExpandBtn, this.worldMapOpenBtn, this.minimapCloseBtn);
   }
 
   /**
@@ -2469,6 +2496,49 @@ export class OverworldScreen implements Screen {
     this.minimapBackdropEl.classList.toggle('visible', value);
     this.minimapCloseBtn.classList.toggle('visible', value);
     this.minimapExpandBtn.classList.toggle('hidden-while-expanded', value);
+    this.worldMapOpenBtn.classList.toggle('hidden-while-expanded', value);
+  }
+
+  /**
+   * Opens the "Mapa Mundi" overlay (ui/worldMap.ts) — a read-only diagram
+   * of every settlement, with this zone marked. Refuses while a dialogue,
+   * shop or the tutorial owns the screen (same guard as
+   * toggleMinimapExpand); from the pause menu it temporarily hides the menu
+   * instead, and closeWorldMap brings it back.
+   */
+  private openWorldMap(): void {
+    if (this.worldMapOpen || this.dialogueNpc || this.shopNpc || this.showingTutorial) return;
+    this.setMinimapExpanded(false);
+    if (!this.worldMap) {
+      this.worldMap = buildWorldMapOverlay({
+        currentZoneId: this.player.zoneId,
+        playerClassId: this.player.classId,
+        onClose: () => this.closeWorldMap(),
+      });
+      this.game.uiRoot.append(this.worldMap.root);
+    }
+    this.worldMap.setLocationText(this.worldMapLocationText());
+    this.worldMap.root.hidden = false;
+    this.worldMapReturnToPause = this.paused;
+    if (this.paused) this.pauseOverlay.hidden = true;
+    this.worldMapOpen = true;
+  }
+
+  private closeWorldMap(): void {
+    if (!this.worldMapOpen) return;
+    this.worldMapOpen = false;
+    if (this.worldMap) this.worldMap.root.hidden = true;
+    if (this.worldMapReturnToPause && this.paused) this.pauseOverlay.hidden = false;
+    this.worldMapReturnToPause = false;
+  }
+
+  /** The world map's "Você está em: …" line — the same settlement/plaza name the minimap's own caption shows, or the dungeon's name plus the settlement its portal stands in. */
+  private worldMapLocationText(): string {
+    const dungeon = getDungeonByZoneId(this.player.zoneId);
+    if (dungeon) return `${dungeon.name} (${this.zoneNameOf(dungeon.portal.hostZoneId)})`;
+    const zoneName = this.zoneDef.name;
+    const areaName = subAreaNameAt(this.player.zoneId, Math.floor(this.avatar.position.x / TILE_SIZE), Math.floor(this.avatar.position.z / TILE_SIZE));
+    return areaName === zoneName ? zoneName : `${zoneName} — ${areaName}`;
   }
 
   /**
@@ -2735,6 +2805,9 @@ export class OverworldScreen implements Screen {
         });
       },
     });
+    // An in-place overlay (see openWorldMap), not a separate screen like the
+    // buttons above — no zone rebuild on the way back.
+    const worldMapBtn = el('div', { className: 'btn', text: 'Mapa Mundi', onClick: () => this.openWorldMap() });
     const exitBtn = el('div', {
       className: 'btn',
       text: 'Salvar e Sair ao Menu',
@@ -2751,7 +2824,7 @@ export class OverworldScreen implements Screen {
 
     this.pauseOverlay = el('div', { className: 'panel pause-overlay' }, [
       el('h2', { text: 'Pausado' }),
-      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn, questLogBtn]),
+      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn, questLogBtn, worldMapBtn]),
       el('div', { className: 'pause-divider' }),
       this.mountSectionEl,
       el('div', { className: 'pause-divider' }),

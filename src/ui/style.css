@@ -398,6 +398,42 @@ body {
   display: none;
 }
 
+/* "Mapa Mundi" badge (OverworldScreen.openWorldMap) — the expand badge's
+   twin on the minimap's OTHER top corner, so the world map is one tap away
+   without adding another button to the HUD's right-hand column. Same
+   top/right anchor math as .minimap-expand-btn, offset by the minimap's own
+   width: 140px here, 110px/90px at the phone breakpoints below (each
+   breakpoint re-states `right` for its own minimap width). */
+.worldmap-open-btn {
+  position: absolute;
+  top: calc(8px + var(--safe-t) + 3px);
+  right: calc(10px + var(--safe-r) + 140px - 3px - 20px);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  background: rgba(26, 20, 35, 0.85);
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.worldmap-open-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.worldmap-open-btn .worldmap-globe-icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+.worldmap-open-btn.hidden-while-expanded {
+  display: none;
+}
+
 /* Dims the rest of the HUD behind the expanded minimap and gives "tap
    outside" a target to dismiss it — hidden whenever the map isn't expanded
    so it never intercepts clicks then. */
@@ -680,6 +716,13 @@ body {
   padding: 24px 32px;
   text-align: center;
   min-width: 280px;
+  /* A landscape phone (~390px tall) can't fit every button (plus one per
+     unlocked mount) — capped to the viewport and scrollable, so the heading,
+     "Continuar Jogando" and "Salvar e Sair" never end up cut off above/below
+     the screen edge the way the centering transform alone left them. */
+  max-height: calc(100% - 16px - var(--safe-t) - var(--safe-b));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .pause-overlay h2 {
   margin: 0 0 14px;
@@ -688,6 +731,440 @@ body {
 .pause-divider {
   border-top: 1px solid var(--panel-border);
   margin: 12px 0;
+}
+
+/* --- Mapa Mundi (ui/worldMap.ts) ------------------------------------ */
+/* Full-screen dimmed backdrop (tap outside the panel closes, like
+   .minimap-backdrop) above every HUD piece and the expanded minimap
+   (z 15-17), below the first-time tutorial (z 50). */
+.worldmap-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(8px + var(--safe-t)) calc(8px + var(--safe-r)) calc(8px + var(--safe-b)) calc(8px + var(--safe-l));
+  background: rgba(10, 8, 14, 0.72);
+  pointer-events: auto;
+}
+.worldmap-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-width: 980px;
+  max-height: 740px;
+  padding: 10px 12px 8px;
+  background: rgba(26, 20, 35, 0.95);
+  border-width: 2px;
+  border-radius: 8px;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.6);
+}
+.worldmap-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.worldmap-heading h2 {
+  margin: 0;
+  color: var(--accent);
+  font-size: 28px;
+  line-height: 1;
+}
+.worldmap-subtitle {
+  font-size: 16px;
+  line-height: 1.1;
+  color: var(--text-dim);
+}
+.worldmap-close-btn {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: rgba(26, 20, 35, 0.85);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.worldmap-close-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+/* The diagram itself. Every child is absolutely positioned from its own
+   --p* (portrait) / --l* (landscape) custom properties — fractions of this
+   box computed in worldMapLayout.ts — so the two orientation blocks below
+   are the only thing deciding which layout is live. */
+.worldmap-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 8px 0 6px;
+}
+.worldmap-roads {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.wm-road {
+  fill: none;
+  stroke-linecap: round;
+}
+/* Roads into Pedravale — the minimap's own path-tile color. */
+.wm-road.main {
+  stroke: #c9b98a;
+  stroke-opacity: 0.8;
+  stroke-width: 2.5;
+  stroke-dasharray: 7 5;
+}
+/* Roads inside one class's territory — stroke color set per class in JS. */
+.wm-road.local {
+  stroke-opacity: 0.85;
+  stroke-width: 1.8;
+  stroke-dasharray: 3 4;
+}
+.wm-territory {
+  position: absolute;
+  left: var(--px0);
+  top: var(--py0);
+  width: var(--pw);
+  height: var(--ph);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 4px 2px;
+  background: var(--wm-tint);
+  border: 1px solid var(--wm-edge);
+  border-radius: 8px;
+}
+.wm-territory.side-b {
+  justify-content: flex-end;
+}
+/* The player's own class's territory. */
+.wm-territory.own {
+  border: 2px solid var(--wm-color);
+}
+.wm-territory-caption {
+  /* Shrinks a touch on the narrowest phones so "★ Necromante" (the longest
+     own-class caption) still fits a quarter-width portrait column. */
+  font-size: clamp(12px, 3.6vw, 14px);
+  line-height: 1;
+  color: var(--wm-color);
+  text-shadow: 1px 1px 0 #000;
+  white-space: nowrap;
+}
+.wm-node {
+  position: absolute;
+  left: var(--px);
+  top: var(--py);
+  transform: translate(-50%, -50%);
+  width: 23%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 3px;
+  text-align: center;
+  /* Opaque, so the roads drawn underneath visibly stop at each card's edge. */
+  background: #221a2d;
+  border: 1px solid var(--wm-color, var(--panel-border));
+  border-radius: 5px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.45);
+}
+.wm-node-icon {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--wm-color, var(--text));
+}
+.wm-node-name {
+  font-size: 15px;
+  line-height: 0.95;
+}
+.wm-node.start {
+  width: 21%;
+  border-style: dashed;
+}
+.wm-node.start .wm-node-icon {
+  width: 13px;
+  height: 13px;
+}
+.wm-node.start .wm-node-name {
+  font-size: 14px;
+  color: #d9d0e0;
+}
+.wm-node.secondary {
+  border-width: 2px;
+}
+.wm-node.capital {
+  width: 46%;
+  gap: 3px;
+  padding: 6px 6px 7px;
+  background: #2b2138;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 3px rgba(242, 193, 78, 0.16), 0 3px 0 rgba(0, 0, 0, 0.5);
+}
+.wm-node.capital .wm-node-icon {
+  width: 32px;
+  height: 27px;
+  color: var(--accent);
+}
+.wm-node.capital .wm-node-name {
+  font-size: 24px;
+  color: var(--accent);
+}
+.wm-node-sub {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-dim);
+}
+/* "Você está aqui": a gold border plus a pulsing gold ring (an opacity-only
+   animation, so it stays on the compositor instead of repainting the card
+   every frame) and a pin styled like the minimap's own player dot. */
+.wm-node.current {
+  border-color: var(--accent);
+}
+.wm-node.current::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  pointer-events: none;
+  animation: quest-arrow-pulse 1.1s ease-in-out infinite;
+}
+.wm-pin {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #f2c14e;
+  border: 2px solid #1a1423;
+  box-shadow: 0 0 6px rgba(242, 193, 78, 0.9);
+}
+.wm-pin.static {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 11px;
+  height: 11px;
+  box-shadow: none;
+}
+.worldmap-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px 14px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-dim);
+}
+.wm-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.wm-legend-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--text);
+}
+.wm-legend-icon.capital {
+  width: 16px;
+  color: var(--accent);
+}
+.wm-legend-star {
+  color: var(--accent);
+}
+/* Portrait draws only its own roads… */
+.worldmap-roads.wm-landscape {
+  display: none;
+}
+/* …landscape (every desktop, and a phone held sideways) swaps to the
+   left/right layout: class territories become rows either side of
+   Pedravale, and each card lays its icon beside its name instead of above. */
+@media (orientation: landscape) {
+  .worldmap-roads.wm-portrait {
+    display: none;
+  }
+  .worldmap-roads.wm-landscape {
+    display: block;
+  }
+  .wm-territory {
+    left: var(--lx0);
+    top: var(--ly0);
+    width: var(--lw);
+    height: var(--lh);
+    flex-direction: row;
+    align-items: center;
+    padding: 2px 6px;
+  }
+  /* The caption shares the row with the cards here, so it gets a fixed
+     share of it (~0.09 of the map width — the territory itself is ~0.39
+     wide) and wraps within that instead of running into the start card,
+     which worldMapLayout.ts's LANDSCAPE_RINGS places just past it. */
+  .wm-territory-caption {
+    max-width: 23%;
+    white-space: normal;
+    text-align: center;
+    line-height: 0.95;
+  }
+  .wm-node {
+    left: var(--lx);
+    top: var(--ly);
+    width: 12%;
+    flex-direction: row;
+    justify-content: center;
+    gap: 5px;
+    padding: 4px 6px;
+    text-align: left;
+  }
+  .wm-node.start {
+    width: 11%;
+  }
+  .wm-node.capital {
+    width: 16%;
+    flex-direction: column;
+    text-align: center;
+  }
+}
+/* Short portrait phones (iPhone SE-class, ~568-640px tall): a smaller
+   Pedravale card keeps clear of the secondary-village rows above/below it. */
+@media (orientation: portrait) and (max-height: 640px) {
+  .worldmap-heading h2 {
+    font-size: 24px;
+  }
+  .worldmap-subtitle {
+    font-size: 14px;
+  }
+  .wm-node-name {
+    font-size: 14px;
+  }
+  .wm-node.start .wm-node-name {
+    font-size: 13px;
+  }
+  .wm-node.capital {
+    padding: 4px 4px 5px;
+  }
+  .wm-node.capital .wm-node-icon {
+    width: 24px;
+    height: 20px;
+  }
+  .wm-node.capital .wm-node-name {
+    font-size: 19px;
+  }
+  .wm-node-sub {
+    font-size: 12px;
+  }
+  .worldmap-legend {
+    font-size: 13px;
+  }
+}
+/* Desktop-sized windows: the panel is up to 980x740 there, so the phone-
+   sized labels would float in a lot of empty territory — scale them up. */
+@media (min-width: 900px) and (min-height: 640px) {
+  .worldmap-heading h2 {
+    font-size: 34px;
+  }
+  .worldmap-subtitle {
+    font-size: 19px;
+  }
+  .wm-node-name {
+    font-size: 19px;
+  }
+  .wm-node.start .wm-node-name {
+    font-size: 17px;
+  }
+  .wm-node-icon {
+    width: 18px;
+    height: 18px;
+  }
+  .wm-node.start .wm-node-icon {
+    width: 16px;
+    height: 16px;
+  }
+  .wm-node.capital .wm-node-name {
+    font-size: 30px;
+  }
+  .wm-node.capital .wm-node-icon {
+    width: 40px;
+    height: 33px;
+  }
+  .wm-node-sub {
+    font-size: 16px;
+  }
+  .wm-territory-caption {
+    font-size: 18px;
+  }
+  .worldmap-legend {
+    font-size: 17px;
+  }
+  .wm-legend-icon {
+    width: 16px;
+    height: 16px;
+  }
+  .wm-legend-icon.capital {
+    width: 20px;
+  }
+}
+/* Short landscape phones: tighten the header/legend so the diagram itself
+   keeps as much of the ~390px of height as possible. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .worldmap-panel {
+    padding: 6px 10px 5px;
+  }
+  .worldmap-header {
+    align-items: center;
+  }
+  .worldmap-heading {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0 12px;
+  }
+  .worldmap-heading h2 {
+    font-size: 22px;
+  }
+  .worldmap-subtitle {
+    font-size: 14px;
+  }
+  .worldmap-close-btn {
+    width: 30px;
+    height: 30px;
+  }
+  .worldmap-area {
+    margin: 4px 0;
+  }
+  .wm-node-name {
+    font-size: 14px;
+  }
+  .wm-node.start .wm-node-name {
+    font-size: 13px;
+  }
+  .wm-node.capital .wm-node-name {
+    font-size: 20px;
+  }
+  .wm-node.capital .wm-node-icon {
+    width: 26px;
+    height: 22px;
+  }
+  .wm-territory-caption {
+    font-size: 13px;
+  }
+  .worldmap-legend {
+    font-size: 13px;
+  }
 }
 
 /* --- Combat (now overlaid directly on the overworld, no separate arena screen) --- */
@@ -1069,6 +1546,9 @@ body {
     width: 110px;
     height: 110px;
   }
+  .worldmap-open-btn {
+    right: calc(10px + var(--safe-r) + 110px - 3px - 20px);
+  }
   .hud-hint,
   .menu-btn {
     top: calc(126px + var(--safe-t));
@@ -1150,6 +1630,9 @@ body {
   .minimap-canvas {
     width: 90px;
     height: 90px;
+  }
+  .worldmap-open-btn {
+    right: calc(10px + var(--safe-r) + 90px - 3px - 20px);
   }
   .hud-hint,
   .menu-btn {
