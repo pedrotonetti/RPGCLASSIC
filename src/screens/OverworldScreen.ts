@@ -23,7 +23,7 @@ import { animateChestGlow, buildTreasureChestMesh, setChestOpened, type Treasure
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
 import { loadNpcAvatar } from '../render/npcAvatar';
 import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
-import { buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
+import { animateWaterMaterial, buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { buildWalkabilityGrid, findNearestWalkable, pathfindToClick } from '../systems/Pathfinding';
 import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
@@ -191,7 +191,21 @@ const FOX_SPAWN_TILES: Array<{ x: number; y: number }> = [
   { x: 31, y: 9 },
   { x: 19, y: 19 },
 ];
-const FOX_SCALE = 0.42;
+/**
+ * fox.glb (the Khronos sample Fox) is authored in centimetre-scale units:
+ * its bind pose stands ~79 units tall at the ear tips and ~155 long
+ * nose-to-tail (the mesh's own POSITION accessor bounds). The old
+ * hand-picked FOX_SCALE of 0.42 assumed a roughly unit-sized model, which
+ * actually rendered every fox ~33 world units tall — ~18x the ~1.8-unit
+ * player/NPC avatars — so a fox wandering at the edge of Praça do Mercado
+ * loomed over the whole plaza with just its legs/paws visible from the
+ * gameplay camera. Scale is derived from the native height instead, so
+ * each fox stands a believable ~0.55 units (knee/hip height next to an
+ * avatar) before spawnFoxAt's own ±15% size jitter.
+ */
+const FOX_NATIVE_HEIGHT = 79;
+const FOX_TARGET_HEIGHT = 0.55;
+const FOX_SCALE = FOX_TARGET_HEIGHT / FOX_NATIVE_HEIGHT;
 const FOX_WANDER_RADIUS = 1.6;
 const FOX_MOVE_SPEED = 0.6; // world units per second
 
@@ -574,10 +588,7 @@ export class OverworldScreen implements Screen {
   }
 
   private animateWater(): void {
-    if (!this.waterMaterial) return;
-    const shimmer = Math.sin(this.time * 1.4) * 0.06;
-    this.waterMaterial.opacity = 0.82 + shimmer;
-    this.waterMaterial.emissiveIntensity = 0.15 + Math.max(0, shimmer);
+    if (this.waterMaterial) animateWaterMaterial(this.waterMaterial, this.time);
   }
 
   /** Drives the mounted creature's own baked idle/walk clip — real animation from its glTF (see render/mountModel.ts), not the old hand-coded wing-flap sine wave. */

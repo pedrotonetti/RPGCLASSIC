@@ -22,7 +22,7 @@ export interface WorldMeshes {
   group: THREE.Group;
   widthWorld: number;
   depthWorld: number;
-  /** Shared material driving all water tiles — animate it for a shimmering surface. */
+  /** Shared material driving all water tiles — pass it to `animateWaterMaterial` each frame for its ripple/foam motion. */
   waterMaterial: THREE.MeshStandardMaterial | null;
   /** Ground-plane circles the camera should steer clear of instead of clipping through — see OverworldScreen.desiredCameraPosition. */
   treeColliders: TreeCollider[];
@@ -275,6 +275,113 @@ function buildBuildingMeshes(buildings: BuildingPlacement[], accentColor: number
   return { group, colliders };
 }
 
+/**
+ * Shared water surface material. Before this, water was a flat navy
+ * MeshStandardMaterial whose only motion was a uniform whole-pond opacity
+ * pulse, and players read it as blue floor tiles they mysteriously couldn't
+ * walk on. A small `onBeforeCompile` patch (no extra textures, render
+ * targets or passes — a few ALU ops on water fragments only) adds the cues
+ * that say "water" at a glance:
+ *  - lighter, shallower colour toward the bank and a thin, gently breathing
+ *    foam line where the water meets land (from the per-instance
+ *    `shoreEdges`/`shoreCorners` flags `buildOverworldMeshes` fills in);
+ *  - three crossing ripple waves in world space that drift over time,
+ *    darkening troughs and adding small emissive glint streaks on the crests.
+ * Driven by `animateWaterMaterial`.
+ */
+function makeWaterMaterial(): THREE.MeshStandardMaterial {
+  const uTime = { value: 0 };
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x2a78ad,
+    roughness: 0.25,
+    metalness: 0.05,
+    emissive: 0x0e3552,
+    emissiveIntensity: 0.35,
+  });
+  mat.userData.uTime = uTime;
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = uTime;
+    shader.uniforms.uShallow = { value: new THREE.Color(0x5cc0d8) };
+    shader.uniforms.uFoam = { value: new THREE.Color(0xeaf8f6) };
+    shader.uniforms.uGlint = { value: new THREE.Color(0x9fd8ef) };
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        attribute vec4 shoreEdges;
+        attribute vec4 shoreCorners;
+        varying vec4 vShoreEdges;
+        varying vec4 vShoreCorners;
+        varying vec2 vWaterXZ;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vShoreEdges = shoreEdges;
+        vShoreCorners = shoreCorners;
+        vec4 waterWorld = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          waterWorld = instanceMatrix * waterWorld;
+        #endif
+        vWaterXZ = (modelMatrix * waterWorld).xz;`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        uniform float uTime;
+        uniform vec3 uShallow;
+        uniform vec3 uFoam;
+        uniform vec3 uGlint;
+        varying vec4 vShoreEdges;
+        varying vec4 vShoreCorners;
+        varying vec2 vWaterXZ;`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        // Distance (in tiles, capped at 1) to the nearest land among the 8
+        // neighbours: edges (W,E,N,S) and corner points (NW,NE,SW,SE).
+        vec2 wp = fract(vWaterXZ / ${TILE_SIZE.toFixed(1)});
+        float shoreDist = 1.0;
+        shoreDist = min(shoreDist, mix(1.0, wp.x, vShoreEdges.x));
+        shoreDist = min(shoreDist, mix(1.0, 1.0 - wp.x, vShoreEdges.y));
+        shoreDist = min(shoreDist, mix(1.0, wp.y, vShoreEdges.z));
+        shoreDist = min(shoreDist, mix(1.0, 1.0 - wp.y, vShoreEdges.w));
+        shoreDist = min(shoreDist, mix(1.0, length(wp), vShoreCorners.x));
+        shoreDist = min(shoreDist, mix(1.0, length(wp - vec2(1.0, 0.0)), vShoreCorners.y));
+        shoreDist = min(shoreDist, mix(1.0, length(wp - vec2(0.0, 1.0)), vShoreCorners.z));
+        shoreDist = min(shoreDist, mix(1.0, length(wp - vec2(1.0)), vShoreCorners.w));
+        // Three non-aligned travelling waves. Glints sit on the crest band of
+        // the main wave, broken into drifting streaks by the other two, so
+        // they read as light catching ripple crests rather than a dot grid.
+        float waveA = sin(dot(vWaterXZ, vec2(0.8, 0.55)) * 2.2 + uTime * 1.3);
+        float waveB = sin(dot(vWaterXZ, vec2(-0.45, 0.9)) * 3.1 - uTime * 1.05);
+        float waveC = sin(dot(vWaterXZ, vec2(0.95, -0.3)) * 4.3 + uTime * 1.7);
+        float glint = smoothstep(0.82, 1.0, waveA) * smoothstep(0.0, 0.9, 0.6 * waveB + 0.4 * waveC);
+        diffuseColor.rgb = mix(uShallow, diffuseColor.rgb, smoothstep(0.0, 0.7, shoreDist));
+        diffuseColor.rgb *= 0.92 + 0.08 * (0.5 * waveA + 0.3 * waveB + 0.2 * waveC);
+        float foamWidth = 0.13 + 0.035 * sin(uTime * 1.6 + vWaterXZ.x * 1.3 + vWaterXZ.y * 0.9);
+        float foam = 1.0 - smoothstep(foamWidth * 0.45, foamWidth, shoreDist);
+        diffuseColor.rgb = mix(diffuseColor.rgb, uFoam, foam * 0.9);`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        totalEmissiveRadiance += uGlint * 0.35 * glint * (1.0 - foam);
+        totalEmissiveRadiance += uFoam * 0.2 * foam;`,
+      );
+  };
+  mat.customProgramCacheKey = () => 'overworld-water';
+  return mat;
+}
+
+/** Advances the water surface's ripple/foam animation — see `makeWaterMaterial`. */
+export function animateWaterMaterial(mat: THREE.MeshStandardMaterial, time: number): void {
+  const uTime = mat.userData.uTime as { value: number } | undefined;
+  if (uTime) uTime.value = time;
+}
+
 export function buildOverworldMeshes(tiles: TileType[][], accentColor = 0x4c8a3f, buildings: BuildingPlacement[] = []): WorldMeshes {
   const mapHeight = tiles.length;
   const mapWidth = tiles[0].length;
@@ -326,21 +433,30 @@ export function buildOverworldMeshes(tiles: TileType[][], accentColor = 0x4c8a3f
 
   let waterMaterial: THREE.MeshStandardMaterial | null = null;
   if (waterPositions.length > 0) {
-    const geo = new THREE.BoxGeometry(TILE_SIZE * 0.98, 0.08, TILE_SIZE * 0.98, 6, 1, 6);
-    waterMaterial = new THREE.MeshStandardMaterial({
-      color: 0x3a6ea5,
-      roughness: 0.15,
-      metalness: 0.15,
-      transparent: true,
-      opacity: 0.88,
-      emissive: 0x1c3f63,
-      emissiveIntensity: 0.15,
-    });
+    // Full-tile flat quads (no 0.98 inset) so a pond reads as one continuous
+    // surface — the old per-tile boxes left a grass seam around every tile,
+    // which is exactly what made water look like a grid of blue paving slabs.
+    const geo = new THREE.PlaneGeometry(TILE_SIZE, TILE_SIZE);
+    geo.rotateX(-Math.PI / 2);
+    waterMaterial = makeWaterMaterial();
     const inst = new THREE.InstancedMesh(geo, waterMaterial, waterPositions.length);
+    inst.receiveShadow = true;
+    // Per-instance flags for which of the tile's 8 neighbours are land —
+    // edges (W,E,N,S) and diagonal corners (NW,NE,SW,SE) — so the shader's
+    // shallow tint/foam line follows the real shoreline (see makeWaterMaterial).
+    const land = (x: number, y: number) => (tiles[y]?.[x] === TileType.Water ? 0 : 1);
+    const edges = new Float32Array(waterPositions.length * 4);
+    const corners = new Float32Array(waterPositions.length * 4);
     waterPositions.forEach((p, i) => {
-      m.makeTranslation(p.x, 0.02, p.z);
+      m.makeTranslation(p.x, 0.05, p.z);
       inst.setMatrixAt(i, m);
+      const tx = Math.floor(p.x / TILE_SIZE);
+      const ty = Math.floor(p.z / TILE_SIZE);
+      edges.set([land(tx - 1, ty), land(tx + 1, ty), land(tx, ty - 1), land(tx, ty + 1)], i * 4);
+      corners.set([land(tx - 1, ty - 1), land(tx + 1, ty - 1), land(tx - 1, ty + 1), land(tx + 1, ty + 1)], i * 4);
     });
+    geo.setAttribute('shoreEdges', new THREE.InstancedBufferAttribute(edges, 4));
+    geo.setAttribute('shoreCorners', new THREE.InstancedBufferAttribute(corners, 4));
     group.add(inst);
   }
 
