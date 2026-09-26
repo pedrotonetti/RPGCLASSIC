@@ -410,15 +410,23 @@ body {
   color: var(--accent);
   background: rgba(26, 20, 35, 0.7);
   border-radius: 4px;
+  /* questTrackerText joins one line per tracked quest with '\n' (main chain,
+     then a concurrent side quest if one is running — see QuestSystem's
+     QuestSlot) — this renders each as its own visual line instead of
+     collapsing the newline into a space. */
+  white-space: pre-line;
 }
 
 /* "Go to <zone>" line for a talkTo objective whose NPC stands in a different
    zone (see OverworldScreen.updateQuestIndicator) — a separate element,
    directly under .quest-tracker, so questTrackerText's own output never has
-   to change shape (tests/e2e/quest.spec.ts asserts on it). */
+   to change shape (tests/e2e/quest.spec.ts asserts on it). Nudged down a bit
+   from .quest-tracker's own top so a second tracked-quest line (a
+   concurrent side quest) growing the tracker to two lines doesn't run into
+   this. */
 .quest-zone-hint {
   position: absolute;
-  top: calc(150px + var(--safe-t));
+  top: calc(168px + var(--safe-t));
   left: calc(8px + var(--safe-l));
   max-width: 320px;
   padding: 4px 10px;
@@ -647,6 +655,22 @@ body {
 .dungeon-portal-label .dlevel {
   font-size: 12px;
   color: var(--text-dim);
+}
+
+/* A hidden chest's floating name label — same world-anchored, click-through
+   idiom as .dungeon-portal-label (see updateChests), just a plain caption
+   (no sub-line) since a chest has no recommended-level readout to show. Not
+   itself clickable — opening one is [E]/tap-to-interact only (see
+   tryInteract/openChest), matching how an NPC's own name tag isn't a click
+   target either. */
+.chest-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  text-align: center;
+  font-size: 13px;
+  color: #f2c14e;
+  text-shadow: 2px 2px 0 #000;
+  pointer-events: none;
 }
 
 /* Small "Emboscadas: 2/3" readout shown only while inside a dungeon instance. */
@@ -935,7 +959,7 @@ body {
     padding: 5px 8px;
   }
   .quest-zone-hint {
-    top: calc(160px + var(--safe-t));
+    top: calc(178px + var(--safe-t));
     max-width: 56vw;
     font-size: 11px;
     padding: 3px 6px;
@@ -987,7 +1011,7 @@ body {
     padding: 3px 6px;
   }
   .quest-zone-hint {
-    top: calc(104px + var(--safe-t));
+    top: calc(116px + var(--safe-t));
     font-size: 11px;
     padding: 3px 6px;
   }

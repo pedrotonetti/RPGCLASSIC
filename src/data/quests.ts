@@ -509,12 +509,21 @@ export const AMARA_REVEAL_QUESTS: QuestDefinition[] = [
 
 /**
  * Ato 3 — the confrontation and branching choice LORE.md's "O final"
- * describes (O Corte / A Cura Tentada / O Abraço da Sede). Two lead-in
- * quests (a gauntlet, then the confrontation itself), class-agnostic like
- * AMARA_REVEAL_QUESTS. The choice of ENDING itself is deliberately NOT a
- * QuestObjective — this schema has no branching mechanism, and picking an
- * ending isn't something to "complete" so much as something to decide.
- * completing act3_q2_confront (talking to Ilva) instead hands off to
+ * describes (O Corte / A Cura Tentada / O Abraço da Sede). Class-agnostic
+ * like AMARA_REVEAL_QUESTS. Originally just two lead-in quests (a gauntlet,
+ * then the confrontation itself); extended here with a nine-quest "Cerco a
+ * Ilva" arc between them — three corrupted seals Ilva planted around
+ * Pedravale to accelerate the Sede while she prepares, each one a
+ * defeat-objective assault followed by a short talkTo beat with an existing
+ * Pedravale NPC confirming the seal is really down, then a level-gated
+ * "gather your strength" beat and one last guardian gauntlet before the
+ * final march on her own door — all reusing the exact same generic
+ * nextQuestId/notifyTalkedTo/notifyEnemyDefeated/notifyLevelChanged
+ * machinery every other chain in this file already runs on. The choice of
+ * ENDING itself is still deliberately NOT a QuestObjective — this schema has
+ * no branching mechanism, and picking an ending isn't something to
+ * "complete" so much as something to decide. Completing act3_q2_confront
+ * (talking to Ilva, still the very last quest in the chain) hands off to
  * OverworldScreen's Act3ChoiceOverlay (see closeDialogue), which sets
  * Player.act3Ending and shows that ending's own epilogue text. See
  * QuestSystem.ensureAct3Started for how this chain is triggered.
@@ -529,6 +538,118 @@ export const ACT3_QUESTS: QuestDefinition[] = [
     objective: { kind: 'defeat', targetId: 'stone_golem', amount: 5 },
     rewardXp: 420,
     rewardGold: 260,
+    nextQuestId: 'act3_q2_signs',
+  },
+  {
+    id: 'act3_q2_signs',
+    title: 'Os Três Selos',
+    description:
+      'Com os guardiões caídos, Tobias finalmente admite que sabe onde Ilva se escondeu — mas também sabe que ela não fez isso sozinha: cravou três selos corrompidos ao redor de Pedravale para acelerar a Sede enquanto se prepara. Derrubá-los primeiro é a única forma de chegar até ela sem que o próprio campo de batalha a proteja.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'talkTo', targetId: 'tobias', amount: 1 },
+    rewardXp: 90,
+    rewardGold: 60,
+    nextQuestId: 'act3_q3_north_seal',
+  },
+  {
+    id: 'act3_q3_north_seal',
+    title: 'O Selo do Norte',
+    description:
+      'O primeiro selo pulsa nas terras altas ao norte, guardado por guerreiros de casca rachada que a Sede reuniu só para protegê-lo. Quebre o cerco antes de tentar sequer tocar o selo em si.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'defeat', targetId: 'orc', amount: 6 },
+    rewardXp: 260,
+    rewardGold: 160,
+    nextQuestId: 'act3_q4_north_report',
+    onCompleteEffect: { worldStateDelta: { corruption: -6, hope: 4 }, markEventId: 'act3_seal_north_broken' },
+  },
+  {
+    id: 'act3_q4_north_report',
+    title: 'O Que os Símbolos Dizem',
+    description:
+      'Com o selo do norte destruído, o Escrivão Aldo reconhece de longe os símbolos gravados nos destroços — os mesmos das vigas mais antigas da casa de Tobias. Ele precisa vê-los de perto para confirmar o que já suspeita.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'talkTo', targetId: 'escrivao_aldo', amount: 1 },
+    rewardXp: 110,
+    rewardGold: 70,
+    nextQuestId: 'act3_q5_east_seal',
+  },
+  {
+    id: 'act3_q5_east_seal',
+    title: 'O Selo do Leste',
+    description:
+      'O segundo selo arde nas trilhas do leste, onde brasas famintas nunca se apagam desde que Ilva o cravou ali. Apague-as antes que o fogo espalhe a Sede mais rápido do que qualquer selo sozinho conseguiria.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'defeat', targetId: 'fire_elemental', amount: 5 },
+    rewardXp: 290,
+    rewardGold: 175,
+    rewardItem: { templateId: 'bracelete_arcano', rarity: 'vermelho' },
+    nextQuestId: 'act3_q6_east_report',
+    onCompleteEffect: { worldStateDelta: { corruption: -6, hope: 4 }, markEventId: 'act3_seal_east_broken' },
+  },
+  {
+    id: 'act3_q6_east_report',
+    title: 'A Fé Que Ainda Resiste',
+    description:
+      'A Zeladora Sable sente o segundo selo cair antes mesmo de você contar — as Raízes já gritam mais baixo. Ela pede só para confirmar, com as próprias mãos sobre a terra, que a queda foi real.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'talkTo', targetId: 'zeladora_sable', amount: 1 },
+    rewardXp: 110,
+    rewardGold: 70,
+    nextQuestId: 'act3_q7_south_seal',
+  },
+  {
+    id: 'act3_q7_south_seal',
+    title: 'O Selo do Sul',
+    description:
+      'O terceiro e último selo repousa no sul, onde um colosso ressequido o protege há dias sem descanso — nem para beber da própria lagoa que jurou vigiar.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'defeat', targetId: 'troll', amount: 3 },
+    rewardXp: 300,
+    rewardGold: 185,
+    nextQuestId: 'act3_q8_gathering',
+    onCompleteEffect: {
+      worldStateDelta: { corruption: -6, hope: 4 },
+      factionDelta: { factionId: 'pedravale', amount: 8 },
+      markEventId: 'act3_seal_south_broken',
+    },
+  },
+  {
+    id: 'act3_q8_gathering',
+    title: 'Reunir Forças',
+    description:
+      'Os três selos caíram, mas Ilva ainda tem os guardiões mais antigos entre ela e você. Tobias insiste: ninguém enfrenta o que vem a seguir despreparado — treine até ter certeza de que aguenta.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'reachLevel', amount: 20 },
+    rewardXp: 200,
+    rewardGold: 120,
+    nextQuestId: 'act3_q9_final_march',
+  },
+  {
+    id: 'act3_q9_final_march',
+    title: 'A Última Marcha',
+    description:
+      'Sem selos para alimentar a Sede ao redor de Pedravale, os últimos guardiões de Ilva se juntam num só bloco entre você e o covil dela. É a última fileira antes do silêncio.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'defeat', targetId: 'stone_golem', amount: 4 },
+    rewardXp: 480,
+    rewardGold: 280,
+    rewardItem: { templateId: 'martelo_sagrado', rarity: 'laranja' },
+    nextQuestId: 'act3_q10_gates',
+    onCompleteEffect: {
+      worldStateDelta: { corruption: -8, hope: 6, trust: 5 },
+      factionDelta: { factionId: 'pedravale', amount: 10 },
+    },
+  },
+  {
+    id: 'act3_q10_gates',
+    title: 'Diante do Covil',
+    description:
+      'Só resta a porta. Tobias segura a própria voz firme pela primeira vez em semanas — não por coragem nova, mas porque sabe que essa conversa, finalmente, é sua para terminar.',
+    giverNpcId: 'tobias',
+    objective: { kind: 'talkTo', targetId: 'tobias', amount: 1 },
+    rewardXp: 150,
+    rewardGold: 90,
     nextQuestId: 'act3_q2_confront',
   },
   {
@@ -548,13 +669,15 @@ export const ACT3_QUESTS: QuestDefinition[] = [
  * chamber, the far edge of a village), plus a couple of bounty-style hunts
  * against a specific higher-tier enemy. None of this gets its own
  * ensure*Started gate the way QUEST_CHAIN/CLASS_CALLING_QUESTS/
- * AMARA_REVEAL_QUESTS/ACT3_QUESTS do — the player only ever holds one
- * activeQuestId, so a side quest is handed out by simply talking to its own
- * giver NPC once its prerequisite is already in completedQuestIds (see
- * SIDE_QUEST_STARTERS and QuestSystem.offerSideQuest), and only ever takes
- * the slot while nothing from the main chain currently occupies it. Gated on
- * q6_dragon so none of it competes with early-game pacing. Two-quest chains
- * lean on the exact same generic nextQuestId/notifyTalkedTo/
+ * AMARA_REVEAL_QUESTS/ACT3_QUESTS do — a side quest is handed out by simply
+ * talking to its own giver NPC once its prerequisite is already in
+ * completedQuestIds (see SIDE_QUEST_STARTERS and QuestSystem.offerSideQuest).
+ * It lives in its own independent tracking slot (player.sideQuestId — see
+ * QuestSystem's QuestSlot), separate from the main chain's activeQuestId, so
+ * it runs ALONGSIDE whatever the main chain currently has active instead of
+ * only ever while that's idle — only that side slot itself needs to be free.
+ * Gated on q6_dragon so none of it competes with early-game pacing.
+ * Two-quest chains lean on the exact same generic nextQuestId/notifyTalkedTo/
  * notifyEnemyDefeated machinery as the main chain for their own second leg —
  * only the FIRST quest of each chain needs the special "offer" path.
  */

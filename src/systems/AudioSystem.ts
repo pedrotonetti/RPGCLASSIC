@@ -215,6 +215,13 @@ class AudioSystem {
     this.chord([659, 784, 988], 0.4, 'triangle', 0.15);
   }
 
+  /** A short "coins + creak" cue for opening a hidden chest (see OverworldScreen.openChest) — brighter/quicker than questComplete so the two never sound alike. */
+  chestOpen(): void {
+    this.tone({ freq: 260, toFreq: 180, duration: 0.12, type: 'triangle', gain: 0.1 });
+    this.tone({ freq: 880, duration: 0.06, type: 'square', gain: 0.1, delay: 0.08 });
+    this.tone({ freq: 1180, duration: 0.08, type: 'square', gain: 0.09, delay: 0.15 });
+  }
+
   // --- title theme ------------------------------------------------------
 
   /**

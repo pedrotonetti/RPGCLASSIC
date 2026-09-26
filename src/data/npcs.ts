@@ -22,11 +22,13 @@ export interface VendorInfo {
  * A quest-state-conditioned override of an NPC's default `dialogue` lines.
  * Checked in the order they appear in `NpcDefinition.questDialogue` — put the
  * most specific/latest state first. `when: 'active'` (the default) matches
- * while `questId` is the player's current `activeQuestId`; `when: 'completed'`
- * matches once `questId` is in `completedQuestIds` (and no earlier, more
- * specific entry matched) — handy for a persistent line that should stick
- * around after a chain's last quest, once there's no longer an active quest
- * to key off of.
+ * while `questId` is one of the player's currently tracked quests — main
+ * chain OR the concurrent side quest, see `systems/QuestSystem.ts`'s
+ * `QuestSlot`/`activeQuests` — passed in as `activeQuestIds` below;
+ * `when: 'completed'` matches once `questId` is in `completedQuestIds` (and
+ * no earlier, more specific entry matched) — handy for a persistent line
+ * that should stick around after a chain's last quest, once there's no
+ * longer an active quest to key off of.
  */
 export interface NpcQuestDialogue {
   questId: string;
@@ -126,6 +128,27 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Vá até os ipezais além da vila e ouça por si mesmo o que as Raízes têm a dizer. Eu... preciso pensar em como te contar o resto.',
     ],
     questDialogue: [
+      {
+        questId: 'act3_q10_gates',
+        lines: [
+          '(Tobias respira fundo diante da porta, como quem ensaiou essa calma a noite inteira.) Não é coragem nova. É só que essa conversa, finalmente, é sua para terminar — não minha.',
+          'Vá. Eu já disse tudo que tinha para dizer antes de você chegar até aqui.',
+        ],
+      },
+      {
+        questId: 'act3_q8_gathering',
+        lines: [
+          'Três selos, três menos para alimentar a Sede ao redor de Pedravale. Ainda assim, não subestime o que resta entre você e Ilva.',
+          'Treine até ter certeza. Eu já perdi gente demais por pressa.',
+        ],
+      },
+      {
+        questId: 'act3_q2_signs',
+        lines: [
+          'Ilva não fez isso sozinha — cravou três selos corrompidos ao redor de Pedravale para acelerar a Sede enquanto se prepara para você.',
+          'Norte, leste, sul. Derrube os três antes de sequer pensar em bater na porta dela.',
+        ],
+      },
       {
         questId: 'amara_r4_confession',
         when: 'completed',
@@ -1490,11 +1513,16 @@ export function getNpcById(id: string): NpcDefinition {
  * matching entry in `npc.questDialogue` (see NpcQuestDialogue), falling back
  * to `npc.dialogue` when none match. Takes primitives rather than a `Player`
  * so this data module has no dependency on the entities layer.
+ *
+ * `activeQuestIds` is every quest slot currently occupied — pass
+ * `[player.activeQuestId, player.sideQuestId]` (see `systems/QuestSystem.ts`'s
+ * `QuestSlot`) so an NPC's quest-conditioned line matches whichever slot that
+ * quest actually lives in, main chain or the concurrent side quest.
  */
-export function dialogueLinesFor(npc: NpcDefinition, activeQuestId: string | null, completedQuestIds: string[]): string[] {
+export function dialogueLinesFor(npc: NpcDefinition, activeQuestIds: Array<string | null>, completedQuestIds: string[]): string[] {
   for (const entry of npc.questDialogue ?? []) {
     const when = entry.when ?? 'active';
-    if (when === 'active' && activeQuestId === entry.questId) return entry.lines;
+    if (when === 'active' && activeQuestIds.includes(entry.questId)) return entry.lines;
     if (when === 'completed' && completedQuestIds.includes(entry.questId)) return entry.lines;
   }
   return npc.dialogue;
