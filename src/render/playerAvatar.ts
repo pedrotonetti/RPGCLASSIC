@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Player } from '../entities/Player';
+import type { CharacterAppearance, HairStyle } from '../config/customization';
 import { RARITY_COLOR, rarityTier } from '../config/rarity';
 import { getGemById } from '../data/gems';
 import { GltfActor, loadSkinnedInstance } from './gltfModel';
@@ -96,6 +97,75 @@ export const HELD_MESHES: Record<string, HeldMeshConfig> = {
 export const DEFAULT_CLASS = 'paladin';
 
 /**
+ * Per-class node name of the baked headwear mesh (helmet/hat) that
+ * `applyCosmeticVisual` shows/hides via `appearance.headAccessory` and
+ * recolors via `appearance.primaryColor`. Confirmed by dumping each class
+ * file's own JSON chunk: `Knight_Helmet` and `Mage_Hat` are plain (non-
+ * skinned) meshes rigidly parented to the `head` bone, exactly like
+ * `Knight_Cape`/`Mage_Cape`/`Rogue_Cape` are parented to `chest` below.
+ * Deliberately left out for two of the four classes rather than faking
+ * something the file doesn't have:
+ * - warrior (Barbarian.glb): it DOES ship a `Barbarian_Hat` mesh at the same
+ *   `head` anchor, but `HELD_MESHES.warrior.hide` already force-hides it
+ *   permanently (see that table's own comment — combined with the cape it
+ *   swallows the silhouette into a dark round mass from behind). This table
+ *   doesn't fight that existing, screenshot-verified call.
+ * - archer/assassin/monk (Rogue.glb): no headwear node exists in the file at
+ *   all — there is nothing to toggle or tint.
+ */
+const HEADWEAR_NODE: Partial<Record<string, string>> = {
+  paladin: 'Knight_Helmet',
+  mage: 'Mage_Hat',
+  necromancer: 'Mage_Hat',
+  cleric: 'Mage_Hat',
+};
+
+/**
+ * Per-class node name of the baked cape mesh `applyCosmeticVisual` recolors
+ * via `appearance.secondaryColor` — same `head`/`chest`-anchor pattern as
+ * `HEADWEAR_NODE` above. Left out for warrior: `Barbarian_Cape` is
+ * permanently hidden alongside `Barbarian_Hat` for the same silhouette
+ * reason, so there's nothing visible to recolor.
+ */
+const CAPE_NODE: Partial<Record<string, string>> = {
+  paladin: 'Knight_Cape',
+  mage: 'Mage_Cape',
+  necromancer: 'Mage_Cape',
+  cleric: 'Mage_Cape',
+  archer: 'Rogue_Cape',
+  assassin: 'Rogue_Cape',
+  monk: 'Rogue_Cape',
+};
+
+/**
+ * `appearance.hairStyle` picks stylized as an attached "long hair" accent (a
+ * small mesh pinned to the `head` bone and tinted with `appearance.hairColor`)
+ * instead of a literal sculpt of all 14 `HairStyle` options. The shared
+ * texture atlas (see `applyCosmeticVisual`'s own comment) already bakes a
+ * fixed, short hairline onto every class's head mesh, so an attachment can
+ * only ever ADD to that silhouette, never replace it — styles that already
+ * read as short/bald against that baseline (careca, curto, moicano, afro,
+ * topete, espetado, franja, entradas) are left exactly as the baked texture
+ * draws them instead of pinning something that wouldn't sit right over it.
+ * Only styles that read as "hair long enough to hang past the head" get the
+ * accent, so pick and color both stay visible on the real avatar.
+ */
+const HAIR_ACCENT_STYLES: ReadonlySet<HairStyle> = new Set<HairStyle>(['longo', 'rabocavalo', 'coque', 'trancado', 'chiquinhas']);
+
+/**
+ * Which cosmetic slots a class's model file actually has, so a picker UI
+ * (`CharacterCreationScreen`) can hide a control that would honestly do
+ * nothing for the currently-selected class instead of leaving it clickable
+ * with no visible effect. The hair accent has no class-dependent gap (every
+ * class's `head` bone exists, per `HELD_MESHES`' own dump), so it isn't
+ * listed here — only `headwear`/`cape` vary by class, per `HEADWEAR_NODE`/
+ * `CAPE_NODE` above.
+ */
+export function cosmeticSlotsForClass(classId: string): { headwear: boolean; cape: boolean } {
+  return { headwear: classId in HEADWEAR_NODE, cape: classId in CAPE_NODE };
+}
+
+/**
  * Per-mesh visual corrections for individual accessory meshes that read as
  * disproportionate at the otherwise-correct `MODEL_SCALE_CORRECTION` —
  * found by screenshotting each class next to an NPC of known height.
@@ -150,29 +220,125 @@ export function hideAlternateMeshes(scene: THREE.Group, classId: string): void {
  * so the model is a plain, already-resolved object by the time a
  * screen's synchronous `mount()` runs — no mid-mount await, no T-pose frame.
  *
- * `heightScale` is the only piece of character-creation customization that
- * still carries over onto the real model — the rest (skin tone, face, hair,
- * markings, garment colors...) has no home on a single pre-baked texture
- * atlas, so `CharacterCreationScreen` no longer even offers UI for those.
+ * `heightScale` plus 5 more `CharacterAppearance` fields now carry over onto
+ * the real model via `applyCosmeticVisual` below (`headAccessory`,
+ * `primaryColor`, `secondaryColor`, `hairStyle`, `hairColor`) — see that
+ * function's own comment for exactly how and why those 5 and not the rest.
+ * `appearance` is optional so the class-only previews in
+ * `MainMenuScreen`/`CharacterSelectScreen` (which have no player-specific
+ * choice to show yet) can keep calling this with just a `classId`.
  */
-export async function loadPreviewAvatar(classId: string, heightScale = 1): Promise<PlayerAvatar> {
+export async function loadPreviewAvatar(classId: string, appearance?: CharacterAppearance): Promise<PlayerAvatar> {
   const modelFile = CLASS_MODEL_FILE[classId] ?? CLASS_MODEL_FILE[DEFAULT_CLASS];
   const loaded = await loadSkinnedInstance(`characters/${modelFile}.glb`);
   hideAlternateMeshes(loaded.scene, classId);
   applyMeshScaleFixups(loaded.scene);
-  loaded.scene.scale.setScalar(heightScale * MODEL_SCALE_CORRECTION);
+  loaded.scene.scale.setScalar((appearance?.heightScale ?? 1) * MODEL_SCALE_CORRECTION);
 
   const actor = new GltfActor(loaded);
   actor.play('Idle');
-  return { scene: loaded.scene, actor, weaponKind: WEAPON_KIND[classId] ?? WEAPON_KIND[DEFAULT_CLASS], classId };
+  const avatar: PlayerAvatar = { scene: loaded.scene, actor, weaponKind: WEAPON_KIND[classId] ?? WEAPON_KIND[DEFAULT_CLASS], classId };
+  if (appearance) applyCosmeticVisual(avatar, appearance);
+  return avatar;
 }
 
-/** Same loader as `loadPreviewAvatar`, plus the player-specific bits (their actual height pick, socketed weapon gem, equipped armor's visual accents) a bare class/appearance preview doesn't have. */
+/** Same loader as `loadPreviewAvatar`, plus the player-specific bits (socketed weapon gem, equipped armor's visual accents) a bare class/appearance preview doesn't have. */
 export async function loadPlayerAvatar(player: Player): Promise<PlayerAvatar> {
-  const avatar = await loadPreviewAvatar(player.classId, player.appearance.heightScale);
+  const avatar = await loadPreviewAvatar(player.classId, player.appearance);
   applyWeaponGem(avatar, player);
   applyArmorVisual(avatar, player);
   return avatar;
+}
+
+/**
+ * Applies the 5 `CharacterAppearance` fields that have a genuine, honest
+ * home on the real GLTF avatar: `headAccessory`, `primaryColor` (headwear
+ * tint), `secondaryColor` (cape tint), and `hairStyle`+`hairColor` (attached
+ * hair accent). Called from `loadPreviewAvatar` right after the model loads,
+ * so both the character-creation live preview and the actual in-game avatar
+ * go through the exact same code path.
+ *
+ * Dumping every class file's own JSON chunk (`materials`/`textures`/`images`)
+ * confirms `applyArmorVisual`'s finding for the body meshes also holds for
+ * EVERY mesh in the file, headwear and cape included: one material
+ * (`{className}_texture`) with one baseColorTexture and one image, shared BY
+ * REFERENCE across all of them (three's GLTFLoader caches one material
+ * instance per material index and hands the same object to every primitive
+ * that references it). There is no separate skin/hair/face material slot to
+ * retint — mutating that shared material's `.color` would recolor every
+ * mesh on the model (body, arms, legs, head, AND every other clone/NPC/player
+ * currently wearing the same class file), exactly as `applyArmorVisual`'s own
+ * comment already found for the body.
+ *
+ * What the dump adds beyond that earlier finding: `Knight_Helmet`/`Mage_Hat`
+ * and `Knight_Cape`/`Mage_Cape`/`Rogue_Cape` are their own plain (non-skinned)
+ * Mesh nodes, rigidly parented to the `head`/`chest` bones — same pattern as
+ * the held-weapon meshes under `handslot.l`/`handslot.r`. Each Mesh instance
+ * has its own `.material` property (initially just pointing at that one
+ * shared atlas material, same as every other mesh). REPLACING that property
+ * outright with a brand-new, never-shared `MeshStandardMaterial` — rather
+ * than mutating the shared one, or even `.clone()`-ing it and keeping its
+ * baked texture map — only changes what that one mesh renders with. Every
+ * other mesh on this same clone (body, arms, legs, head) and every other
+ * clone made from the same template keep pointing at the original shared
+ * material object, completely unaffected. This is the same "own material,
+ * new mesh" safety rule `applyArmorVisual`'s pauldrons/emblem/cape already
+ * follow, applied to an existing GLB mesh instead of a synthesized one.
+ *
+ * Safe to call repeatedly (e.g. every time a creation-screen picker fires) —
+ * it always clears any hair accent it previously added before deciding
+ * whether to add a new one, and unconditionally re-sets headwear/cape
+ * visibility+material rather than only ever adding.
+ */
+export function applyCosmeticVisual(avatar: Pick<PlayerAvatar, 'scene' | 'classId'>, appearance: CharacterAppearance): void {
+  const headwearNode = HEADWEAR_NODE[avatar.classId];
+  if (headwearNode) {
+    const mesh = avatar.scene.getObjectByName(headwearNode);
+    if (mesh) {
+      const worn = appearance.headAccessory !== 'nenhum';
+      mesh.visible = worn;
+      if (worn && mesh instanceof THREE.Mesh) {
+        mesh.material = new THREE.MeshStandardMaterial({ color: appearance.primaryColor, roughness: 0.5, metalness: 0.15 });
+      }
+    }
+  }
+
+  const capeNode = CAPE_NODE[avatar.classId];
+  if (capeNode) {
+    const mesh = avatar.scene.getObjectByName(capeNode);
+    if (mesh instanceof THREE.Mesh) {
+      mesh.material = new THREE.MeshStandardMaterial({
+        color: appearance.secondaryColor,
+        roughness: 0.65,
+        metalness: 0.05,
+        side: THREE.DoubleSide,
+      });
+    }
+  }
+
+  const headBone = avatar.scene.getObjectByName('head');
+  if (headBone) {
+    for (const child of [...headBone.children]) {
+      if (child.userData.isHairAccent) headBone.remove(child);
+    }
+    if (HAIR_ACCENT_STYLES.has(appearance.hairStyle)) {
+      const hairMat = new THREE.MeshStandardMaterial({ color: appearance.hairColor, roughness: 0.55 });
+      const addStrand = (xOffset: number) => {
+        const strand = new THREE.Mesh(new THREE.CapsuleGeometry(0.028, 0.16, 4, 6), hairMat);
+        strand.position.set(xOffset, -0.02, -0.08);
+        strand.rotation.x = 0.55;
+        strand.castShadow = true;
+        strand.userData.isHairAccent = true;
+        headBone.add(strand);
+      };
+      if (appearance.hairStyle === 'chiquinhas') {
+        addStrand(-0.075);
+        addStrand(0.075);
+      } else {
+        addStrand(0);
+      }
+    }
+  }
 }
 
 /** Every classId `classes.ts` defines resolves to a model file — asserted by a defensive test alongside this. */
