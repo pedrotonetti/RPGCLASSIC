@@ -1116,108 +1116,14 @@ function addBeadyEyes(group: THREE.Group, x: number, y: number, z: number, size:
   group.add(eyeL, eyeR);
 }
 
-// --- mounts ------------------------------------------------------------
-
-/** A friendly long-necked pack animal — the ground mount. */
-function buildLlama(color: number): THREE.Group {
-  const group = new THREE.Group();
-  const bodyMat = mat(color, { roughness: 0.85 });
-
-  const body = mesh(new THREE.CapsuleGeometry(0.24, 0.5, 4, 8), bodyMat);
-  body.rotation.z = Math.PI / 2;
-  body.position.set(0, 0.5, 0);
-  group.add(body);
-
-  const legGeo = new THREE.CylinderGeometry(0.07, 0.06, 0.42, 8);
-  const legPositions: Array<[number, number]> = [
-    [-0.28, 0.16], [0.28, 0.16], [-0.28, -0.16], [0.28, -0.16],
-  ];
-  for (const [x, z] of legPositions) {
-    const leg = mesh(legGeo, bodyMat);
-    leg.position.set(x, 0.21, z);
-    group.add(leg);
-  }
-
-  const neck = mesh(new THREE.CylinderGeometry(0.1, 0.15, 0.55, 8), bodyMat);
-  neck.position.set(0.32, 0.95, 0);
-  neck.rotation.z = -0.5;
-  group.add(neck);
-
-  const head = mesh(new THREE.BoxGeometry(0.16, 0.2, 0.22), bodyMat);
-  head.position.set(0.52, 1.25, 0);
-  group.add(head);
-
-  const earGeo = new THREE.ConeGeometry(0.04, 0.14, 6);
-  const earL = mesh(earGeo, bodyMat);
-  const earR = mesh(earGeo, bodyMat);
-  earL.position.set(0.52, 1.4, 0.06);
-  earR.position.set(0.52, 1.4, -0.06);
-  group.add(earL, earR);
-
-  addBeadyEyes(group, 1.28, 0.6, 0.12, 0.025, 0x1a1423);
-
-  const tail = mesh(new THREE.ConeGeometry(0.06, 0.2, 6), bodyMat);
-  tail.position.set(-0.42, 0.75, 0);
-  tail.rotation.z = -Math.PI / 2.6;
-  group.add(tail);
-
-  return group;
-}
-
-/** A great bird mount, wings spread wide — the flying mount. */
-function buildCondor(color: number): THREE.Group {
-  const group = new THREE.Group();
-  const bodyMat = mat(color, { roughness: 0.7 });
-
-  const body = mesh(new THREE.CapsuleGeometry(0.2, 0.4, 4, 8), bodyMat);
-  body.rotation.z = Math.PI / 2;
-  body.position.set(0, 0, 0);
-  group.add(body);
-
-  const wingGeo = new THREE.BoxGeometry(0.85, 0.04, 0.32);
-  const wingMat = mat(color, { roughness: 0.6 });
-  const wingL = mesh(wingGeo, wingMat);
-  const wingR = mesh(wingGeo, wingMat);
-  wingL.position.set(0, 0.05, 0.45);
-  wingR.position.set(0, 0.05, -0.45);
-  wingL.rotation.x = -0.25;
-  wingR.rotation.x = 0.25;
-  group.add(wingL, wingR);
-  group.userData.wings = [wingL, wingR];
-
-  const neck = mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.3, 8), bodyMat);
-  neck.position.set(0.28, 0.14, 0);
-  neck.rotation.z = -0.7;
-  group.add(neck);
-
-  const head = mesh(new THREE.SphereGeometry(0.12, 10, 8), mat(0xe8e0d0, { roughness: 0.7 }));
-  head.position.set(0.44, 0.3, 0);
-  group.add(head);
-
-  const beak = mesh(new THREE.ConeGeometry(0.045, 0.16, 8), mat(0xd97a2e));
-  beak.position.set(0.58, 0.28, 0);
-  beak.rotation.z = -Math.PI / 2;
-  group.add(beak);
-
-  addBeadyEyes(group, 0.42, 0.34, 0.09, 0.02, 0xffcf4e);
-
-  const tail = mesh(new THREE.BoxGeometry(0.34, 0.03, 0.18), bodyMat);
-  tail.position.set(-0.36, -0.02, 0);
-  group.add(tail);
-
-  return group;
-}
-
-export function buildMountModel(mountId: string, color: number): THREE.Group {
-  switch (mountId) {
-    case 'llama':
-      return buildLlama(color);
-    case 'condor':
-      return buildCondor(color);
-    default:
-      return buildLlama(color);
-  }
-}
+// --- mounts --------------------------------------------------------------
+// Mounts used to be built here as low-poly primitive geometry (a boxes-and-
+// cones llama, a boxes-and-cones condor) — replaced by real rigged glTF
+// creatures (see `render/mountModel.ts`, `public/models/mounts/*.glb`,
+// `public/models/CREDITS.md`) after players called the old procedural mount
+// "horrível" (ugly). That system's loader lives in its own module instead of
+// here since it's async (network/GLTF load) where every other builder in
+// this file is a synchronous primitive-geometry constructor.
 
 export function buildEnemyModel(enemyId: string, color: number): THREE.Group {
   switch (enemyId) {
