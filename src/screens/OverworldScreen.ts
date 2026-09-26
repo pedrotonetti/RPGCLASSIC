@@ -68,35 +68,44 @@ const AUTO_WALK_SNAP_RADIUS = 3;
 const AUTO_WALK_STUCK_LIMIT = 1.2;
 
 /**
- * The default third-person camera rig: behind and above the avatar, angled
- * down at it. Grouped here (rather than as separate scattered constants) so
- * future work on camera positioning — a player-adjustable angle, a zoom
- * level, a different rig for boss fights, whatever comes next — has one
- * place to add to instead of hunting down every related number.
+ * Selectable third-person camera angle/distance presets, cycled one at a
+ * time via the eye button below the minimap (see cycleCameraAngle) — never
+ * automatically. Index 0 is the pre-existing default rig verbatim (same
+ * distance/height/lookHeight this screen always used), so a player who
+ * never touches the button sees no change at all.
  *
- * Pulled back and raised well above the previous close, near-eye-level
- * chase-cam (distance 4.4 / height 3.1) into a more elevated overview,
- * closer to how Diablo/PW-style ARPGs frame the character: enough of the
- * surrounding ground stays in frame to actually read a scene (nearby NPCs,
- * a monster corridor, a room's layout) instead of mostly sky and whatever
- * is directly ahead. Still genuinely third-person and behind the avatar —
- * not a top-down/isometric switch — just angled further down.
+ * Every preset keeps the exact same CAMERA_YAW azimuth (see that constant's
+ * own doc comment) — they vary only distance/height/lookHeight, never the
+ * orbit angle itself. That's deliberate: computeInputAxis's screen-relative
+ * input mapping and updateQuestIndicator's arrow bearing are both keyed off
+ * CAMERA_YAW too, so leaving it untouched means switching presets can never
+ * desync "which way is forward on screen" from what's actually rendered,
+ * and can't reintroduce the "camera spins behind a moving character"
+ * disorientation a continuously-rotating camera caused before (see
+ * CAMERA_YAW's own history). The player's actual complaint (front of the
+ * character being hard to read at the default angle) is instead addressed
+ * by giving them a closer, lower, near-eye-level option and a pulled-back
+ * overview, each a deliberate, readable angle rather than an automatic
+ * re-orientation.
  */
-const CAMERA_RIG = {
-  // Was 6.0 — roadside buildings (huts/houses placed right along a path,
-  // see MapGenerator's placeBuildingsAlongPaths) loomed into frame at that
-  // distance: their roofs are low-poly cones (a hut roof is literally a
-  // 4-sided pyramid), so a few flat, mostly-unlit facets filling the edges
-  // of a close frame reads as a huge dark wedge, not "oh, a rooftop".
-  // Pulling the whole rig back gives every nearby object more headroom
-  // before it dominates the frame, on top of the buffer fix below.
-  distance: 7.5,
-  height: 6.5,
-  /** World-Y the camera looks at, relative to the avatar's own position — just above the feet, not the chest, so the steeper downward angle keeps the avatar centered instead of looking past their head. */
-  lookHeight: 0.9,
-};
-/** Fallback camera lift (above the avatar) when no spot within CAMERA_RIG.distance clears every nearby tree/building — see desiredCameraPosition/updateCamera. Derived from the rig height (not an independent constant) so raising the default height can't accidentally leave this lower than normal. */
-const CAM_LIFT_HEIGHT = CAMERA_RIG.height + 2.0;
+const CAMERA_RIG_PRESETS: { distance: number; height: number; lookHeight: number; label: string }[] = [
+  // Padrão — unchanged from the previous single fixed rig. Pulled back and
+  // raised above the old close chase-cam below so roadside building roofs
+  // (low-poly cones — a hut roof is literally a 4-sided pyramid) don't loom
+  // into frame as a huge dark wedge; see the buffer fix in resolveCameraXZ.
+  { distance: 7.5, height: 6.5, lookHeight: 0.9, label: 'Padrão' },
+  // Próxima — the game's original chase-cam, before the pull-back above.
+  // Closer and nearer eye level, so the avatar (and its facing) reads much
+  // bigger on screen — the option for a player who wants to actually see
+  // the character's front rather than an overview of the area around them.
+  { distance: 4.4, height: 3.1, lookHeight: 1.1, label: 'Próxima' },
+  // Panorâmica — pulled back and raised well past the default into a wide,
+  // near top-down overview: more of the surrounding area in frame at once,
+  // at the cost of the character itself reading much smaller.
+  { distance: 11.5, height: 12.5, lookHeight: 0.7, label: 'Panorâmica' },
+];
+/** How far above the avatar (world units) the fallback camera lift adds on top of whichever preset's own height is currently active, when no spot within its distance clears every nearby tree/building — see desiredCameraPosition/updateCamera/cameraHeightFor. A flat extra (not itself a function of the active preset) so every preset gets the same amount of "lift clearance" headroom regardless of how close or far its own base height already is. */
+const CAM_LIFT_EXTRA = 2.0;
 /** How much cumulative resolveCameraXZ push (world units) counts as a "fully squeezed" cluster — see updateCamera's liftTarget. Small enough that a real dense cluster still ramps to full lift, large enough that one grazing nudge against a single tree doesn't. */
 const CAM_LIFT_RAMP_RANGE = 1.5;
 /**
@@ -201,6 +210,30 @@ function disposeGroup(group: THREE.Object3D): void {
   });
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** Builds the small eye glyph for the camera-angle toggle button (see cycleCameraAngle) — a plain almond-eye outline plus a pupil, built the same way (currentColor, createElementNS) InventoryScreen's own equipment icons are, rather than sourcing external art or an emoji glyph that renders inconsistently across platforms. currentColor means it automatically follows the button's own text color, including the accent tint applied while a non-default angle is active. */
+function buildEyeIconSvg(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg') as unknown as SVGSVGElement;
+  svg.setAttribute('viewBox', '0 0 32 20');
+  svg.setAttribute('width', '22');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('aria-hidden', 'true');
+  const outline = document.createElementNS(SVG_NS, 'path');
+  outline.setAttribute('d', 'M1 10 C6 2, 26 2, 31 10 C26 18, 6 18, 1 10 Z');
+  outline.setAttribute('fill', 'none');
+  outline.setAttribute('stroke', 'currentColor');
+  outline.setAttribute('stroke-width', '2.4');
+  outline.setAttribute('stroke-linejoin', 'round');
+  const pupil = document.createElementNS(SVG_NS, 'circle');
+  pupil.setAttribute('cx', '16');
+  pupil.setAttribute('cy', '10');
+  pupil.setAttribute('r', '4.6');
+  pupil.setAttribute('fill', 'currentColor');
+  svg.append(outline, pupil);
+  return svg;
+}
+
 export class OverworldScreen implements Screen {
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
@@ -212,6 +245,11 @@ export class OverworldScreen implements Screen {
   private minimapCanvas!: HTMLCanvasElement;
   /** One tile-per-pixel render of the current zone's terrain, built once per mount — updateMinimap() blits this (cheap) instead of re-walking the whole tile grid every frame. */
   private minimapBg: HTMLCanvasElement | null = null;
+  /** True while the tap-to-expand minimap overlay is open (see setMinimapExpanded) — the small corner minimap's own click still does click-to-walk exactly as before; this is a completely separate affordance (the small expand badge overlaid on its corner). Gates movement/interaction in update() the same way paused/dialogueNpc/shopNpc/showingTutorial already do, so the avatar can't wander unseen while the player is looking at the big map. */
+  private minimapExpanded = false;
+  private minimapExpandBtn!: HTMLElement;
+  private minimapBackdropEl!: HTMLElement;
+  private minimapCloseBtn!: HTMLElement;
   private playerModel!: THREE.Group;
   private mountModel: THREE.Group | null = null;
   /** Whichever object currently moves through the world — the rider alone, or the mount carrying them. */
@@ -248,6 +286,23 @@ export class OverworldScreen implements Screen {
   private isMoving = false;
   /** Eases toward 1 when the camera is squeezed by a dense obstacle cluster (resolveCameraXZ can't find a clear spot), toward 0 otherwise — see updateCamera. Replaces a direct Math.max height snap, which was a visible one-frame lurch. */
   private cameraLiftBlend = 0;
+
+  /** Which CAMERA_RIG_PRESETS entry is active — cycled by the eye button (see cycleCameraAngle). 0 (the pre-existing default) unless the player has pressed it. */
+  private cameraAngleIndex = 0;
+  private cameraAngleBtn!: HTMLElement;
+  /**
+   * The rig values updateCamera actually renders with this frame — start
+   * equal to the default preset, then ease toward whichever preset
+   * cameraAngleIndex points at (see updateCamera's own rigLerp). Separate
+   * mutable fields (not just reading CAMERA_RIG_PRESETS[cameraAngleIndex]
+   * directly) so switching presets eases smoothly over a few frames instead
+   * of snap-cutting distance/height/lookHeight the instant the button is
+   * pressed, the same way the camera already eases toward the avatar's
+   * position every frame rather than snapping to it.
+   */
+  private camDistance = CAMERA_RIG_PRESETS[0].distance;
+  private camHeight = CAMERA_RIG_PRESETS[0].height;
+  private camLookHeight = CAMERA_RIG_PRESETS[0].lookHeight;
 
   private heldKeys = new Set<string>();
   /** Normalized {x,z} from the on-screen joystick, magnitude <=1; null while untouched. */
@@ -452,7 +507,7 @@ export class OverworldScreen implements Screen {
   update(dt: number): void {
     this.time += dt;
 
-    if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial) {
+    if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial && !this.minimapExpanded) {
       this.updateMovement(dt);
       this.updateInteraction();
       this.combat.update(dt, this.avatar.position, this.camera);
@@ -527,6 +582,15 @@ export class OverworldScreen implements Screen {
 
     if (this.showingTutorial) {
       if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') this.dismissTutorial();
+      return;
+    }
+
+    // Escape (a keyboard-only equivalent of tapping the close badge/backdrop)
+    // dismisses the expanded minimap instead of opening the pause menu —
+    // matches the "tap again/tap X/tap outside" dismissal the touch overlay
+    // already offers, without also pausing (and saving) underneath it.
+    if (this.minimapExpanded) {
+      if (e.key === 'Escape') this.setMinimapExpanded(false);
       return;
     }
 
@@ -879,8 +943,27 @@ export class OverworldScreen implements Screen {
     this.autoWalkStuckTime = 0;
   }
 
-  /** Converts a click/tap on the minimap canvas into world tile coordinates — the exact inverse of renderMinimapBackground's world-to-pixel scale — and kicks off a pathfind there. Reads the canvas's own displayed (CSS) size via getBoundingClientRect rather than its fixed internal MINIMAP_SIZE resolution, so this still maps correctly once the phone breakpoints in style.css shrink the minimap down (110px/90px). */
+  /**
+   * Converts a click/tap on the minimap canvas into world tile coordinates —
+   * the exact inverse of renderMinimapBackground's world-to-pixel scale —
+   * and kicks off a pathfind there. Reads the canvas's own displayed (CSS)
+   * size via getBoundingClientRect rather than its fixed internal
+   * MINIMAP_SIZE resolution, so this still maps correctly once the phone
+   * breakpoints in style.css shrink the minimap down (110px/90px).
+   *
+   * While the map is expanded (see setMinimapExpanded), this same handler
+   * dismisses it instead of pathfinding — deliberately reusing the small
+   * minimap's own click event rather than adding a second listener, so the
+   * two behaviors can never both fire for the same tap. The SEPARATE
+   * expand/close affordances (the corner badge and the close button) are
+   * what open/close the overlay in the first place; the small minimap's own
+   * click always does click-to-walk, exactly as before this feature.
+   */
   private handleMinimapClick(ev: MouseEvent): void {
+    if (this.minimapExpanded) {
+      this.setMinimapExpanded(false);
+      return;
+    }
     if (!this.minimapBg || this.paused || this.dialogueNpc || this.shopNpc || this.showingTutorial) return;
     const rect = this.minimapCanvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -1709,15 +1792,16 @@ export class OverworldScreen implements Screen {
   /**
    * Pushes a candidate XZ point directly away from any tree canopy it
    * overlaps, and re-clamps it to the avatar's normal orbit distance
-   * (CAMERA_RIG.distance) every pass — not just once at the end. Doing the
-   * clamp only after de-penetration was itself a bug: shrinking a resolved
-   * point straight back toward the avatar can walk it right back into the
-   * same tree it was just pushed clear of (worse the more clearance the
-   * push needed), so both constraints have to be satisfied together,
-   * iterating until neither moves anything. Returns whether a violation
-   * still remained after all passes (a pathologically tight cluster with
-   * no spot inside CAMERA_RIG.distance that's clear of everything) so the
-   * caller can fall back to lifting the camera above canopy height instead.
+   * (this.camDistance — the active camera preset's own distance) every
+   * pass — not just once at the end. Doing the clamp only after
+   * de-penetration was itself a bug: shrinking a resolved point straight
+   * back toward the avatar can walk it right back into the same tree it
+   * was just pushed clear of (worse the more clearance the push needed), so
+   * both constraints have to be satisfied together, iterating until neither
+   * moves anything. Returns whether a violation still remained after all
+   * passes (a pathologically tight cluster with no spot inside that
+   * distance that's clear of everything) so the caller can fall back to
+   * lifting the camera above canopy height instead.
    *
    * Used on BOTH the freshly-computed ideal camera target AND the actual
    * rendered camera.position after it lerps toward that target — the lerp
@@ -1836,8 +1920,8 @@ export class OverworldScreen implements Screen {
         z = pushed.z;
       }
       const distFromAvatar = Math.hypot(x - px, z - pz);
-      if (distFromAvatar > CAMERA_RIG.distance) {
-        const t = CAMERA_RIG.distance / distFromAvatar;
+      if (distFromAvatar > this.camDistance) {
+        const t = this.camDistance / distFromAvatar;
         x = px + (x - px) * t;
         z = pz + (z - pz) * t;
       }
@@ -1869,8 +1953,8 @@ export class OverworldScreen implements Screen {
     const forward = new THREE.Vector3(Math.sin(CAMERA_YAW), 0, Math.cos(CAMERA_YAW));
     target
       .copy(this.avatar.position)
-      .addScaledVector(forward, -CAMERA_RIG.distance)
-      .add(new THREE.Vector3(0, CAMERA_RIG.height, 0));
+      .addScaledVector(forward, -this.camDistance)
+      .add(new THREE.Vector3(0, this.camHeight, 0));
 
     const resolved = this.resolveCameraXZ(target.x, target.z);
     target.x = resolved.x;
@@ -1878,9 +1962,9 @@ export class OverworldScreen implements Screen {
     return target;
   }
 
-  /** this.avatar.position.y + the rig height, lifted by however much of CAM_LIFT_HEIGHT's extra clearance `blend` (0..1) currently calls for. */
+  /** this.avatar.position.y + the currently active preset's own height, lifted by however much of CAM_LIFT_EXTRA's clearance `blend` (0..1) currently calls for. */
   private cameraHeightFor(blend: number): number {
-    return this.avatar.position.y + CAMERA_RIG.height + blend * (CAM_LIFT_HEIGHT - CAMERA_RIG.height);
+    return this.avatar.position.y + this.camHeight + blend * CAM_LIFT_EXTRA;
   }
 
   private positionCameraImmediate(): void {
@@ -1890,11 +1974,23 @@ export class OverworldScreen implements Screen {
     const resolved = this.resolveCameraXZ(this.camera.position.x, this.camera.position.z);
     this.cameraLiftBlend = Math.min(1, resolved.pushMagnitude / CAM_LIFT_RAMP_RANGE);
     this.camera.position.y = this.cameraHeightFor(this.cameraLiftBlend);
-    this.camLookAt.copy(this.avatar.position).add(new THREE.Vector3(0, CAMERA_RIG.lookHeight, 0));
+    this.camLookAt.copy(this.avatar.position).add(new THREE.Vector3(0, this.camLookHeight, 0));
     this.camera.lookAt(this.camLookAt);
   }
 
   private updateCamera(dt: number): void {
+    // Eases camDistance/camHeight/camLookHeight toward whichever preset
+    // cameraAngleIndex currently points at (see cycleCameraAngle) — a
+    // no-op most frames, since the target only actually moves the instant
+    // the eye button is pressed. Runs before desiredCameraPosition/
+    // cameraHeightFor below so this frame's render already reflects
+    // however far the ease has gotten.
+    const rigTarget = CAMERA_RIG_PRESETS[this.cameraAngleIndex];
+    const rigLerp = 1 - Math.exp(-dt * 5);
+    this.camDistance += (rigTarget.distance - this.camDistance) * rigLerp;
+    this.camHeight += (rigTarget.height - this.camHeight) * rigLerp;
+    this.camLookHeight += (rigTarget.lookHeight - this.camLookHeight) * rigLerp;
+
     const desired = this.desiredCameraPosition();
     const followLerp = 1 - Math.exp(-dt * 6);
     this.camera.position.x += (desired.x - this.camera.position.x) * followLerp;
@@ -1921,13 +2017,14 @@ export class OverworldScreen implements Screen {
     this.camera.position.x += (resolvedCam.x - this.camera.position.x) * correctionLerp;
     this.camera.position.z += (resolvedCam.z - this.camera.position.z) * correctionLerp;
 
-    // Pathologically dense cluster (no spot within CAMERA_RIG.distance
-    // clears every nearby tree/building) — lift the camera above obstacle
-    // height instead, which clears the clip regardless of how tightly
-    // packed things are horizontally. Tree canopies top out around 1.9
-    // world units and most building roofs around 3.8-4.7 (see
-    // worldBuilder's lobe/roof placement) — CAM_LIFT_HEIGHT clears both;
-    // only the rare tower landmark's roof (~5.8) can still poke through in
+    // Pathologically dense cluster (no spot within the active preset's own
+    // distance clears every nearby tree/building) — lift the camera above
+    // obstacle height instead, which clears the clip regardless of how
+    // tightly packed things are horizontally. Tree canopies top out around
+    // 1.9 world units and most building roofs around 3.8-4.7 (see
+    // worldBuilder's lobe/roof placement) — CAM_LIFT_EXTRA clears both from
+    // any preset's own base height; only the rare tower landmark's roof
+    // (~5.8) can still poke through in
     // this fallback path, an acceptable trade-off for how rarely it
     // triggers. Eased toward its target instead of snapped directly onto
     // camera.position.y (what this used to do): that hard jump was a
@@ -1949,7 +2046,7 @@ export class OverworldScreen implements Screen {
     this.cameraLiftBlend += (liftTarget - this.cameraLiftBlend) * (1 - Math.exp(-dt * 4));
     this.camera.position.y = this.cameraHeightFor(this.cameraLiftBlend);
 
-    const desiredLookAt = new THREE.Vector3().copy(this.avatar.position).add(new THREE.Vector3(0, CAMERA_RIG.lookHeight, 0));
+    const desiredLookAt = new THREE.Vector3().copy(this.avatar.position).add(new THREE.Vector3(0, this.camLookHeight, 0));
     this.camLookAt.lerp(desiredLookAt, followLerp);
     this.camera.lookAt(this.camLookAt);
 
@@ -1994,7 +2091,43 @@ export class OverworldScreen implements Screen {
     // button those screens were completely unreachable on mobile.
     const menuBtn = el('div', { className: 'menu-btn', text: '☰', onClick: () => this.togglePause() });
 
-    this.game.uiRoot.append(panel, hint, menuBtn, this.questTrackerEl, this.questZoneHintEl, this.questArrowEl, this.promptEl);
+    // Camera-angle toggle — visible on both touch and desktop (unlike
+    // menuBtn above, which only ever shows up on touch): the player asked
+    // for this "principalmente no mobile" but a mouse player benefits from
+    // it too, and there's no keyboard shortcut standing in for it the way
+    // Escape already covers the pause menu on desktop.
+    this.cameraAngleBtn = el('div', {
+      className: 'camera-angle-btn',
+      onClick: () => this.cycleCameraAngle(),
+      attrs: { title: `Ângulo da câmera: ${CAMERA_RIG_PRESETS[0].label}`, 'aria-label': 'Mudar ângulo da câmera' },
+    });
+    this.cameraAngleBtn.append(buildEyeIconSvg());
+
+    this.game.uiRoot.append(
+      panel,
+      hint,
+      menuBtn,
+      this.cameraAngleBtn,
+      this.questTrackerEl,
+      this.questZoneHintEl,
+      this.questArrowEl,
+      this.promptEl,
+    );
+  }
+
+  /**
+   * Cycles to the next CAMERA_RIG_PRESETS entry — the eye button's own click
+   * handler. A single explicit step per tap, never automatic: updateCamera
+   * still eases camDistance/camHeight/camLookHeight smoothly toward the new
+   * preset every frame, so this reads as a deliberate push-in/pull-out
+   * rather than a snap-cut, but the STEP itself only ever happens because
+   * the player asked for it.
+   */
+  private cycleCameraAngle(): void {
+    this.cameraAngleIndex = (this.cameraAngleIndex + 1) % CAMERA_RIG_PRESETS.length;
+    const preset = CAMERA_RIG_PRESETS[this.cameraAngleIndex];
+    this.cameraAngleBtn.classList.toggle('alt-angle', this.cameraAngleIndex !== 0);
+    this.cameraAngleBtn.setAttribute('title', `Ângulo da câmera: ${preset.label}`);
   }
 
   /** Keeps the always-visible HP/MP/gold readout live now that combat happens in-place instead of in a separate screen with its own status bar. */
@@ -2125,6 +2258,8 @@ export class OverworldScreen implements Screen {
   // --- minimap -----------------------------------------------------------
 
   private static readonly MINIMAP_SIZE = 140;
+  /** Internal canvas resolution while expanded (see setMinimapExpanded) — the CSS side just stretches `.minimap-canvas.expanded` to a big centered box, but the canvas's own pixel grid is bumped up to match (updateMinimap resizes it on the fly) so "one tile = one pixel" still holds instead of the small 140px bitmap just getting blurrily upscaled. */
+  private static readonly MINIMAP_SIZE_EXPANDED = 420;
   private static readonly MINIMAP_TILE_COLOR: Record<TileType, string> = {
     [TileType.Grass]: '#3f6b34',
     [TileType.Path]: '#c9b98a',
@@ -2137,13 +2272,59 @@ export class OverworldScreen implements Screen {
     this.minimapCanvas.className = 'minimap-canvas';
     this.minimapCanvas.width = OverworldScreen.MINIMAP_SIZE;
     this.minimapCanvas.height = OverworldScreen.MINIMAP_SIZE;
-    // Click/tap-to-walk — see handleMinimapClick. The minimap was purely
-    // decorative before this (pointer-events: none in style.css); 'click'
-    // fires for both a mouse click and a touch tap, so one listener covers
-    // both without needing separate touch handling like the joystick does.
+    // Click/tap-to-walk (or, while expanded, dismiss — see
+    // handleMinimapClick) — the minimap was purely decorative before this
+    // (pointer-events: none in style.css); 'click' fires for both a mouse
+    // click and a touch tap, so one listener covers both without needing
+    // separate touch handling like the joystick does.
     this.minimapCanvas.addEventListener('click', (ev) => this.handleMinimapClick(ev));
     this.game.uiRoot.append(this.minimapCanvas);
     this.renderMinimapBackground();
+
+    // Tap-to-expand — a SEPARATE small badge overlaid on the minimap's own
+    // corner (see .minimap-expand-btn in style.css: same top/right anchor as
+    // .minimap-canvas itself, so it sits reliably on its corner at every
+    // phone breakpoint without needing to know the canvas's current
+    // shrunk-down width/height). Deliberately not reusing minimapCanvas's own
+    // click — see handleMinimapClick's doc comment for why click-to-walk and
+    // expand must never compete for the same gesture.
+    this.minimapExpandBtn = el('div', {
+      className: 'minimap-expand-btn',
+      text: '⤢',
+      onClick: () => this.toggleMinimapExpand(),
+      attrs: { title: 'Expandir mapa', 'aria-label': 'Expandir mapa' },
+    });
+    // Dims/hides the rest of the HUD behind the big expanded map and gives
+    // "tap outside" a target — see setMinimapExpanded. Hidden (display:none)
+    // whenever the map isn't expanded, so it never intercepts clicks then.
+    this.minimapBackdropEl = el('div', { className: 'minimap-backdrop', onClick: () => this.setMinimapExpanded(false) });
+    this.minimapCloseBtn = el('div', {
+      className: 'minimap-close-btn',
+      text: '✕',
+      onClick: () => this.setMinimapExpanded(false),
+      attrs: { title: 'Fechar mapa', 'aria-label': 'Fechar mapa' },
+    });
+    this.game.uiRoot.append(this.minimapBackdropEl, this.minimapExpandBtn, this.minimapCloseBtn);
+  }
+
+  /**
+   * Toggles the enlarged minimap overlay. Refuses to OPEN while any other
+   * modal-ish state already owns the screen (paused/dialogue/shop/tutorial)
+   * — mirrors handleMinimapClick's own guard — but always allows closing,
+   * so a click-to-close never gets stuck refused mid-transition.
+   */
+  private toggleMinimapExpand(): void {
+    if (!this.minimapExpanded && (this.paused || this.dialogueNpc || this.shopNpc || this.showingTutorial)) return;
+    this.setMinimapExpanded(!this.minimapExpanded);
+  }
+
+  private setMinimapExpanded(value: boolean): void {
+    if (this.minimapExpanded === value) return;
+    this.minimapExpanded = value;
+    this.minimapCanvas.classList.toggle('expanded', value);
+    this.minimapBackdropEl.classList.toggle('visible', value);
+    this.minimapCloseBtn.classList.toggle('visible', value);
+    this.minimapExpandBtn.classList.toggle('hidden-while-expanded', value);
   }
 
   /**
@@ -2187,7 +2368,16 @@ export class OverworldScreen implements Screen {
 
   private updateMinimap(): void {
     if (!this.minimapBg) return;
-    const size = OverworldScreen.MINIMAP_SIZE;
+    const size = this.minimapExpanded ? OverworldScreen.MINIMAP_SIZE_EXPANDED : OverworldScreen.MINIMAP_SIZE;
+    // Bumping a canvas's width/height (not just its CSS size) clears its
+    // contents, but that's harmless here — this whole function redraws it
+    // from scratch every single frame regardless, so there's no content to
+    // lose. Only actually resizes on the frame setMinimapExpanded flips the
+    // state (every other frame this is a same-value no-op check).
+    if (this.minimapCanvas.width !== size || this.minimapCanvas.height !== size) {
+      this.minimapCanvas.width = size;
+      this.minimapCanvas.height = size;
+    }
     const ctx = this.minimapCanvas.getContext('2d')!;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, size, size);
@@ -2262,13 +2452,19 @@ export class OverworldScreen implements Screen {
     const tileX = Math.floor(this.avatar.position.x / TILE_SIZE);
     const tileY = Math.floor(this.avatar.position.z / TILE_SIZE);
     const areaName = subAreaNameAt(this.player.zoneId, tileX, tileY);
+    // Strip height/font scale with `size` (15px/10px at the normal
+    // MINIMAP_SIZE=140 — unchanged from before this ratio existed) so the
+    // caption stays legible rather than looking tiny once the expanded view
+    // bumps the canvas up to MINIMAP_SIZE_EXPANDED.
+    const stripH = Math.round(size * (15 / OverworldScreen.MINIMAP_SIZE));
+    const fontPx = Math.round(size * (10 / OverworldScreen.MINIMAP_SIZE));
     ctx.fillStyle = 'rgba(26, 20, 35, 0.78)';
-    ctx.fillRect(0, size - 15, size, 15);
+    ctx.fillRect(0, size - stripH, size, stripH);
     ctx.fillStyle = '#f2ede3';
-    ctx.font = '10px sans-serif';
+    ctx.font = `${fontPx}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(areaName, size / 2, size - 7, size - 6);
+    ctx.fillText(areaName, size / 2, size - stripH / 2, size - 6);
   }
 
   /**
@@ -2446,6 +2642,14 @@ export class OverworldScreen implements Screen {
     if (this.showingTutorial) return;
     this.paused = !this.paused;
     this.pauseOverlay.hidden = !this.paused;
-    if (this.paused) saveGame(this.player);
+    if (this.paused) {
+      // Both are centered overlays (see .minimap-canvas.expanded and
+      // .pause-overlay in style.css) with no z-index arbitrating between
+      // them — collapsing one before showing the other avoids the two ever
+      // fighting for the same screen center instead of relying on
+      // DOM-append-order stacking.
+      this.setMinimapExpanded(false);
+      saveGame(this.player);
+    }
   }
 }
