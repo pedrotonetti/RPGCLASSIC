@@ -349,6 +349,93 @@ body {
   pointer-events: auto;
   cursor: pointer;
   touch-action: manipulation;
+  transition: width 0.22s ease, height 0.22s ease, top 0.22s ease, left 0.22s ease, right 0.22s ease, border-radius 0.22s ease;
+}
+/* Tap-to-expand (OverworldScreen.setMinimapExpanded) — pulls the SAME canvas
+   out of the corner into a big centered overlay instead of swapping in a
+   second element, so there's only ever one minimap actually being drawn to.
+   `right: auto` clears the corner anchor above so left/transform can center
+   it instead. */
+.minimap-canvas.expanded {
+  top: 50%;
+  left: 50%;
+  right: auto;
+  width: min(82vw, 78vh, 460px);
+  height: min(82vw, 78vh, 460px);
+  border-width: 2px;
+  border-radius: 8px;
+  transform: translate(-50%, -50%);
+  z-index: 16;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.6);
+}
+
+/* Small badge overlaid on the minimap's own top-right corner — a SEPARATE
+   tap target from the minimap canvas underneath it (see
+   OverworldScreen.handleMinimapClick's doc comment: click-to-walk and
+   expand must never compete for the same gesture). Anchored to the exact
+   same top/right corner .minimap-canvas itself uses, so it lands correctly
+   on that corner at every phone breakpoint without needing to know the
+   canvas's own current (shrunk-down) width/height. */
+.minimap-expand-btn {
+  position: absolute;
+  top: calc(8px + var(--safe-t) + 3px);
+  right: calc(10px + var(--safe-r) + 3px);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  background: rgba(26, 20, 35, 0.85);
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.minimap-expand-btn.hidden-while-expanded {
+  display: none;
+}
+
+/* Dims the rest of the HUD behind the expanded minimap and gives "tap
+   outside" a target to dismiss it — hidden whenever the map isn't expanded
+   so it never intercepts clicks then. */
+.minimap-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 8, 14, 0.72);
+  z-index: 15;
+  pointer-events: auto;
+}
+.minimap-backdrop.visible {
+  display: block;
+}
+
+/* Fixed to a screen corner (not the expanded canvas's own corner, which
+   moves with its responsive min()-based size) so it's always reachable
+   regardless of viewport size. */
+.minimap-close-btn {
+  display: none;
+  position: fixed;
+  top: calc(16px + var(--safe-t));
+  right: calc(16px + var(--safe-r));
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: rgba(26, 20, 35, 0.85);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+  z-index: 17;
+}
+.minimap-close-btn.visible {
+  display: flex;
 }
 
 .joystick {
@@ -502,6 +589,43 @@ body {
 .is-touch .hud-hint {
   /* "ESC: menu · M: montaria" — neither key exists on a touchscreen. */
   display: none;
+}
+
+/* Camera-angle toggle (OverworldScreen.cycleCameraAngle) — unlike .menu-btn
+   above, shown on BOTH touch and desktop: the player asked for this
+   "principalmente no mobile" (mainly on mobile), but a mouse player has no
+   keyboard shortcut standing in for it the way Escape covers the pause
+   menu, so it stays visible there too. Its own row below .menu-btn/
+   .hud-hint (not sharing their row) so it never collides with either,
+   whichever one happens to be showing. */
+.camera-angle-btn {
+  position: absolute;
+  top: calc(204px + var(--safe-t));
+  right: calc(10px + var(--safe-r));
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(26, 20, 35, 0.7);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+  color: var(--text);
+}
+.camera-angle-btn svg {
+  width: 22px;
+  height: 14px;
+  display: block;
+}
+/* A subtle accent tint while a non-default angle is active — the only
+   feedback a touch player gets that the tap actually changed something,
+   since there's no hover state to show the title tooltip. */
+.camera-angle-btn.alt-angle {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .dialogue-box {
@@ -925,6 +1049,9 @@ body {
   .menu-btn {
     top: calc(126px + var(--safe-t));
   }
+  .camera-angle-btn {
+    top: calc(174px + var(--safe-t));
+  }
   .hud-panel {
     min-width: 0;
     max-width: 60vw;
@@ -1003,6 +1130,9 @@ body {
   .hud-hint,
   .menu-btn {
     top: calc(104px + var(--safe-t));
+  }
+  .camera-angle-btn {
+    top: calc(148px + var(--safe-t));
   }
   .joystick {
     width: 84px;
