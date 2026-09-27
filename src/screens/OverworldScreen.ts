@@ -1211,7 +1211,18 @@ export class OverworldScreen implements Screen {
   }
 
   private updateInteraction(): void {
-    const found = this.npcSlots.find((s) => s.model.position.distanceTo(this.avatar.position) <= INTERACT_RANGE);
+    // The NEAREST NPC in range, not merely the first one in list order — with
+    // townsfolk standing a couple of tiles apart, "first" could pick someone
+    // behind the player over the one they actually walked up to.
+    let found: NpcSlot | null = null;
+    let foundDist = INTERACT_RANGE;
+    for (const s of this.npcSlots) {
+      const d = s.model.position.distanceTo(this.avatar.position);
+      if (d <= foundDist) {
+        found = s;
+        foundDist = d;
+      }
+    }
     this.nearbyNpc = found?.def ?? null;
 
     const foundPortal = this.dungeonPortals.find((p) => p.group.position.distanceTo(this.avatar.position) <= INTERACT_RANGE);
@@ -2045,6 +2056,10 @@ export class OverworldScreen implements Screen {
         }
       }
       for (const b of this.buildingColliders) {
+        // Street props (lamps, banners, the fountain...) sit well below the
+        // camera — steering around each one would just jostle it across a
+        // plaza full of them.
+        if (b.blocksCamera === false) continue;
         const pushed = this.pushOutOfBuildingBox(x, z, b, BUILDING_CAM_BUFFER);
         if (!pushed) continue;
         violated = true;

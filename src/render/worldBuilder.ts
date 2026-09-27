@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { TILE_SIZE } from '../config/gameConfig';
 import { TileType } from '../config/tiles';
-import type { BuildingKind, BuildingPlacement } from '../systems/MapGenerator';
+import type { BuildingPlacement } from '../systems/MapGenerator';
+import { buildCityPropMeshes, CITY_PROP_KINDS, PROP_COLLIDER_INSET } from './cityProps';
 
 export interface TreeCollider {
   x: number;
@@ -16,6 +17,8 @@ export interface BuildingCollider {
   maxX: number;
   minZ: number;
   maxZ: number;
+  /** False for small street props (lamps, banners, a fountain...) that block walking but sit well below the follow-camera — its avoidance skips them. Absent (true) for every real building. */
+  blocksCamera?: boolean;
 }
 
 export interface WorldMeshes {
@@ -158,16 +161,25 @@ function buildBuildingMeshes(buildings: BuildingPlacement[], accentColor: number
   const group = new THREE.Group();
   const colliders: BuildingCollider[] = [];
   for (const b of buildings) {
-    colliders.push({
-      minX: b.x * TILE_SIZE,
-      maxX: (b.x + b.w) * TILE_SIZE,
-      minZ: b.y * TILE_SIZE,
-      maxZ: (b.y + b.h) * TILE_SIZE,
-    });
+    const inset = PROP_COLLIDER_INSET[b.kind];
+    const collider: BuildingCollider = {
+      minX: b.x * TILE_SIZE + (inset ?? 0),
+      maxX: (b.x + b.w) * TILE_SIZE - (inset ?? 0),
+      minZ: b.y * TILE_SIZE + (inset ?? 0),
+      maxZ: (b.y + b.h) * TILE_SIZE - (inset ?? 0),
+    };
+    if (inset !== undefined) collider.blocksCamera = false;
+    colliders.push(collider);
   }
 
-  const byKind: Record<BuildingKind, BuildingPlacement[]> = { hut: [], house: [], stall: [], tower: [] };
-  for (const b of buildings) byKind[b.kind].push(b);
+  // Storefronts and street props (the hand-placed city layer) have their
+  // own builder; everything else is one of the four procedural archetypes.
+  group.add(buildCityPropMeshes(buildings.filter((b) => CITY_PROP_KINDS.has(b.kind)), accentColor));
+
+  const byKind: Record<'hut' | 'house' | 'stall' | 'tower', BuildingPlacement[]> = { hut: [], house: [], stall: [], tower: [] };
+  for (const b of buildings) {
+    if (b.kind === 'hut' || b.kind === 'house' || b.kind === 'stall' || b.kind === 'tower') byKind[b.kind].push(b);
+  }
 
   const m = new THREE.Matrix4();
   const roof4Rot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4);
@@ -231,18 +243,27 @@ function buildBuildingMeshes(buildings: BuildingPlacement[], accentColor: number
     const bodyGeo = new THREE.BoxGeometry(1.5, 0.8, 1.5);
     const awningGeo = new THREE.BoxGeometry(1.8, 0.12, 1.5);
     const stallBodyMat = new THREE.MeshStandardMaterial({ color: blendColor(0x8a6a45, accentColor, 0.15), roughness: 0.9 });
-    const stallAwningMat = new THREE.MeshStandardMaterial({ color: blendColor(0xffffff, accentColor, 0.6), roughness: 0.6, flatShading: true });
+    // White base color so each instance's own color (below) shows through unmodified.
+    const stallAwningMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, flatShading: true });
     const bodyInst = new THREE.InstancedMesh(bodyGeo, stallBodyMat, byKind.stall.length);
     const awningInst = new THREE.InstancedMesh(awningGeo, stallAwningMat, byKind.stall.length);
     bodyInst.castShadow = true;
     bodyInst.receiveShadow = true;
     awningInst.castShadow = true;
+    // A market reads as a market when its stalls aren't all one color: each
+    // awning takes a color from a small market palette (keyed off its own
+    // tile, so it's stable across reloads), still tinted toward the zone's
+    // accent as before so a village's stalls keep its identity.
+    const STALL_AWNING_PALETTE = [0xffffff, 0xd8453a, 0xe0b23a, 0x3a7ad8, 0x3fae5b, 0x9a5ab8];
+    const awningColor = new THREE.Color();
     byKind.stall.forEach((b, i) => {
       const { x, z } = worldCenter(b);
       m.makeTranslation(x, 0.4, z);
       bodyInst.setMatrixAt(i, m);
       m.makeTranslation(x, 0.86, z);
       awningInst.setMatrixAt(i, m);
+      const paletteColor = STALL_AWNING_PALETTE[Math.abs(b.x * 7 + b.y * 13) % STALL_AWNING_PALETTE.length];
+      awningInst.setColorAt(i, awningColor.setHex(blendColor(paletteColor, accentColor, 0.25)));
     });
     group.add(bodyInst, awningInst);
   }

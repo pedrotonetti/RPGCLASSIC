@@ -29,6 +29,11 @@ import type { EnemyDefinition } from '../config/types';
  * across several villages' `monsterIds` (e.g. `goblin`, `bat`) always shows
  * the same name everywhere it's fought; see this session's report for the
  * regional-variant question this raises.
+ *
+ * `stats` below are the hand-authored BASE sheets — every fight actually
+ * uses them scaled by the shared difficulty curve in `config/balance.ts`
+ * (more HP at every tier, more attack at the low tiers, an armor floor on
+ * every enemy hit). Re-tune difficulty there, not by editing these lines.
  */
 export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
   {

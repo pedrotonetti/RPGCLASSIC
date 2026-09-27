@@ -9,6 +9,7 @@ import {
   MAP_WIDTH,
   MAP_HEIGHT,
   BUILDING_FOOTPRINTS,
+  MAIN_CITY_SHOPS,
 } from './MapGenerator';
 import { CLASS_ZONE_THEMES } from '../data/classZones';
 import { NPC_DEFINITIONS } from '../data/npcs';
@@ -103,6 +104,53 @@ describe('MapGenerator (procedural buildings)', () => {
       expect(secondary.buildings.length, `${theme.classId} secondary village`).toBeGreaterThan(start.buildings.length);
       expect(secondary.buildings.some((b) => b.kind === 'tower'), `${theme.classId} secondary missing its landmark tower`).toBe(true);
     });
+  });
+
+  it('every Pedravale storefront is actually built, on its declared lot, with its own sign', () => {
+    const { buildings } = generateOverworldMap();
+    for (const shop of Object.values(MAIN_CITY_SHOPS)) {
+      const built = buildings.find((b) => b.kind === 'shop' && b.signage === shop.signage);
+      expect(built, `storefront ${shop.signage} missing`).toBeDefined();
+      expect({ x: built!.x, y: built!.y }).toEqual({ x: shop.x, y: shop.y });
+    }
+    expect(buildings.filter((b) => b.kind === 'fountain')).toHaveLength(1);
+    expect(buildings.filter((b) => b.kind === 'lamp').length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('every vendor NPC stands at its OWN trade\'s storefront, right in front of the counter', () => {
+    for (const npc of NPC_DEFINITIONS.filter((n) => n.zoneId === 'main_city' && n.vendor)) {
+      const shop = MAIN_CITY_SHOPS[npc.vendor!.kind];
+      expect({ x: npc.mapX, y: npc.mapY }, `${npc.id} (${npc.vendor!.kind})`).toEqual(shop.stand);
+    }
+    // One keeper per vendor storefront — no trade left without its shopkeeper.
+    for (const kind of ['ferreiro', 'tecelao', 'boticario', 'joalheiro', 'artesao'] as const) {
+      expect(NPC_DEFINITIONS.filter((n) => n.zoneId === 'main_city' && n.vendor?.kind === kind), kind).toHaveLength(1);
+    }
+  });
+
+  it('Pedravale\'s NPCs are spread out — none bunched within 2 tiles of another, none on the spawn or a gate arrival tile', () => {
+    const { playerStart } = generateOverworldMap();
+    const city = NPC_DEFINITIONS.filter((n) => n.zoneId === 'main_city');
+    for (let i = 0; i < city.length; i++) {
+      for (let j = i + 1; j < city.length; j++) {
+        const d = Math.hypot(city[i].mapX - city[j].mapX, city[i].mapY - city[j].mapY);
+        expect(d, `${city[i].id} vs ${city[j].id}`).toBeGreaterThanOrEqual(2);
+      }
+    }
+    const reservedTiles = [playerStart, ...MAIN_CITY_GATES.map((g) => mainCityArrivalTile(g.classId))];
+    for (const npc of city) {
+      for (const t of reservedTiles) expect(npc.mapX === t.x && npc.mapY === t.y, `${npc.id} on ${t.x},${t.y}`).toBe(false);
+    }
+  });
+
+  it('every Pedravale NPC can be walked up to from the zone spawn (buildings and props count as solid)', () => {
+    const { tiles, buildings, playerStart } = generateOverworldMap();
+    const occupied = footprintCells(buildings);
+    const open = tiles.map((row, y) => row.map((t, x) => (occupied.has(`${x},${y}`) ? TileType.Tree : t)));
+    const reachable = reachableTiles(open, playerStart);
+    for (const npc of NPC_DEFINITIONS.filter((n) => n.zoneId === 'main_city')) {
+      expect(reachable.has(`${npc.mapX},${npc.mapY}`), `${npc.id} unreachable`).toBe(true);
+    }
   });
 
   it('every building kind has a positive tile footprint', () => {

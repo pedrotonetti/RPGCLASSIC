@@ -6,6 +6,7 @@ import {
   generateOverworldMap,
   generateVillageMap,
   mainCityArrivalTile,
+  MAIN_CITY_CRAFTS_BOUNDS,
   MAIN_CITY_DOWNTOWN_BOUNDS,
   MAIN_CITY_GATES,
   MAIN_CITY_OLD_TOWN_BOUNDS,
@@ -197,6 +198,7 @@ export function subAreaNameAt(zoneId: string, tileX: number, tileY: number): str
   if (zoneId === MAIN_CITY_ID) {
     if (withinBounds(MAIN_CITY_OLD_TOWN_BOUNDS, tileX, tileY)) return 'Praça da Fundação';
     if (withinBounds(MAIN_CITY_DOWNTOWN_BOUNDS, tileX, tileY)) return 'Praça do Mercado';
+    if (withinBounds(MAIN_CITY_CRAFTS_BOUNDS, tileX, tileY)) return 'Rua dos Ofícios';
     return 'o Verdegal';
   }
   return zone.name;

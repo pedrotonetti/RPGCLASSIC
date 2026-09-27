@@ -14,7 +14,10 @@
 import { test, expect } from '@playwright/test';
 import { buildSave, continueFromSlot, seedSave, tileCenter, waitForOverworld } from './helpers';
 
-const BRAM_TILE = { x: 8, y: 3 };
+// Bram's fixed post at the market square's entrance — MapGenerator's
+// MAIN_CITY_SPOTS.marketGate (data/npcs.ts positions him from it). The two
+// tiles south of him are open square paving.
+const BRAM_TILE = { x: 9, y: 22 };
 
 test('talking to a quest NPC completes the objective, grants the reward, and hands off the next quest', async ({ page }) => {
   const pageErrors: string[] = [];

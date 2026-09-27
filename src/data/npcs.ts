@@ -1,16 +1,17 @@
 import type { CharacterAppearance } from '../config/customization';
-import { villageClearingBounds } from '../systems/MapGenerator';
+import { MAIN_CITY_SHOPS, MAIN_CITY_SPOTS, villageClearingBounds, type Signage } from '../systems/MapGenerator';
 import { CLASS_ZONE_THEMES } from './classZones';
 import { getDungeonById } from './dungeons';
 import { MAIN_CITY_ID, SECONDARY_VILLAGE_SIZE, START_VILLAGE_SIZE } from './zones';
 
-export type VendorKind = 'ferreiro' | 'artesao' | 'boticario' | 'joalheiro';
+/** A vendor's trade — also which of Pedravale's storefronts (MapGenerator's `MAIN_CITY_SHOPS`) they keep. */
+export type VendorKind = Extract<Signage, 'ferreiro' | 'tecelao' | 'artesao' | 'boticario' | 'joalheiro'>;
 
 export interface VendorInfo {
   kind: VendorKind;
   /** Consumable item ids for sale (apothecary). */
   itemIds?: string[];
-  /** Equipment template ids for sale — a fresh 'verde' instance is rolled on purchase (blacksmith, artisan). */
+  /** Equipment template ids for sale — a fresh 'verde' instance is rolled on purchase (blacksmith, weaver, artisan). */
   equipmentTemplateIds?: string[];
   /** Gem ids for sale (jeweler). */
   gemIds?: string[];
@@ -82,22 +83,26 @@ function npcAppearance(overrides: Partial<CharacterAppearance>): CharacterAppear
   };
 }
 
-const WEAPON_ARMOR_TEMPLATE_IDS = [
-  'espada_curta',
-  'machado_guerra',
-  'cajado_arcano',
-  'arco_longo',
-  'adaga_sombria',
-  'grimorio_amaldicoado',
-  'manoplas_combate',
-  'martelo_sagrado',
-  'armadura_couro',
-  'armadura_placas',
-  'vestes_arcanas',
-  'manto_sagrado',
-];
+// Each workshop sells what its own trade actually makes. These used to be
+// one shared weapons+armor list sold entirely by the blacksmith — a forge
+// selling woven robes, leather armor, a wooden bow, a staff and a book.
+/** Forged metal: blades, axe, hammer, gauntlets, plate — the blacksmith. */
+const FORGED_TEMPLATE_IDS = ['espada_curta', 'machado_guerra', 'adaga_sombria', 'manoplas_combate', 'martelo_sagrado', 'armadura_placas'];
+/** Cloth and leather body armor — the weaver. */
+const WOVEN_TEMPLATE_IDS = ['armadura_couro', 'vestes_arcanas', 'manto_sagrado'];
+/** Carved/bound gear — bow, staff, grimoire — plus every accessory: the artisan. */
+const ARTISAN_TEMPLATE_IDS = ['arco_longo', 'cajado_arcano', 'grimorio_amaldicoado', 'anel_sorte', 'amuleto_vitalidade', 'bracelete_arcano', 'talisma_velocidade'];
 
-const ACCESSORY_TEMPLATE_IDS = ['anel_sorte', 'amuleto_vitalidade', 'bracelete_arcano', 'talisma_velocidade'];
+/** Where a vendor stands: right in front of their own storefront's counter (see MapGenerator's MAIN_CITY_SHOPS). */
+function shopStand(kind: VendorKind): { mapX: number; mapY: number } {
+  const { stand } = MAIN_CITY_SHOPS[kind];
+  return { mapX: stand.x, mapY: stand.y };
+}
+
+/** Where a non-vendor Pedravale NPC stands — one of MapGenerator's named MAIN_CITY_SPOTS (or a non-vendor storefront's stand). */
+function citySpot(spot: { x: number; y: number }): { mapX: number; mapY: number } {
+  return { mapX: spot.x, mapY: spot.y };
+}
 
 const GEM_IDS = ['gem_ruby', 'gem_sapphire', 'gem_emerald', 'gem_topaz', 'gem_amethyst', 'gem_moonstone'];
 
@@ -109,8 +114,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     // Wise mystic elder who "hears the ancestors" — reads as an arcane sage.
     classAnalogId: 'mage',
     zoneId: MAIN_CITY_ID,
-    mapX: 5,
-    mapY: 4,
+    // The heart of the Praça da Fundação, just north of the zone's own spawn tile.
+    ...citySpot(MAIN_CITY_SPOTS.foundersSquare),
     appearance: npcAppearance({
       hairStyle: 'longo',
       hairColor: 0xe8e4dc,
@@ -200,8 +205,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     // Blacksmith — rugged, hammer-and-axe worker, the Barbarian rig's vibe.
     classAnalogId: 'warrior',
     zoneId: MAIN_CITY_ID,
-    mapX: 3,
-    mapY: 6,
+    // At her forge's counter, on the Rua dos Ofícios.
+    ...shopStand('ferreiro'),
     appearance: npcAppearance({
       gender: 'feminino',
       hairStyle: 'coque',
@@ -215,7 +220,7 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Ando forjando à luz de vela — as Ipê-árvores perto da forja não brotam uma flor sequer este ano.',
       'Se encontrar minérios raros por aí, me avise — sempre há algo novo para forjar.',
     ],
-    vendor: { kind: 'ferreiro', equipmentTemplateIds: WEAPON_ARMOR_TEMPLATE_IDS, craftMaterialId: 'mat_iron_ore' },
+    vendor: { kind: 'ferreiro', equipmentTemplateIds: FORGED_TEMPLATE_IDS, craftMaterialId: 'mat_iron_ore' },
   },
   {
     id: 'bram',
@@ -224,8 +229,9 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     // Armored village guard — sword-and-shield Knight rig.
     classAnalogId: 'paladin',
     zoneId: MAIN_CITY_ID,
-    mapX: 8,
-    mapY: 3,
+    // Posted at the market square's entrance, the half of the guard Talma
+    // keeps "lá embaixo na Praça do Mercado".
+    ...citySpot(MAIN_CITY_SPOTS.marketGate),
     appearance: npcAppearance({
       hairStyle: 'moicano',
       hairColor: 0x1c1712,
@@ -260,8 +266,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     // Healer/apothecary — staff-carrying cleric reads right for a curandeira.
     classAnalogId: 'cleric',
     zoneId: MAIN_CITY_ID,
-    mapX: 7,
-    mapY: 6,
+    // At her apothecary's counter, on the Rua dos Ofícios.
+    ...shopStand('boticario'),
     appearance: npcAppearance({
       gender: 'feminino',
       hairStyle: 'medio',
@@ -283,8 +289,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     // Traveling scout — bow-carrying Rogue rig fits a scout's ranged, mobile vibe.
     classAnalogId: 'archer',
     zoneId: MAIN_CITY_ID,
-    mapX: 4,
-    mapY: 7,
+    // Resting at the market square's fountain after the road in.
+    ...citySpot(MAIN_CITY_SPOTS.fountainNorth),
     appearance: npcAppearance({
       gender: 'feminino',
       hairStyle: 'trancado',
@@ -319,9 +325,10 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     // Wields the Sede's own corrupted root-magic on purpose — the necromancer analog fits better than any "villain in armor" cliché.
     classAnalogId: 'necromancer',
     zoneId: MAIN_CITY_ID,
-    // Standing apart from the plaza's usual cluster (x3-8,y3-7) near the
-    // deepest dungeon's own portal (silent_root_rift, 45,30) — she's been
-    // close to the worst of the Sede the whole time, not hiding across town.
+    // Standing apart from the town proper (its squares and streets, x<=30)
+    // near the deepest dungeon's own portal (silent_root_rift, 45,30) —
+    // she's been close to the worst of the Sede the whole time, not hiding
+    // across town.
     mapX: 48,
     mapY: 32,
     appearance: npcAppearance({
@@ -361,8 +368,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     // Hand-craft artisan — unarmed monk loadout (no weapon shown) suits a non-combatant.
     classAnalogId: 'monk',
     zoneId: MAIN_CITY_ID,
-    mapX: 6,
-    mapY: 4,
+    // At her workbench's counter, on the Rua dos Ofícios.
+    ...shopStand('artesao'),
     appearance: npcAppearance({
       gender: 'feminino',
       hairStyle: 'longo',
@@ -373,9 +380,10 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     }),
     dialogue: [
       'Anéis, amuletos, braceletes — o que a sorte não dá, um bom artesanato empresta.',
+      'Arcos, cajados, grimórios: madeira entalhada e couro costurado são ofício de bancada, não de bigorna. Isso a Elira não faz.',
       'Cada peça que faço carrega um pouco de quem a encomendou. É um trabalho pessoal, esse.',
     ],
-    vendor: { kind: 'artesao', equipmentTemplateIds: ACCESSORY_TEMPLATE_IDS, craftMaterialId: 'mat_leather' },
+    vendor: { kind: 'artesao', equipmentTemplateIds: ARTISAN_TEMPLATE_IDS, craftMaterialId: 'mat_leather' },
   },
   {
     id: 'joalheiro_nemo',
@@ -386,8 +394,8 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
     // him visually distinct from Tobias/Aldo's own Mage-file variants.
     classAnalogId: 'necromancer',
     zoneId: MAIN_CITY_ID,
-    mapX: 8,
-    mapY: 6,
+    // At his jewelry's display counter, on the Rua dos Ofícios.
+    ...shopStand('joalheiro'),
     appearance: npcAppearance({
       hairStyle: 'careca',
       primaryColor: 0x4a2f20,
@@ -400,6 +408,33 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Uma gema bem engastada não só fortalece — ela brilha. Combate é teatro, e teatro precisa de luz.',
     ],
     vendor: { kind: 'joalheiro', gemIds: GEM_IDS, craftMaterialId: 'mat_arcane_shard' },
+  },
+  {
+    id: 'tecela_iara',
+    name: 'Tecelã Iara',
+    role: 'Tecelã',
+    // Weaver of enchanted robes and cured leather — the mage rig's robe
+    // silhouette suits someone who works cloth for spellcasters, in a
+    // palette (teal/cream) distinct from Tobias's and Aldo's own mage rigs.
+    classAnalogId: 'mage',
+    zoneId: MAIN_CITY_ID,
+    // At her loom's counter, on the Rua dos Ofícios.
+    ...shopStand('tecelao'),
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'trancado',
+      hairColor: 0x6b4423,
+      eyeColor: 0x4a9a5a,
+      primaryColor: 0x2f7a7a,
+      secondaryColor: 0xe8d9b0,
+      bodyType: 'magro',
+    }),
+    dialogue: [
+      'Vestes arcanas, mantos sagrados, couro curtido — tudo o que protege sem pesar como placa de ferro sai deste tear.',
+      'Uma boa trama segura mana melhor que qualquer metal. Pergunte a qualquer mago que já tentou conjurar de armadura.',
+      'O fio anda mais seco este ano. Até o linho sente a Sede, acredite ou não.',
+    ],
+    vendor: { kind: 'tecelao', equipmentTemplateIds: WOVEN_TEMPLATE_IDS, craftMaterialId: 'mat_leather' },
   },
 ];
 
@@ -418,8 +453,9 @@ NPC_DEFINITIONS.push(
     // Leader who protected her people fleeing Forte de Ferro — armored Knight rig.
     classAnalogId: 'paladin',
     zoneId: MAIN_CITY_ID,
-    mapX: 3,
-    mapY: 3,
+    // At the inn's door on the market square — where a refugee convoy with
+    // nowhere to sleep would end up first.
+    ...citySpot(MAIN_CITY_SHOPS.estalagem.stand),
     appearance: npcAppearance({
       gender: 'feminino',
       hairStyle: 'trancado',
@@ -441,8 +477,8 @@ NPC_DEFINITIONS.push(
     // Fast, light courier — agile dagger-carrying Rogue rig.
     classAnalogId: 'assassin',
     zoneId: MAIN_CITY_ID,
-    mapX: 4,
-    mapY: 3,
+    // On the street just outside the old-town gate, by the parcels he runs.
+    ...citySpot(MAIN_CITY_SPOTS.streetPost),
     appearance: npcAppearance({
       hairStyle: 'curto',
       hairColor: 0x1c1712,
@@ -463,8 +499,9 @@ NPC_DEFINITIONS.push(
     // Literal bow-carrying hunter/tracker.
     classAnalogId: 'archer',
     zoneId: MAIN_CITY_ID,
-    mapX: 5,
-    mapY: 3,
+    // By his campfire at the market square's north-east corner, looking
+    // out at the Verdegal he talks about.
+    ...citySpot(MAIN_CITY_SPOTS.verdegalLookout),
     appearance: npcAppearance({
       hairStyle: 'longo',
       hairColor: 0x4a2f20,
@@ -500,8 +537,8 @@ NPC_DEFINITIONS.push(
     // Shrine/grove guardian who feels the Raízes — staff-carrying cleric.
     classAnalogId: 'cleric',
     zoneId: MAIN_CITY_ID,
-    mapX: 6,
-    mapY: 3,
+    // Beside the Praça da Fundação's founding Ipê shrine.
+    ...citySpot(MAIN_CITY_SPOTS.foundersShrine),
     appearance: npcAppearance({
       gender: 'feminino',
       hairStyle: 'coque',
@@ -523,8 +560,9 @@ NPC_DEFINITIONS.push(
     // Bookish archivist/scholar — staff-and-open-spellbook mage reads studious.
     classAnalogId: 'mage',
     zoneId: MAIN_CITY_ID,
-    mapX: 7,
-    mapY: 3,
+    // By the archives' notice board in the Praça da Fundação's corner — the
+    // walled square his own dialogue points out at.
+    ...citySpot(MAIN_CITY_SPOTS.archivesBoard),
     appearance: npcAppearance({
       hairStyle: 'careca',
       hairColor: 0xcfd6dc,
@@ -558,8 +596,9 @@ NPC_DEFINITIONS.push(
     // Head of the guard — armored sword-and-shield Knight rig, same as Bram.
     classAnalogId: 'paladin',
     zoneId: MAIN_CITY_ID,
-    mapX: 3,
-    mapY: 4,
+    // Guarding the Praça da Fundação's gate — the half of the guard she
+    // keeps in the old square (Bram holds the market square's entrance).
+    ...citySpot(MAIN_CITY_SPOTS.oldTownGate),
     appearance: npcAppearance({
       gender: 'feminino',
       hairStyle: 'moicano',
@@ -582,8 +621,8 @@ NPC_DEFINITIONS.push(
     // Ordinary townsperson, no reason to be armed — unarmed monk loadout.
     classAnalogId: 'monk',
     zoneId: MAIN_CITY_ID,
-    mapX: 4,
-    mapY: 4,
+    // Drawing water at the old square's well.
+    ...citySpot(MAIN_CITY_SPOTS.oldTownWell),
     appearance: npcAppearance({
       gender: 'feminino',
       hairStyle: 'medio',
@@ -605,8 +644,8 @@ NPC_DEFINITIONS.push(
     // Literally a wandering monk — unarmed monk loadout.
     classAnalogId: 'monk',
     zoneId: MAIN_CITY_ID,
-    mapX: 7,
-    mapY: 4,
+    // Meditating by the market square's fountain.
+    ...citySpot(MAIN_CITY_SPOTS.fountainWest),
     appearance: npcAppearance({
       hairStyle: 'careca',
       facialHair: 'longa',
@@ -671,7 +710,7 @@ for (const theme of CLASS_ZONE_THEMES) {
 // "Lost" NPCs — placed somewhere a player wouldn't stumble on immediately
 // (a dungeon chamber off its own encounter tile, the far edge of a village,
 // past the far end of its own north/south road) rather than in the usual
-// villages'/Pedravale's clustered NPC rows above. Each opens its own short
+// villages' clearings or Pedravale's squares/streets above. Each opens its own short
 // 1-2 quest side chain once q6_dragon is behind the player (see
 // data/quests.ts's SIDE_QUESTS/SIDE_QUEST_STARTERS) — none of them touch
 // Ato 3 or Amara Ventura's own reveal, just Ipêra's wider texture.
@@ -1427,15 +1466,10 @@ NPC_DEFINITIONS.push(
     // An ordinary market stallkeeper, no reason to be armed — unarmed monk loadout, same choice as Dona Ilma's own civilian rig.
     classAnalogId: 'monk',
     zoneId: MAIN_CITY_ID,
-    // Inside the "Praça do Mercado" downtown plaza (see MapGenerator.ts's
-    // generateOverworldMap: plazaX0=3..plazaX1=30, plazaY0=21..plazaY1=31 —
-    // the whole rectangle is stamped Path with no tree border, so any tile
-    // strictly inside it is guaranteed clear forever; the plaza itself is a
-    // fixed absolute layout baked into generateOverworldMap, same as the
-    // old-town plaza every other main_city NPC above already sits in with a
-    // literal mapX/mapY, not a village-sized constant that could resize.
-    mapX: 10,
-    mapY: 24,
+    // In the middle of the "Praça do Mercado"'s own block of market stalls
+    // (MapGenerator's MAIN_CITY_SPOTS.marketStalls — her own stall sits
+    // right behind her).
+    ...citySpot(MAIN_CITY_SPOTS.marketStalls),
     appearance: npcAppearance({
       gender: 'feminino',
       hairStyle: 'coque',
@@ -1470,10 +1504,9 @@ NPC_DEFINITIONS.push(
     // A market-hall enforcer patrolling storage cellars — armored Barbarian-style rig fits an on-duty inspector.
     classAnalogId: 'warrior',
     zoneId: MAIN_CITY_ID,
-    // Inside the "Praça do Mercado" downtown plaza, same guaranteed-clear
-    // rectangle as Nilza above, spaced well apart from her own tile.
-    mapX: 22,
-    mapY: 28,
+    // At the door of the warehouse ("Armazém") facing the Praça do Mercado
+    // from its south edge — the storage he inspects.
+    ...citySpot(MAIN_CITY_SHOPS.armazem.stand),
     appearance: npcAppearance({
       hairStyle: 'moicano',
       hairColor: 0x4a2f20,

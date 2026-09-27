@@ -130,9 +130,11 @@ export interface EnemyDefinition {
   isBoss?: boolean;
   /**
    * This enemy's own difficulty tier, independent of whatever level the
-   * player who kills it happens to be. Purely a loot-scaling signal (see
-   * `generateLoot` in `data/equipment.ts`) — it is NOT read by encounter
-   * selection or AI. Roughly matches "the player level this enemy is
+   * player who kills it happens to be. Drives loot scaling (see
+   * `generateLoot` in `data/equipment.ts`) and the shared HP/attack
+   * difficulty curve layered over `stats` at runtime (see
+   * `config/balance.ts`) — it is NOT read by encounter selection or AI.
+   * Roughly matches "the player level this enemy is
    * calibrated to threaten", ordered consistently with `ENEMY_DEFINITIONS`
    * going from weakest to strongest, with boss-tier enemies set well above
    * the regular curve to match their outsized stats/rewards.

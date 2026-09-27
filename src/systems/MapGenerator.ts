@@ -20,8 +20,38 @@ export interface GeneratedMap {
  * Low-poly building archetypes shared by every settlement — see
  * `render/worldBuilder.ts` for how each is actually built out of primitive
  * geometry (boxes/cones/cylinders), matching the existing tree style.
+ *
+ * `hut`/`house`/`stall`/`tower` are the procedural street-lining pass's own
+ * archetypes. `shop` is a hand-placed named storefront (see `Signage`), and
+ * the rest are small hand-placed street props — fountains, lamp posts,
+ * banners, crates, wells, a shrine, a notice board, a campfire — rendered by
+ * `render/cityProps.ts`. Props are still ordinary placements (footprint,
+ * collider, minimap, pathfinding all work the same way), they just get a
+ * smaller collider that doesn't push the follow-camera around.
  */
-export type BuildingKind = 'hut' | 'house' | 'stall' | 'tower';
+export type BuildingKind =
+  | 'hut'
+  | 'house'
+  | 'stall'
+  | 'tower'
+  | 'shop'
+  | 'fountain'
+  | 'lamp'
+  | 'banner'
+  | 'crates'
+  | 'well'
+  | 'shrine'
+  | 'noticeboard'
+  | 'campfire';
+
+/**
+ * What a named storefront is — drives its sign text, awning color and the
+ * trade props out front (see `render/cityProps.ts`). The first five are the
+ * vendor NPCs' own shops (`data/npcs.ts`'s `VendorKind` is exactly this
+ * subset); the inn and the warehouse are the two non-vendor landmarks the
+ * market square's own NPCs talk about.
+ */
+export type Signage = 'ferreiro' | 'tecelao' | 'boticario' | 'joalheiro' | 'artesao' | 'estalagem' | 'armazem';
 
 export interface BuildingPlacement {
   kind: BuildingKind;
@@ -30,6 +60,8 @@ export interface BuildingPlacement {
   y: number;
   w: number;
   h: number;
+  /** Set only on a `shop` — which storefront it is. */
+  signage?: Signage;
 }
 
 /** Footprint size (in tiles) per building kind — the single source of truth both placement (here) and rendering (`worldBuilder.ts`) key off. */
@@ -38,7 +70,23 @@ export const BUILDING_FOOTPRINTS: Record<BuildingKind, { w: number; h: number }>
   house: { w: 3, h: 3 },
   stall: { w: 1, h: 1 },
   tower: { w: 2, h: 2 },
+  shop: { w: 3, h: 3 },
+  fountain: { w: 3, h: 3 },
+  lamp: { w: 1, h: 1 },
+  banner: { w: 1, h: 1 },
+  crates: { w: 1, h: 1 },
+  well: { w: 1, h: 1 },
+  shrine: { w: 1, h: 1 },
+  noticeboard: { w: 1, h: 1 },
+  campfire: { w: 1, h: 1 },
 };
+
+interface TileRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 function mulberry32(seed: number): () => number {
   let a = seed;
@@ -123,7 +171,7 @@ function stampFootprint(tiles: TileType[][], x: number, y: number, w: number, h:
  * keeps that from happening while still letting buildings sit close to the
  * road/plaza tiles they're lining (this only checks building-vs-building).
  */
-function tooCloseToPlaced(x: number, y: number, w: number, h: number, placed: Array<{ x: number; y: number; w: number; h: number }>, margin: number): boolean {
+function tooCloseToPlaced(x: number, y: number, w: number, h: number, placed: TileRect[], margin: number): boolean {
   for (const other of placed) {
     const overlaps = x - margin < other.x + other.w && x + w + margin > other.x && y - margin < other.y + other.h && y + h + margin > other.y;
     if (overlaps) return true;
@@ -152,6 +200,14 @@ function weightedPick(items: BuildingKindWeight[], rand: () => number): Building
  * `skipChance` and the road tiles' own natural gaps (a straight stretch of
  * road doesn't have infinite frontage) are what keep this from reading as a
  * solid, uniform wall of houses — some lots stay open grass.
+ *
+ * `reserved` areas keep the same 1-tile clearance an already-placed building
+ * gets; `blocked` tiles only forbid an outright overlap (margin 0) — for
+ * small hand-placed props/NPC spots that are fine sitting right next to a
+ * house's wall. Neither changes how many `rand()` calls a run consumes (a
+ * rejected candidate has already drawn its skip/offset/kind rolls), so
+ * reserving space here never reshuffles the rest of the map's buildings or
+ * its tree scatter afterwards.
  */
 function placeBuildingsAlongPaths(
   tiles: TileType[][],
@@ -159,7 +215,8 @@ function placeBuildingsAlongPaths(
   maxBuildings: number,
   kinds: BuildingKindWeight[],
   skipChance: number,
-  reserved: BuildingPlacement[] = [],
+  reserved: TileRect[] = [],
+  blocked: TileRect[] = [],
 ): BuildingPlacement[] {
   const pathTiles: Array<{ x: number; y: number }> = [];
   for (let y = 0; y < tiles.length; y++) {
@@ -182,7 +239,7 @@ function placeBuildingsAlongPaths(
   ];
 
   const placements: BuildingPlacement[] = [];
-  const allPlaced: BuildingPlacement[] = [...reserved];
+  const allPlaced: TileRect[] = [...reserved];
   for (const p of pathTiles) {
     if (placements.length >= maxBuildings) break;
     if (rand() < skipChance) continue;
@@ -209,6 +266,7 @@ function placeBuildingsAlongPaths(
 
     if (!footprintFree(tiles, x, y, w, h)) continue;
     if (tooCloseToPlaced(x, y, w, h, allPlaced, 1)) continue;
+    if (tooCloseToPlaced(x, y, w, h, blocked, 0)) continue;
     stampFootprint(tiles, x, y, w, h);
     const placement = { kind, x, y, w, h };
     placements.push(placement);
@@ -253,12 +311,231 @@ export const MAIN_CITY_DOWNTOWN_BOUNDS = {
   y1: MAIN_CITY_OLD_TOWN_BOUNDS.y1 + STREET_LENGTH + 1 + 10,
 };
 
+// --- Pedravale's hand-placed landmarks --------------------------------------
+//
+// The follow-camera's yaw is FIXED (OverworldScreen's CAMERA_YAW = 0: always
+// north of the avatar, looking south along +z), and every NPC faces north,
+// toward it. So a storefront only ever reads on screen if its front faces
+// north, with its keeper standing just north of it — which is why every shop
+// below sits on the SOUTH side of the street/plaza it serves, and every NPC
+// spot below has its matching prop one tile south of it (behind the NPC, as
+// the camera sees it) rather than north (behind the camera).
+
+/**
+ * "Rua dos Ofícios" — Pedravale's crafts street: an east-west street one
+ * block south of the market square, reached by a short lane from the
+ * square's south edge, lined on its south side by the five vendor NPCs' own
+ * workshops. Carved AFTER the procedural street-lining pass (see
+ * generateOverworldMap) so only these hand-placed storefronts front it.
+ */
+// Ten rows south of the square: the block between them holds the buildings
+// facing the square (3 rows deep) and then a tree-free green at least 5 rows
+// deep — the follow-camera trails ~3.75 tiles north of the avatar and keeps
+// ~1 more tile clear of any building, so anything taller than a lamp post
+// closer than that to the street's north edge would fill the foreground of
+// every view down the crafts street with the back of a roof.
+export const MAIN_CITY_CRAFTS_STREET = { x0: 3, x1: 30, y0: MAIN_CITY_DOWNTOWN_BOUNDS.y1 + 10, y1: MAIN_CITY_DOWNTOWN_BOUNDS.y1 + 11 };
+const MAIN_CITY_CRAFTS_LANE = { x0: 16, x1: 17, y0: MAIN_CITY_DOWNTOWN_BOUNDS.y1 + 1, y1: MAIN_CITY_CRAFTS_STREET.y0 - 1 };
+/** Everything between the market square's south edge and the far side of the crafts street's shops — kept clear of the procedural pass AND the tree scatter entirely. */
+const MAIN_CITY_CRAFTS_DISTRICT: TileRect = {
+  x: MAIN_CITY_DOWNTOWN_BOUNDS.x0,
+  y: MAIN_CITY_DOWNTOWN_BOUNDS.y1 + 1,
+  w: MAIN_CITY_DOWNTOWN_BOUNDS.x1 - MAIN_CITY_DOWNTOWN_BOUNDS.x0 + 1,
+  h: MAIN_CITY_CRAFTS_STREET.y1 + 5 - MAIN_CITY_DOWNTOWN_BOUNDS.y1,
+};
+/** The crafts street plus its storefronts, inclusive tile bounds — the minimap's "Rua dos Ofícios" sub-area label keys off this (see data/zones.ts subAreaNameAt). */
+export const MAIN_CITY_CRAFTS_BOUNDS = {
+  x0: MAIN_CITY_CRAFTS_STREET.x0,
+  x1: MAIN_CITY_CRAFTS_STREET.x1,
+  y0: MAIN_CITY_CRAFTS_STREET.y0 - 1,
+  y1: MAIN_CITY_CRAFTS_DISTRICT.y + MAIN_CITY_CRAFTS_DISTRICT.h - 1,
+};
+
+export interface MainCityShop {
+  signage: Signage;
+  /** Top-left of the 3x3 `shop` footprint. */
+  x: number;
+  y: number;
+  /** The paved strip along the shop's (north-facing) front. */
+  apron: TileRect;
+  /** Where this shop's keeper stands: the middle of the apron, right in front of the counter. */
+  stand: { x: number; y: number };
+}
+
+function northFacingShop(signage: Signage, x: number, y: number): MainCityShop {
+  const { w } = BUILDING_FOOTPRINTS.shop;
+  return { signage, x, y, apron: { x, y: y - 1, w, h: 1 }, stand: { x: x + Math.floor(w / 2), y: y - 1 } };
+}
+
+const CRAFTS_SHOP_ROW_Y = MAIN_CITY_CRAFTS_STREET.y1 + 2;
+const MARKET_SOUTH_ROW_Y = MAIN_CITY_DOWNTOWN_BOUNDS.y1 + 2;
+
+/**
+ * Every named storefront in Pedravale. The five vendor shops line the crafts
+ * street (5-6 tiles apart, each with its own keeper — see data/npcs.ts,
+ * which positions every vendor NPC at its shop's `stand` tile); the inn and
+ * the warehouse face the market square from its south edge.
+ */
+export const MAIN_CITY_SHOPS: Record<Signage, MainCityShop> = {
+  tecelao: northFacingShop('tecelao', 4, CRAFTS_SHOP_ROW_Y),
+  boticario: northFacingShop('boticario', 9, CRAFTS_SHOP_ROW_Y),
+  // Straight across from the lane's own mouth — the first shop the player
+  // sees coming down from the market square.
+  ferreiro: northFacingShop('ferreiro', 15, CRAFTS_SHOP_ROW_Y),
+  joalheiro: northFacingShop('joalheiro', 21, CRAFTS_SHOP_ROW_Y),
+  artesao: northFacingShop('artesao', 26, CRAFTS_SHOP_ROW_Y),
+  estalagem: northFacingShop('estalagem', 8, MARKET_SOUTH_ROW_Y),
+  armazem: northFacingShop('armazem', 23, MARKET_SOUTH_ROW_Y),
+};
+
+/**
+ * Named spots for Pedravale's non-vendor NPCs, spread across the old-town
+ * square, the street and the market square instead of the single cramped
+ * row they used to share — each beside its own prop (placed one tile SOUTH
+ * of it, see this section's header comment) so the town reads as people
+ * going about their business, not a queue. data/npcs.ts positions NPCs from
+ * these, never from a bare tile literal.
+ */
+export const MAIN_CITY_SPOTS = {
+  /** Center of the Praça da Fundação, just north of the zone's own spawn tile — Tobias's long-standing spot. */
+  foundersSquare: { x: 5, y: 4 },
+  /** Beside the old square's founding Ipê shrine. */
+  foundersShrine: { x: 3, y: 3 },
+  /** Beside the archives' notice board, in the old square's north-east corner. */
+  archivesBoard: { x: 8, y: 3 },
+  /** Beside the old square's well. */
+  oldTownWell: { x: 3, y: 6 },
+  /** Guarding the old square's gate from inside, by its banner. */
+  oldTownGate: { x: 8, y: 6 },
+  /** On the street just outside the old-town gate, by a stack of parcels. */
+  streetPost: { x: 8, y: 11 },
+  /** Guarding the market square's entrance, by its gateway banners. */
+  marketGate: { x: 9, y: 22 },
+  /** In the middle of the market square's stalls. */
+  marketStalls: { x: 6, y: 26 },
+  /** At the fountain's north rim. */
+  fountainNorth: { x: 16, y: 23 },
+  /** At the fountain's west side. */
+  fountainWest: { x: 12, y: 26 },
+  /** The market square's north-east corner, by a campfire, looking out at the Verdegal. */
+  verdegalLookout: { x: 28, y: 22 },
+} satisfies Record<string, { x: number; y: number }>;
+
+/**
+ * Plain (non-storefront) buildings filling out the block between the market
+ * square and the crafts street — the procedural pass is kept out of that
+ * whole block (it would otherwise block the lane or crowd the storefronts),
+ * so these stand in for what it would have put there.
+ */
+const MAIN_CITY_BLOCK_BUILDINGS: Array<{ kind: BuildingKind; x: number; y: number }> = [
+  { kind: 'hut', x: 4, y: MARKET_SOUTH_ROW_Y },
+  { kind: 'house', x: 12, y: MARKET_SOUTH_ROW_Y },
+  { kind: 'house', x: 19, y: MARKET_SOUTH_ROW_Y },
+  { kind: 'hut', x: 28, y: MARKET_SOUTH_ROW_Y },
+];
+
+/** Every hand-placed street prop in Pedravale — see each group's comment. Placed on the plazas' own paving or on the grass beside a street (stamped to paving). */
+const MAIN_CITY_PROPS: Array<{ kind: BuildingKind; x: number; y: number }> = [
+  // Praça da Fundação: each one tile south of its NPC spot above.
+  { kind: 'shrine', x: 3, y: 4 },
+  { kind: 'noticeboard', x: 8, y: 4 },
+  { kind: 'well', x: 3, y: 7 },
+  { kind: 'banner', x: 8, y: 7 },
+  // The old-town gate, from the street side, and the courier's parcels.
+  { kind: 'banner', x: 5, y: 9 },
+  { kind: 'banner', x: 8, y: 9 },
+  { kind: 'crates', x: 8, y: 12 },
+  // Street lamps down the long street (clear of the lots the procedural
+  // pass builds on along it — see its `blocked` list above).
+  { kind: 'lamp', x: 5, y: 11 },
+  { kind: 'lamp', x: 8, y: 14 },
+  { kind: 'lamp', x: 5, y: 17 },
+  // Praça do Mercado: gateway banners, the central fountain ringed by lamps,
+  // a block of market stalls, the lookout's campfire.
+  { kind: 'banner', x: 5, y: 21 },
+  { kind: 'banner', x: 8, y: 21 },
+  { kind: 'fountain', x: 15, y: 25 },
+  { kind: 'lamp', x: 13, y: 24 },
+  { kind: 'lamp', x: 19, y: 24 },
+  { kind: 'lamp', x: 13, y: 28 },
+  { kind: 'lamp', x: 19, y: 28 },
+  { kind: 'stall', x: 4, y: 27 },
+  { kind: 'stall', x: 6, y: 27 },
+  { kind: 'stall', x: 8, y: 27 },
+  { kind: 'stall', x: 4, y: 30 },
+  { kind: 'stall', x: 6, y: 30 },
+  { kind: 'stall', x: 8, y: 30 },
+  { kind: 'stall', x: 22, y: 28 },
+  { kind: 'stall', x: 24, y: 28 },
+  { kind: 'stall', x: 26, y: 28 },
+  { kind: 'crates', x: 28, y: 29 },
+  { kind: 'campfire', x: 28, y: 23 },
+  { kind: 'crates', x: 26, y: 24 },
+  // The market square's south edge: the inn's and warehouse's goods, and the
+  // banners marking the lane down to the crafts street.
+  { kind: 'crates', x: 11, y: MARKET_SOUTH_ROW_Y - 1 },
+  { kind: 'crates', x: 26, y: MARKET_SOUTH_ROW_Y - 1 },
+  { kind: 'banner', x: MAIN_CITY_CRAFTS_LANE.x0 - 1, y: MAIN_CITY_CRAFTS_LANE.y0 },
+  { kind: 'banner', x: MAIN_CITY_CRAFTS_LANE.x1 + 1, y: MAIN_CITY_CRAFTS_LANE.y0 },
+  // Lamps down the lane, across the green.
+  { kind: 'lamp', x: MAIN_CITY_CRAFTS_LANE.x1 + 1, y: MAIN_CITY_CRAFTS_LANE.y0 + 3 },
+  { kind: 'lamp', x: MAIN_CITY_CRAFTS_LANE.x0 - 1, y: MAIN_CITY_CRAFTS_LANE.y0 + 6 },
+  // Rua dos Ofícios: lamps in the gaps between storefronts, and across the street.
+  { kind: 'lamp', x: 7, y: CRAFTS_SHOP_ROW_Y - 1 },
+  { kind: 'lamp', x: 13, y: CRAFTS_SHOP_ROW_Y - 1 },
+  { kind: 'lamp', x: 19, y: CRAFTS_SHOP_ROW_Y - 1 },
+  { kind: 'lamp', x: 25, y: CRAFTS_SHOP_ROW_Y - 1 },
+  { kind: 'lamp', x: 11, y: MAIN_CITY_CRAFTS_STREET.y0 - 1 },
+  { kind: 'lamp', x: 22, y: MAIN_CITY_CRAFTS_STREET.y0 - 1 },
+  // The crafts street's two ends, marked like the square's own entrances.
+  { kind: 'banner', x: MAIN_CITY_CRAFTS_STREET.x0, y: MAIN_CITY_CRAFTS_STREET.y0 - 1 },
+  { kind: 'banner', x: MAIN_CITY_CRAFTS_STREET.x1, y: MAIN_CITY_CRAFTS_STREET.y0 - 1 },
+];
+
+function rectOf(p: { kind: BuildingKind; x: number; y: number }): TileRect {
+  return { x: p.x, y: p.y, ...BUILDING_FOOTPRINTS[p.kind] };
+}
+
+function carveRect(tiles: TileType[][], x0: number, y0: number, x1: number, y1: number): void {
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) tiles[y][x] = TileType.Path;
+}
+
+/**
+ * Places one hand-placed building or prop at a fixed spot: only onto open
+ * ground (grass, or a plaza's own paving — never water, a tree or another
+ * placement), then stamps its footprint to paving like every other
+ * placement so nothing generated afterwards lands on it.
+ */
+function placeFixed(
+  tiles: TileType[][],
+  placed: BuildingPlacement[],
+  kind: BuildingKind,
+  x: number,
+  y: number,
+  signage?: Signage,
+): BuildingPlacement | null {
+  const { w, h } = BUILDING_FOOTPRINTS[kind];
+  if (x < 1 || y < 1 || x + w > tiles[0].length - 1 || y + h > tiles.length - 1) return null;
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
+      const t = tiles[y + dy][x + dx];
+      if (t !== TileType.Grass && t !== TileType.Path) return null;
+    }
+  }
+  if (tooCloseToPlaced(x, y, w, h, placed, 0)) return null;
+  stampFootprint(tiles, x, y, w, h);
+  const placement: BuildingPlacement = signage ? { kind, x, y, w, h, signage } : { kind, x, y, w, h };
+  placed.push(placement);
+  return placement;
+}
+
 /**
  * Builds a proper (if small) city: an old-town plaza in the top-left corner
- * (unchanged in absolute position/size across the whole game's life so far —
- * every hardcoded NPC stall position in `data/npcs.ts` still lands correctly
- * inside it), connected by a long paved street to a much bigger new
- * downtown plaza, plus a walled gate leading out to each class's territory.
+ * (unchanged in absolute position/size across the whole game's life so far),
+ * connected by a long paved street to a much bigger new downtown plaza, the
+ * crafts street one block south of that, plus a walled gate leading out to
+ * each class's territory. Pedravale's NPCs stand at the named spots and
+ * storefronts this lays out (MAIN_CITY_SPOTS / MAIN_CITY_SHOPS above).
  * Grass tiles are where random encounters can trigger; buildings line every
  * one of these roads/plazas so Pedravale reads as an actual city rather
  * than a clearing with a forest around it.
@@ -276,7 +553,7 @@ export function generateOverworldMap(seed = 1337): GeneratedMap {
   }
 
   // Old-town plaza (safe, no encounters) — kept at its original size/position
-  // so every NPC's hardcoded mapX/mapY (data/npcs.ts) still lands inside it.
+  // (its NPC spots and the zone's own spawn tile, 5,5, sit inside it).
   const { x0: villageX0, y0: villageY0, x1: villageX1, y1: villageY1 } = MAIN_CITY_OLD_TOWN_BOUNDS;
   for (let y = villageY0; y <= villageY1; y++) {
     for (let x = villageX0; x <= villageX1; x++) {
@@ -337,6 +614,10 @@ export function generateOverworldMap(seed = 1337): GeneratedMap {
   // Buildings line every street/plaza/gate stub laid out above — Pedravale
   // is the shared hub every class passes through, so it's the largest and
   // most built-up settlement in the game (denser mix, occasional towers).
+  // The crafts district is reserved (kept clear with the usual 1-tile
+  // clearance) and every hand-placed prop/NPC spot blocked, so the
+  // procedural pass can't take a storefront's lot or wall in a street prop;
+  // see placeBuildingsAlongPaths on why neither reshuffles the rest of the map.
   const buildings = placeBuildingsAlongPaths(
     tiles,
     rand,
@@ -348,17 +629,43 @@ export function generateOverworldMap(seed = 1337): GeneratedMap {
       { kind: 'tower', weight: 1 },
     ],
     0.25,
+    [MAIN_CITY_CRAFTS_DISTRICT],
+    [...MAIN_CITY_PROPS.map(rectOf), ...Object.values(MAIN_CITY_SPOTS).map((s) => ({ x: s.x, y: s.y, w: 1, h: 1 }))],
   );
+
+  // Pedravale's hand-placed layer, after the procedural pass (so it never
+  // lines these with random buildings of its own) but before the tree
+  // scatter (so no tree lands on any of it): the crafts street and its lane,
+  // every named storefront with its paved apron, the block buildings
+  // between the market square and the crafts street, and the street props.
+  const lane = MAIN_CITY_CRAFTS_LANE;
+  const craftsStreet = MAIN_CITY_CRAFTS_STREET;
+  carveRect(tiles, lane.x0, lane.y0, lane.x1, lane.y1);
+  carveRect(tiles, craftsStreet.x0, craftsStreet.y0, craftsStreet.x1, craftsStreet.y1);
+  for (const shop of Object.values(MAIN_CITY_SHOPS)) {
+    carveRect(tiles, shop.apron.x, shop.apron.y, shop.apron.x + shop.apron.w - 1, shop.apron.y + shop.apron.h - 1);
+    placeFixed(tiles, buildings, 'shop', shop.x, shop.y, shop.signage);
+  }
+  for (const b of MAIN_CITY_BLOCK_BUILDINGS) placeFixed(tiles, buildings, b.kind, b.x, b.y);
+  for (const p of MAIN_CITY_PROPS) placeFixed(tiles, buildings, p.kind, p.x, p.y);
+  // Every NPC spot is guaranteed open paving, even the ones off the plazas.
+  for (const spot of Object.values(MAIN_CITY_SPOTS)) tiles[spot.y][spot.x] = TileType.Path;
 
   // Scattered trees across the field — count scaled up with the map's area
   // (roughly 9x the old 80x48 map, same proportional-to-area approach as
   // the previous resize) so the bigger field doesn't read as barer than
   // before; buildings/roads/plaza/pond above are already Path/Water so
   // the Grass-only check here leaves every one of them untouched.
+  // The crafts district's green stays a tended lawn (see
+  // MAIN_CITY_CRAFTS_STREET on why nothing tall may stand there) — skipped
+  // after drawing both coordinates, so the scatter everywhere else is exactly
+  // what it would have been.
+  const d = MAIN_CITY_CRAFTS_DISTRICT;
   for (let i = 0; i < 2300; i++) {
     const x = 1 + Math.floor(rand() * (MAP_WIDTH - 2));
     const y = 1 + Math.floor(rand() * (MAP_HEIGHT - 2));
-    if (tiles[y][x] === TileType.Grass) {
+    const inCraftsDistrict = x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h;
+    if (tiles[y][x] === TileType.Grass && !inCraftsDistrict) {
       tiles[y][x] = TileType.Tree;
     }
   }
@@ -478,6 +785,27 @@ export function generateVillageMap(opts: VillageMapOptions): GeneratedMap {
           0.32,
         );
   buildings.push(...streetBuildings);
+
+  // Dress the town square itself, which is otherwise bare paving: lamp
+  // posts near its corners, a well, banners flanking each gate opening, and
+  // (developed villages only) a fountain north-west of the center. All on the
+  // clearing's own paving, after the street pass and never on its center
+  // tile (the zone's spawn) or the north/south road column; placeFixed
+  // skips anything that wouldn't fit (a small test-sized village).
+  const lampDx = vw - 3;
+  const lampDy = vh - 3;
+  const squareProps: Array<{ kind: BuildingKind; x: number; y: number }> = [
+    { kind: 'lamp', x: cx - lampDx, y: cy - lampDy },
+    { kind: 'lamp', x: cx + lampDx, y: cy - lampDy },
+    { kind: 'lamp', x: cx - lampDx, y: cy + lampDy },
+    { kind: 'lamp', x: cx + lampDx, y: cy + lampDy },
+    { kind: 'well', x: cx + Math.ceil(vw / 2), y: cy + Math.ceil(vh / 2) - 1 },
+    { kind: 'crates', x: cx + Math.ceil(vw / 2) + 1, y: cy + Math.ceil(vh / 2) - 1 },
+  ];
+  if (opts.hasSouthGate) squareProps.push({ kind: 'banner', x: cx - 1, y: cy + vh - 1 }, { kind: 'banner', x: cx + 1, y: cy + vh - 1 });
+  if (opts.hasNorthGate) squareProps.push({ kind: 'banner', x: cx - 1, y: cy - vh + 1 }, { kind: 'banner', x: cx + 1, y: cy - vh + 1 });
+  if (opts.development === 'developed') squareProps.push({ kind: 'fountain', x: cx - 5, y: cy - Math.max(3, vh - 4) });
+  for (const p of squareProps) placeFixed(tiles, buildings, p.kind, p.x, p.y);
 
   for (let i = 0; i < opts.treeCount; i++) {
     const x = 1 + Math.floor(rand() * (width - 2));

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ENEMY_BALANCE } from '../config/balance';
+import { CLASS_DEFINITIONS } from '../config/classes';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
 import { CombatEngine, lootDropChance, materialDropChance } from './CombatSystem';
@@ -194,6 +196,50 @@ describe('CombatEngine block and dodge', () => {
     expect(hit?.mitigation).toBe('dodge');
     expect(hit?.amount).toBe(0);
     expect(player.currentHp).toBe(hpBefore);
+  });
+});
+
+/** Runs one enemy attack against `player` from a fresh engine and returns the damage event that landed on them (if the attack connected). */
+function oneEnemyHit(player: Player, enemyId: string) {
+  const enemy = new Enemy(enemyId);
+  enemy.actionTimer = 0;
+  const engine = new CombatEngine(player, [enemy]);
+  engine.tick(0.1); // begins the telegraphed attack
+  const events = engine.tick(0.5); // telegraph elapses: resolves
+  return { enemy, hit: events.find((e) => e.kind === 'damage' && e.targetIsPlayer) };
+}
+
+describe('CombatEngine enemy damage vs armor (config/balance.ts)', () => {
+  it('armor blunts an enemy hit but can never erase it: at least minDamageFraction of the raw hit gets through', () => {
+    mockRandom(0.99); // hit, no crit, variance = 0.9 + 0.99*0.2
+    const player = freshPlayer('warrior');
+    player.level = 20; // defense 45 -> 27 flat mitigation, far above a slime's whole raw hit
+    const { enemy, hit } = oneEnemyHit(player, 'slime');
+
+    const variance = 0.9 + 0.99 * 0.2;
+    const floored = Math.max(1, Math.round(enemy.stats.attack * ENEMY_BALANCE.minDamageFraction * variance));
+    const expected = Math.max(1, Math.round(floored * ENEMY_BALANCE.damageMult));
+    expect(hit?.amount).toBe(expected);
+    // Without the floor this matchup could only ever deal the 1-damage minimum.
+    expect(hit!.amount!).toBeGreaterThan(1);
+  });
+
+  it('a fresh level-1 character of any class never loses half its HP to a single hit from a starting-village monster', () => {
+    for (const cls of CLASS_DEFINITIONS) {
+      const player = freshPlayer(cls.id);
+      for (const enemyId of ['slime', 'bat']) {
+        let worst = 0;
+        // Real randomness (crits, variance), many samples — the true
+        // worst case sits well under the bound, so this can't flake; it only
+        // trips if the balance curve itself starts one-shotting newcomers.
+        for (let i = 0; i < 400; i++) {
+          player.currentHp = player.stats.maxHp;
+          const { hit } = oneEnemyHit(player, enemyId);
+          worst = Math.max(worst, hit?.amount ?? 0);
+        }
+        expect(worst / player.stats.maxHp, `${cls.id} vs ${enemyId}`).toBeLessThan(0.5);
+      }
+    }
   });
 });
 

@@ -25,7 +25,7 @@ test('walking up to a dungeon monster engages combat; basic attacks drop its HP 
   // The first encounter pod is 2 monsters, each needing a few basic-attack
   // hits (with their own 1.1s cooldown) — comfortably under the global
   // timeout in practice, but this mounts a full zone first too.
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const pageErrors: string[] = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
 
@@ -68,11 +68,13 @@ test('walking up to a dungeon monster engages combat; basic attacks drop its HP 
 
   // Land basic attacks (hotbar slot 1 / key '1') respecting its 1.1s
   // cooldown, until the monster dies or we've clearly tried enough — a
-  // level-3 warrior vs. a first-chamber slime/bat should take only a
-  // couple of hits.
+  // level-3 warrior vs. the first chamber's two slimes takes ~3 hits each
+  // (config/balance.ts's enemy HP curve), and in a GPU-less headless run the
+  // game loop's clamped dt makes game time run well behind wall time, so
+  // most presses land while the basic attack is still cooling down.
   let sawDamage = false;
   let victoryText: string | null = null;
-  for (let i = 0; i < 30 && (await hotbar.isVisible()); i++) {
+  for (let i = 0; i < 60 && (await hotbar.isVisible()); i++) {
     await page.keyboard.press('1');
     await page.waitForTimeout(150);
     // The first encounter pod is 2 monsters (see ROOT_HOLLOW_LAYOUT /
