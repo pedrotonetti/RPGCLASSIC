@@ -11,7 +11,7 @@
 import type { ItemRarity } from '../config/types';
 import { createStarterItem } from '../data/equipment';
 import type { Player } from '../entities/Player';
-import { adjustFactionReputation, adjustWorldState, markEventCompleted, setFlag, type WorldStateAxis } from './WorldStateSystem';
+import { adjustFactionReputation, adjustWorldState, markEventCompleted, setFlag, setZoneState, type WorldStateAxis } from './WorldStateSystem';
 
 export interface ChoiceEffect {
   /** Set one flag true — see WorldState.flags. */
@@ -23,6 +23,8 @@ export interface ChoiceEffect {
   grantGold?: number;
   /** Marks a world event resolved — see WorldState.completedEvents. */
   markEventId?: string;
+  /** Labels a zone's own state (e.g. a settlement's threat resolved) — see WorldState.zoneStates and data/zones.ts's ZoneDefinition.resolvedState. */
+  zoneState?: { zoneId: string; state: string };
 }
 
 /** Applies every field an effect sets; every field is optional so a quest/event only needs to specify what it actually changes. */
@@ -33,4 +35,5 @@ export function applyChoiceEffect(player: Player, effect: ChoiceEffect): void {
   if (effect.grantItem) player.addLoot(createStarterItem(effect.grantItem.templateId, effect.grantItem.rarity, Math.max(1, player.level)));
   if (effect.grantGold) player.gold += effect.grantGold;
   if (effect.markEventId) markEventCompleted(player.worldState, effect.markEventId);
+  if (effect.zoneState) setZoneState(player.worldState, effect.zoneState.zoneId, effect.zoneState.state);
 }

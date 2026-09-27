@@ -49,6 +49,26 @@ export interface ZoneDefinition {
    * `spawnMonsters` scatter, and shows the encounter-progress/boss-banner HUD.
    */
   dungeonId?: string;
+  /**
+   * The `WorldState.zoneStates[this.id]` value (see `systems/WorldStateSystem.ts`)
+   * that marks this zone's own threat as resolved by story progress — a
+   * quest's `onCompleteEffect.zoneState` is what actually sets it (see
+   * data/quests.ts). Once reached, `effectiveMonsterCount` below halves this
+   * zone's monster density; a zone with no `resolvedState` never reacts.
+   */
+  resolvedState?: string;
+}
+
+/**
+ * `zone.monsterCount`, halved once `zoneState` (see `getZoneState`) matches
+ * `zone.resolvedState` — the one demonstrable "reactive zone" payoff for
+ * now: a settlement whose threat a quest chain resolved visibly calms down,
+ * rather than `WorldState.zoneStates` staying a write-only ledger. Only
+ * `OverworldScreen.mount`'s non-dungeon spawn path calls this.
+ */
+export function effectiveMonsterCount(zone: ZoneDefinition, zoneState: string | null): number {
+  if (zone.resolvedState && zoneState === zone.resolvedState) return Math.round(zone.monsterCount * 0.5);
+  return zone.monsterCount;
 }
 
 const MAIN_CITY_ACCENT = 0x4c8a3f; // the field's usual grass green — no special tint for the shared hub
@@ -169,6 +189,8 @@ export interface RegionalSettlement {
   accentColor: number;
   monsterIds: string[];
   monsterCount: number;
+  /** See ZoneDefinition.resolvedState. */
+  resolvedState?: string;
 }
 
 export const ANCORADOURO_VAU_ID = 'ancoradouro_vau';
@@ -208,6 +230,10 @@ export const REGIONAL_SETTLEMENTS: RegionalSettlement[] = [
     accentColor: 0xc98bb0,
     monsterIds: ['fire_elemental', 'troll', 'stone_golem'],
     monsterCount: 60,
+    // Set by baluarte_r3_cisterna's onCompleteEffect (data/quests.ts) — the
+    // bastion's own three-quest chain ends on holding the cistern against
+    // the drought-colossi, so its threat visibly recedes once that's done.
+    resolvedState: 'reerguido',
   },
 ];
 
@@ -232,6 +258,7 @@ function buildRegionalSettlementZones(): Record<string, ZoneDefinition> {
       monsterIds: s.monsterIds,
       monsterCount: s.monsterCount,
       recommendedLevel: s.recommendedLevel,
+      resolvedState: s.resolvedState,
       generate: () =>
         generateVillageMap({ ...s.size, seed: s.seed, hasNorthGate: true, hasSouthGate: false, treeCount: s.treeCount, development: s.development }),
       exits: [{ atTile: { x: Math.floor(s.size.width / 2), y: 0 }, toZone: MAIN_CITY_ID, arriveTile: mainCityArrivalTile(s.zoneId) }],

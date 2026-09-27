@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Player } from '../entities/Player';
 import { applyChoiceEffect } from './ChoiceSystem';
-import { getFactionReputation, hasCompletedEvent, hasFlag } from './WorldStateSystem';
+import { getFactionReputation, getZoneState, hasCompletedEvent, hasFlag } from './WorldStateSystem';
 
 function freshPlayer(): Player {
   return Player.createNew('Testador', 'warrior');
@@ -54,6 +54,12 @@ describe('applyChoiceEffect', () => {
     const player = freshPlayer();
     applyChoiceEffect(player, { markEventId: 'caravan_ambush' });
     expect(hasCompletedEvent(player.worldState, 'caravan_ambush')).toBe(true);
+  });
+
+  it('labels a zone state', () => {
+    const player = freshPlayer();
+    applyChoiceEffect(player, { zoneState: { zoneId: 'baluarte_amanhecer', state: 'reerguido' } });
+    expect(getZoneState(player.worldState, 'baluarte_amanhecer')).toBe('reerguido');
   });
 
   it('applies every field at once when several are set together', () => {

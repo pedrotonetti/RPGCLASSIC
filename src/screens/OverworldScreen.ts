@@ -10,7 +10,7 @@ import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
 import { dialogueLinesFor, getNpcById, NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
-import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, subAreaNameAt, type ZoneDefinition, type ZoneExit } from '../data/zones';
+import { arriveWorldPosition, effectiveMonsterCount, getZoneById, MAIN_CITY_ID, subAreaNameAt, type ZoneDefinition, type ZoneExit } from '../data/zones';
 import { dungeonsInHostZone, getDungeonById, getDungeonByZoneId, type DungeonDefinition } from '../data/dungeons';
 import { rarityTier, rarityToHex } from '../config/rarity';
 import type { EquipmentSlot, ItemRarity } from '../config/types';
@@ -38,7 +38,7 @@ import {
   offerSideQuest,
   questTrackerText,
 } from '../systems/QuestSystem';
-import { worldMoodFactor } from '../systems/WorldStateSystem';
+import { getZoneState, worldMoodFactor } from '../systems/WorldStateSystem';
 import type { QuestDefinition } from '../data/quests';
 import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
@@ -506,7 +506,7 @@ export class OverworldScreen implements Screen {
       );
     } else {
       this.combat.spawnMonsters(tiles, playerStart, {
-        count: this.zoneDef.monsterCount,
+        count: effectiveMonsterCount(this.zoneDef, getZoneState(this.player.worldState, this.zoneDef.id)),
         enemyIds: this.zoneDef.monsterIds,
         minDistFromStart: this.zoneDef.monsterIds ? 3 : undefined,
         minSpacing: this.zoneDef.monsterIds ? 2 : undefined,

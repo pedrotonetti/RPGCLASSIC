@@ -1,6 +1,7 @@
 import type { ItemRarity } from '../config/types';
 import type { ChoiceEffect } from '../systems/ChoiceSystem';
 import { CLASS_ZONE_THEMES } from './classZones';
+import { BALUARTE_AMANHECER_ID } from './zones';
 
 export type QuestObjectiveKind = 'talkTo' | 'defeat' | 'reachLevel';
 
@@ -1058,7 +1059,11 @@ export const SIDE_QUESTS: QuestDefinition[] = [
     rewardXp: 1000,
     rewardGold: 650,
     rewardItem: { templateId: 'amuleto_vitalidade', rarity: 'laranja' },
-    onCompleteEffect: { worldStateDelta: { corruption: -6, hope: 6 }, markEventId: 'baluarte_amanhecer_reerguido' },
+    onCompleteEffect: {
+      worldStateDelta: { corruption: -6, hope: 6 },
+      markEventId: 'baluarte_amanhecer_reerguido',
+      zoneState: { zoneId: BALUARTE_AMANHECER_ID, state: 'reerguido' },
+    },
   },
 ];
 
