@@ -764,7 +764,12 @@ body {
   background: rgba(26, 20, 35, 0.95);
   border-width: 2px;
   border-radius: 8px;
-  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.6);
+  /* A map-frame feel: the ordinary panel border, an inset hairline just
+     inside it, and the usual drop shadow. */
+  box-shadow:
+    inset 0 0 0 4px rgba(10, 8, 14, 0.55),
+    inset 0 0 0 5px rgba(201, 180, 137, 0.25),
+    0 10px 36px rgba(0, 0, 0, 0.6);
 }
 .worldmap-header {
   display: flex;
@@ -772,11 +777,22 @@ body {
   justify-content: space-between;
   gap: 10px;
 }
+/* "IPÊRA" — the world's own name, set like a map's title lockup above the
+   functional "Mapa Mundi" heading. */
+.worldmap-wordmark {
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 15px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  text-shadow: 1px 1px 0 #000;
+  opacity: 0.9;
+}
 .worldmap-heading h2 {
   margin: 0;
   color: var(--accent);
   font-size: 28px;
   line-height: 1;
+  font-family: 'Cinzel', serif;
 }
 .worldmap-subtitle {
   font-size: 16px;
@@ -810,6 +826,70 @@ body {
   flex: 1;
   min-height: 0;
   margin: 8px 0 6px;
+  /* The illustrated terrain SVG is this box's own painted background — the
+     dark panel chrome around it stays the game's usual UI, but the map
+     itself reads as parchment/land instead of a bare dark diagram. */
+  border-radius: 6px;
+  overflow: hidden;
+}
+/* --- illustrated terrain backdrop (worldMap.ts's buildTerrainBackdrop) --- */
+.worldmap-terrain {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.wm-ocean {
+  fill: #142433;
+}
+.wm-landmass {
+  fill: url(#wm-land-grad);
+  stroke: #4a4530;
+  stroke-width: 0.6;
+}
+.wm-grain {
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+.wm-mountains .wm-peak {
+  fill: #746a5c;
+  stroke: #443f36;
+  stroke-width: 0.3;
+}
+.wm-mountains .wm-snowcap {
+  fill: #e8e6df;
+  opacity: 0.9;
+}
+.wm-river {
+  stroke: #6fa9c9;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+.wm-forest .wm-tree {
+  fill: #4a5a34;
+  opacity: 0.55;
+}
+.wm-compass-ring {
+  fill: none;
+  stroke: #c9b489;
+  stroke-width: 0.4;
+  opacity: 0.7;
+}
+.wm-compass-star {
+  fill: #c9b489;
+  opacity: 0.8;
+}
+.wm-compass-hub {
+  fill: #1a1423;
+}
+.wm-compass-label {
+  font-family: 'Cinzel', serif;
+  font-size: 4px;
+  fill: #e8dcc0;
+  opacity: 0.85;
 }
 .worldmap-roads {
   position: absolute;
