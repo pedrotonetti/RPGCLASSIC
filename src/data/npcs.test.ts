@@ -73,3 +73,31 @@ describe('Capitã Jussara (Baluarte do Amanhecer) speaks to where the player act
     expect(done.join(' ')).toContain('cisterna cheia');
   });
 });
+
+describe('faction-reputation dialogue (Dona Ilma / Vigia Talma warm to Pedravale as its reputation grows)', () => {
+  const ilma = getNpcById('dona_ilma');
+  const talma = getNpcById('vigia_talma');
+
+  it('shows the default (wary/fearful) lines when Pedravale reputation is neutral or omitted entirely', () => {
+    expect(dialogueLinesFor(ilma, [null, null], [])).toBe(ilma.dialogue);
+    expect(dialogueLinesFor(ilma, [null, null], [], { pedravale: 0 })).toBe(ilma.dialogue);
+    expect(dialogueLinesFor(talma, [null, null], [])).toBe(talma.dialogue);
+  });
+
+  it('still shows the default lines just below the trust threshold', () => {
+    expect(dialogueLinesFor(ilma, [null, null], [], { pedravale: 14 })).toBe(ilma.dialogue);
+  });
+
+  it('switches to the warmer lines once Pedravale reputation reaches the threshold', () => {
+    const ilmaLines = dialogueLinesFor(ilma, [null, null], [], { pedravale: 15 });
+    expect(ilmaLines).not.toBe(ilma.dialogue);
+    expect(ilmaLines.join(' ')).toContain('medo');
+
+    const talmaLines = dialogueLinesFor(talma, [null, null], [], { pedravale: 26 });
+    expect(talmaLines).not.toBe(talma.dialogue);
+  });
+
+  it('never lets a faction the NPC does not care about affect its lines', () => {
+    expect(dialogueLinesFor(ilma, [null, null], [], { alguma_outra_faccao: 100 })).toBe(ilma.dialogue);
+  });
+});

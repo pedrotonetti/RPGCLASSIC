@@ -37,6 +37,22 @@ export interface NpcQuestDialogue {
   lines: string[];
 }
 
+/**
+ * A faction-reputation-conditioned override of an NPC's default `dialogue`
+ * lines — checked in the order they appear in `NpcDefinition.repDialogue`
+ * (first match wins), only once no `questDialogue` entry matched. `min`/`max`
+ * are inclusive; an absent bound means no floor/ceiling. Reputation is read
+ * via `systems/WorldStateSystem.ts`'s `factionReputation` (absent faction
+ * reads as 0), passed into `dialogueLinesFor` as a plain record so this data
+ * module doesn't need to depend on that systems module for one lookup.
+ */
+export interface NpcRepDialogue {
+  factionId: string;
+  min?: number;
+  max?: number;
+  lines: string[];
+}
+
 export interface NpcDefinition {
   id: string;
   name: string;
@@ -48,6 +64,8 @@ export interface NpcDefinition {
   dialogue: string[];
   /** Optional quest-conditioned dialogue overrides — see NpcQuestDialogue. */
   questDialogue?: NpcQuestDialogue[];
+  /** Optional faction-reputation-conditioned dialogue overrides — see NpcRepDialogue. */
+  repDialogue?: NpcRepDialogue[];
   appearance: CharacterAppearance;
   vendor?: VendorInfo;
   /**
@@ -613,6 +631,16 @@ NPC_DEFINITIONS.push(
       'Se tem espião disfarçado de morador em Pedravale, você vai reconhecer o disfarce antes que qualquer um de nós.',
       'Metade da minha guarda fica na Praça da Fundação, a outra metade lá embaixo na Praça do Mercado — Pedravale cresceu rápido demais pra uma só ronda dar conta das duas.',
     ],
+    repDialogue: [
+      {
+        factionId: 'pedravale',
+        min: 15,
+        lines: [
+          'Não preciso mais mandar ninguém te seguir pela Praça da Fundação — Pedravale já aprendeu a reconhecer seus passos.',
+          'Bram tinha razão sobre gente estranha demais entrando pelos portões. Você não é mais uma delas pra mim — é o motivo de eu dormir mais tranquila nas rondas.',
+        ],
+      },
+    ],
   },
   {
     id: 'dona_ilma',
@@ -635,6 +663,19 @@ NPC_DEFINITIONS.push(
       'Não quero ser mal-educada, mas... as crianças não dormem direito desde que você chegou falando sozinho perto do ipezal velho.',
       'Sei que ouve coisas que a gente não ouve. Isso já assustava antes de você aparecer — agora tem um rosto pra esse medo.',
       'Não vim pedir que pare. Vim pedir que mostre a Pedravale que o que você ouve não é a mesma coisa que virar aquilo que ouve.',
+    ],
+    // Once Pedravale's own reputation (grown through the early main-chain
+    // quests — see data/quests.ts's factionDelta entries) climbs high enough,
+    // her fear gives way — the same worry, now read as care instead of dread.
+    repDialogue: [
+      {
+        factionId: 'pedravale',
+        min: 15,
+        lines: [
+          'As crianças ainda perguntam sobre você — mas não do mesmo jeito de antes. Perguntam quando você volta, não se você é perigoso.',
+          'Eu tinha medo do que você ouve. Ainda tenho, um pouco. Mas vi o que fez por Pedravale, e medo já não é a mesma coisa que desconfiança — essa eu não sinto mais.',
+        ],
+      },
     ],
   },
   {
@@ -1859,20 +1900,37 @@ export function getNpcById(id: string): NpcDefinition {
 
 /**
  * The dialogue lines to actually show for this NPC right now — the first
- * matching entry in `npc.questDialogue` (see NpcQuestDialogue), falling back
- * to `npc.dialogue` when none match. Takes primitives rather than a `Player`
- * so this data module has no dependency on the entities layer.
+ * matching entry in `npc.questDialogue` (see NpcQuestDialogue), else the
+ * first matching entry in `npc.repDialogue` (see NpcRepDialogue), falling
+ * back to `npc.dialogue` when neither matches. Takes primitives rather than
+ * a `Player` so this data module has no dependency on the entities layer.
  *
  * `activeQuestIds` is every quest slot currently occupied — pass
  * `[player.activeQuestId, player.sideQuestId]` (see `systems/QuestSystem.ts`'s
  * `QuestSlot`) so an NPC's quest-conditioned line matches whichever slot that
  * quest actually lives in, main chain or the concurrent side quest.
+ *
+ * `factionReputation` defaults to `{}` (every faction reads as neutral/0,
+ * matching `WorldStateSystem`'s own absent-key convention) — pass
+ * `player.worldState.factionReputation` once the player's standing should be
+ * allowed to shift a line.
  */
-export function dialogueLinesFor(npc: NpcDefinition, activeQuestIds: Array<string | null>, completedQuestIds: string[]): string[] {
+export function dialogueLinesFor(
+  npc: NpcDefinition,
+  activeQuestIds: Array<string | null>,
+  completedQuestIds: string[],
+  factionReputation: Record<string, number> = {},
+): string[] {
   for (const entry of npc.questDialogue ?? []) {
     const when = entry.when ?? 'active';
     if (when === 'active' && activeQuestIds.includes(entry.questId)) return entry.lines;
     if (when === 'completed' && completedQuestIds.includes(entry.questId)) return entry.lines;
+  }
+  for (const entry of npc.repDialogue ?? []) {
+    const rep = factionReputation[entry.factionId] ?? 0;
+    if (entry.min !== undefined && rep < entry.min) continue;
+    if (entry.max !== undefined && rep > entry.max) continue;
+    return entry.lines;
   }
   return npc.dialogue;
 }

@@ -1306,7 +1306,7 @@ export class OverworldScreen implements Screen {
     // quest-conditioned NPC shows for this conversation reflect the state
     // the player walked up with, not whatever quest they're handed
     // immediately after.
-    this.dialogueLines = dialogueLinesFor(npc, [this.player.activeQuestId, this.player.sideQuestId], this.player.completedQuestIds);
+    this.dialogueLines = dialogueLinesFor(npc, [this.player.activeQuestId, this.player.sideQuestId], this.player.completedQuestIds, this.player.worldState.factionReputation);
     this.dialogueOverlay.hidden = false;
     this.promptEl.hidden = true;
     this.renderDialogueLine();
