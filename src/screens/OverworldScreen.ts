@@ -572,6 +572,13 @@ export class OverworldScreen implements Screen {
     this.updateMinimap();
     this.updateQuestIndicator();
     this.refreshHud();
+    // Was only ever re-rendered when a dialogue closed — a kill toward a
+    // "derrote inimigos (N/total)" objective updated player.questProgress
+    // immediately (see QuestSystem.notifyEnemyDefeated) but the tracker text
+    // itself sat frozen at whatever it showed on mount until the player next
+    // talked to someone. Cheap enough (one string build) to just run every
+    // frame like refreshHud already does.
+    this.refreshQuestTracker();
     this.applyWorldMood();
   }
 
