@@ -2,6 +2,29 @@ import { makeSkill } from '../systems/skillMath';
 import type { EnemyDefinition } from '../config/types';
 
 /**
+ * `young_dragon`'s own skills, named (not inline in its `skills`/`phases`
+ * fields) purely so its base kit and its expanded phase-2/3 kit (see its own
+ * `phases` field below and `systems/BossPhaseSystem.ts`) can share the exact
+ * same objects by reference instead of duplicating them.
+ */
+const DRAGON_CLAW = makeSkill({ id: 'dragon_claw', name: 'Garras Afiadas', description: 'Um ataque veloz com as garras.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 6, baseCost: 0, basePower: 1.8 });
+const DRAGON_BREATH = makeSkill({ id: 'dragon_breath', name: 'Sopro Flamejante', description: 'Um sopro de fogo que atinge tudo à frente e deixa queimaduras.', kind: 'magical', target: 'allEnemies', unlockLevel: 1, baseCooldown: 11, baseCost: 0, basePower: 1.9, inflicts: { type: 'burn', chance: 0.45 } });
+/** Phase-2/3 signature move — see below. */
+const DRAGON_CORRUPTED_ROAR = makeSkill({
+  id: 'dragon_corrupted_roar',
+  name: 'Rugido Corrompido',
+  description: 'Um rugido que rasga o ar com a fome da Sede, queimando tudo ao redor.',
+  kind: 'magical',
+  target: 'allEnemies',
+  unlockLevel: 1,
+  baseCooldown: 9,
+  baseCost: 0,
+  basePower: 2.1,
+  inflicts: { type: 'burn', chance: 0.6 },
+});
+const DRAGON_ENRAGED_SKILLS = [DRAGON_CLAW, DRAGON_BREATH, DRAGON_CORRUPTED_ROAR];
+
+/**
  * Ordered roughly from weakest to strongest. `EncounterSystem` picks among
  * the enemies whose intended level is close to the player's level. Each
  * enemy acts on its own real-time timer (`actionInterval`, in seconds).
@@ -209,12 +232,30 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     xpReward: 140,
     goldReward: 120,
     actionInterval: 2.6,
-    skills: [
-      makeSkill({ id: 'dragon_claw', name: 'Garras Afiadas', description: 'Um ataque veloz com as garras.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 6, baseCost: 0, basePower: 1.8 }),
-      makeSkill({ id: 'dragon_breath', name: 'Sopro Flamejante', description: 'Um sopro de fogo que atinge tudo à frente e deixa queimaduras.', kind: 'magical', target: 'allEnemies', unlockLevel: 1, baseCooldown: 11, baseCost: 0, basePower: 1.9, inflicts: { type: 'burn', chance: 0.45 } }),
-    ],
+    skills: [DRAGON_CLAW, DRAGON_BREATH],
     level: 18,
     archetype: 'berserker',
+    // Fase 3 (PDF section 7) — 100-65%: padrão básico (só as duas skills
+    // acima). 65-30%: ganha o Rugido Corrompido. 30-0%: desesperado —
+    // mesmo conjunto de skills, mas mais rápido e mais forte (ver
+    // systems/BossPhaseSystem.ts; a fúria do próprio arquétipo Berserker já
+    // entra em jogo em paralelo abaixo de 50%, então os multiplicadores
+    // aqui ficam moderados para não somarem demais).
+    phases: [
+      {}, // opening phase — always active from the start, no threshold/transition of its own
+      {
+        hpThreshold: 0.65,
+        transitionText: 'O Guardião-Dragão Corrompido ruge e suas escamas racham, vazando a Sede.',
+        skills: DRAGON_ENRAGED_SKILLS,
+      },
+      {
+        hpThreshold: 0.3,
+        transitionText: 'Desesperado, o dragão arde por completo — cada movimento seu agora é uma ameaça.',
+        skills: DRAGON_ENRAGED_SKILLS,
+        damageMult: 1.2,
+        actionIntervalMult: 0.85,
+      },
+    ],
   },
 ];
 

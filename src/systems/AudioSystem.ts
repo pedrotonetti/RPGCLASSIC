@@ -196,6 +196,13 @@ class AudioSystem {
     this.tone({ freq: 880, duration: 0.09, type: 'square', gain: 0.08 });
   }
 
+  /** A boss crossing into a new scripted phase (see systems/BossPhaseSystem.ts) — a low rumble under a dissonant rising chord, distinct from any other combat cue so a phase change reads as its own kind of moment. */
+  bossPhaseChange(): void {
+    this.noiseBurst({ duration: 0.4, gain: 0.2, filterFreq: 350, filterType: 'lowpass' });
+    this.tone({ freq: 130, toFreq: 55, duration: 0.6, type: 'sawtooth', gain: 0.2 });
+    this.chord([220, 262, 311], 0.35, 'sawtooth', 0.14, 0.12);
+  }
+
   // --- overworld ------------------------------------------------------------
 
   encounterStart(): void {

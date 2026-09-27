@@ -1111,6 +1111,18 @@ body {
   background: linear-gradient(90deg, #8a1f1f, var(--hp));
   transition: width 0.25s ease-out;
 }
+/* A scripted boss fight crossing into a new phase (systems/BossPhaseSystem.ts) — a brief pulse around the whole banner, on top of the per-hit flash every monster already gets. */
+.boss-banner.phase-flash {
+  animation: boss-phase-pulse 0.9s ease-out;
+}
+@keyframes boss-phase-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(210, 78, 122, 0.9);
+  }
+  100% {
+    box-shadow: 0 0 28px 12px rgba(210, 78, 122, 0);
+  }
+}
 
 /* Dungeon entrance portal — same tap/interact-prompt pattern as an NPC label. */
 .dungeon-portal-label {
@@ -1295,6 +1307,11 @@ body {
 .battle-message-bar.telegraph {
   border-color: #ff5555;
   background: rgba(120, 20, 20, 0.85);
+}
+/* A scripted boss fight crossing into a new phase (systems/BossPhaseSystem.ts) — a deeper, more ominous color than a plain telegraph, held via .telegraph's own transition timing. */
+.battle-message-bar.boss-phase {
+  border-color: #d24e7a;
+  background: rgba(90, 12, 42, 0.9);
 }
 
 .combo-badge {

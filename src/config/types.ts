@@ -186,4 +186,28 @@ export interface EnemyDefinition {
    * the regular curve to match their outsized stats/rewards.
    */
   level: number;
+  /**
+   * A boss-only encounter script (see `systems/BossPhaseSystem.ts`): ordered
+   * ascending by `hpThreshold` isn't required, but index 0 is always the
+   * fight's OPENING state (no transition event fires for it — the boss just
+   * starts there) and later entries are reached as its HP falls. Unset (the
+   * default for every regular enemy, and for a boss with no scripted
+   * fight yet) behaves exactly like today: one flat skill pool for the whole
+   * fight, no phase transitions.
+   */
+  phases?: BossPhaseDefinition[];
+}
+
+/** One phase of a scripted boss fight — see `EnemyDefinition.phases` and `systems/BossPhaseSystem.ts`. */
+export interface BossPhaseDefinition {
+  /** This phase begins the instant the boss's HP fraction drops to/at or below this value. Omit (or leave meaningless) for index 0 — the fight's opening state is always active from the start, never entered via a threshold. */
+  hpThreshold?: number;
+  /** Shown once, the moment this phase begins — a narrative beat, not a status message (e.g. "A Matriarca-Geleia se contorce, furiosa"). Omit for index 0 (see `hpThreshold`) — no transition event ever fires for the opening phase. */
+  transitionText?: string;
+  /** This phase's own skill pool, REPLACING the boss's base `EnemyDefinition.skills` for as long as it's active — omit to keep the base pool unchanged (a phase can exist purely for its damage/speed/narrative beat, without a new attack). */
+  skills?: SkillDefinition[];
+  /** Multiplies damage dealt while this phase is active (on top of any archetype-driven enrage — see systems/enemyArchetypes.ts). 1 = unchanged. */
+  damageMult?: number;
+  /** Multiplies the next action-timer interval while this phase is active — below 1 acts faster. 1 = unchanged. */
+  actionIntervalMult?: number;
 }

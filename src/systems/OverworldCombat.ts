@@ -1068,6 +1068,20 @@ export class OverworldCombat {
         setTimeout(() => this.messageEl.classList.remove('telegraph'), 440);
         audio.telegraphWarning();
       }
+      if (event.kind === 'bossPhase') {
+        // A bigger narrative beat than a plain telegraph — shown longer
+        // (overriding the generic 2600ms set above for every event's own
+        // `text`) and with its own color/sound so a phase change reads as
+        // "something has changed", not just another attack warning.
+        this.showMessage(event.text, 4200);
+        this.messageEl.classList.add('boss-phase');
+        setTimeout(() => this.messageEl.classList.remove('boss-phase'), 900);
+        if (this.bossBannerEl) {
+          this.bossBannerEl.classList.add('phase-flash');
+          setTimeout(() => this.bossBannerEl?.classList.remove('phase-flash'), 900);
+        }
+        audio.bossPhaseChange();
+      }
       if (event.kind === 'miss') audio.miss();
       if (event.kind === 'heal' || event.kind === 'buff') audio.itemUse();
       if (event.kind === 'stagger') audio.stagger();

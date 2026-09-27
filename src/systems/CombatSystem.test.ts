@@ -444,3 +444,60 @@ describe('CombatEngine status effects', () => {
     expect(tickEvents.some((e) => e.kind === 'statusTick' && e.targetIsPlayer && e.statusType === 'bleed')).toBe(true);
   });
 });
+
+describe('Boss phases (systems/BossPhaseSystem.ts + data/bosses.ts)', () => {
+  it('fires a bossPhase event and swaps in the new skill pool once a scripted boss crosses its threshold', () => {
+    const player = freshPlayer('warrior');
+    const boss = new Enemy('boss_root_ooze');
+    const engine = new CombatEngine(player, [boss]);
+    expect(boss.phaseIndex).toBe(0);
+    expect(boss.skills.map((s) => s.id)).toEqual(['ooze_corrosive_slam', 'ooze_spore_burst']);
+
+    boss.takeDamage(Math.ceil(boss.stats.maxHp * 0.6)); // drops well under the 50% threshold
+    const events = engine.tick(0.1);
+
+    const phaseEvent = events.find((e) => e.kind === 'bossPhase');
+    expect(phaseEvent).toBeDefined();
+    expect(phaseEvent?.text.length).toBeGreaterThan(0);
+    expect(boss.phaseIndex).toBe(1);
+    expect(boss.skills.map((s) => s.id)).toContain('ooze_acid_deluge');
+  });
+
+  it('only fires the transition once, not on every subsequent tick while still in that phase', () => {
+    const player = freshPlayer('warrior');
+    const boss = new Enemy('boss_root_ooze');
+    const engine = new CombatEngine(player, [boss]);
+    boss.takeDamage(Math.ceil(boss.stats.maxHp * 0.6));
+    engine.tick(0.1); // transitions here
+
+    const laterEvents = engine.tick(0.1);
+    expect(laterEvents.some((e) => e.kind === 'bossPhase')).toBe(false);
+  });
+
+  it('advances through all 3 phases of the toughest scripted boss as its HP falls, each with the expected multipliers', () => {
+    const player = freshPlayer('warrior');
+    const boss = new Enemy('boss_voiceless_root');
+    const engine = new CombatEngine(player, [boss]);
+    expect(boss.phaseIndex).toBe(0);
+
+    boss.takeDamage(Math.ceil(boss.stats.maxHp * 0.4)); // -> 60%, past the 65% threshold
+    engine.tick(0.1);
+    expect(boss.phaseIndex).toBe(1);
+    expect(boss.skills.map((s) => s.id)).toContain('voiceless_deep_whisper');
+
+    boss.takeDamage(Math.ceil(boss.stats.maxHp * 0.35)); // -> ~25%, past the 30% threshold
+    const finalEvents = engine.tick(0.1);
+    expect(boss.phaseIndex).toBe(2);
+    expect(finalEvents.some((e) => e.kind === 'bossPhase')).toBe(true);
+  });
+
+  it('never fires a bossPhase event for a regular (non-scripted) enemy, however low its HP gets', () => {
+    const player = freshPlayer('warrior');
+    const enemy = new Enemy('slime');
+    const engine = new CombatEngine(player, [enemy]);
+    enemy.takeDamage(enemy.stats.maxHp - 1); // as low as possible without dying
+    const events = engine.tick(0.1);
+    expect(events.some((e) => e.kind === 'bossPhase')).toBe(false);
+    expect(enemy.phaseIndex).toBe(0);
+  });
+});

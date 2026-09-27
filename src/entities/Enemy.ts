@@ -2,6 +2,7 @@ import { applyEnemyBalance } from '../config/balance';
 import type { EnemyArchetype, EnemyDefinition, SkillDefinition, Stats } from '../config/types';
 import { getBossById } from '../data/bosses';
 import { getEnemyById } from '../data/enemies';
+import { effectiveSkillsForPhase } from '../systems/BossPhaseSystem';
 import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder } from '../systems/statusEffects';
 
 /** A single enemy instance within one battle. Enemies don't persist between battles. */
@@ -31,6 +32,8 @@ export class Enemy implements StatusEffectHolder {
   private readonly resolvedDef: EnemyDefinition;
   /** Active bleed/burn/slow afflictions — see `systems/statusEffects.ts`; ticked by `CombatEngine.tick`. */
   statusEffects: ActiveStatusEffect[] = [];
+  /** Which of `def.phases` (a scripted boss fight only — see `systems/BossPhaseSystem.ts`) is currently active. Always 0 (and never read) for an enemy with no `phases`. Advanced by `CombatEngine.tick`. */
+  phaseIndex = 0;
 
   constructor(definitionId: string, tierMultiplier = 1) {
     this.definitionId = definitionId;
@@ -106,8 +109,9 @@ export class Enemy implements StatusEffectHolder {
     return this.def.stats;
   }
 
+  /** The current phase's own skill pool for a scripted boss fight, or the base pool unchanged for everything else (`def.phases` unset) — see `systems/BossPhaseSystem.ts`. */
   get skills(): SkillDefinition[] {
-    return this.def.skills;
+    return effectiveSkillsForPhase(this.def.skills, this.def.phases, this.phaseIndex);
   }
 
   isAlive(): boolean {

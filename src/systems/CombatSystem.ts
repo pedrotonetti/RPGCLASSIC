@@ -27,6 +27,7 @@ import {
   precisionCritBonus,
 } from './classMechanics';
 import { archetypeActionIntervalMultiplier, archetypeDamageMultiplier, archetypeProfileFor, pickSkillForArchetype, telegraphTextFor } from './enemyArchetypes';
+import { phaseActionIntervalMultiplier, phaseDamageMultiplier, phaseIndexForHp } from './BossPhaseSystem';
 import { computeSkillLevelStats } from './skillMath';
 import { applyStatusEffect, tickStatusEffects } from './statusEffects';
 
@@ -44,6 +45,7 @@ export interface CombatEvent {
     | 'fled'
     | 'info'
     | 'telegraph'
+    | 'bossPhase'
     | 'stagger'
     | 'statusApplied'
     | 'statusTick';
@@ -627,6 +629,8 @@ export class CombatEngine {
     this.tickStatusDamage(dt, events);
     if (this.outcome !== 'ongoing') return events;
 
+    this.advanceBossPhases(events);
+
     // Resolve any enemy attacks whose telegraph window has elapsed first.
     for (const [enemy, pending] of [...this.pendingAttacks]) {
       if (this.clock < pending.resolveAt) continue;
@@ -646,13 +650,30 @@ export class CombatEngine {
         if (enemy.actionTimer > 0) continue;
         const profile = archetypeProfileFor(enemy.archetype);
         const hpFraction = enemy.currentHp / enemy.stats.maxHp;
-        enemy.actionTimer = enemy.def.actionInterval * (0.85 + Math.random() * 0.3) * archetypeActionIntervalMultiplier(profile, hpFraction);
+        enemy.actionTimer =
+          enemy.def.actionInterval *
+          (0.85 + Math.random() * 0.3) *
+          archetypeActionIntervalMultiplier(profile, hpFraction) *
+          phaseActionIntervalMultiplier(enemy.def.phases, enemy.phaseIndex);
         this.beginEnemyAction(enemy, events);
       }
     }
 
     if (this.outcome === 'ongoing') this.checkVictory(events);
     return events;
+  }
+
+  /** Advances every alive scripted boss's own phase (see systems/BossPhaseSystem.ts) if its current HP has crossed into a new one — a plain enemy with no `def.phases` is untouched (phaseIndexForHp always returns 0 for it, already its resting state). Run right after status DoT (which can itself push a boss into a new phase this same frame) and before anything reads `enemy.skills`/damage multipliers this tick. */
+  private advanceBossPhases(events: CombatEvent[]): void {
+    for (const enemy of this.aliveEnemies()) {
+      if (!enemy.def.phases) continue;
+      const hpFraction = enemy.currentHp / enemy.stats.maxHp;
+      const nextIndex = phaseIndexForHp(enemy.def.phases, hpFraction);
+      if (nextIndex === enemy.phaseIndex) continue;
+      enemy.phaseIndex = nextIndex;
+      const phase = enemy.def.phases[nextIndex];
+      events.push({ kind: 'bossPhase', text: phase.transitionText ?? '', actorIsPlayer: false, actorIndex: this.enemies.indexOf(enemy) });
+    }
   }
 
   /** Ticks every active bleed/burn on both sides, applying DoT damage and emitting `statusTick` events — run once per frame, before anything else that could also end the battle this same tick. */
@@ -766,6 +787,7 @@ export class CombatEngine {
     let archetypeMult = archetypeDamageMultiplier(profile, hpFraction);
     if (profile.ambushFirstHitMult && !this.hasActed.has(enemy)) archetypeMult *= profile.ambushFirstHitMult;
     this.hasActed.add(enemy);
+    archetypeMult *= phaseDamageMultiplier(enemy.def.phases, enemy.phaseIndex);
     if (archetypeMult !== 1) roll.damage = Math.max(1, Math.round(roll.damage * archetypeMult));
     const actorIndex = this.enemies.indexOf(enemy);
 
