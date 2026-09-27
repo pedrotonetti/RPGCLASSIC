@@ -149,6 +149,38 @@ body {
   background-clip: text;
   -webkit-text-fill-color: transparent;
   text-shadow: 0 0 18px rgba(242, 193, 78, 0.45), 0 0 40px rgba(122, 79, 179, 0.35), 0 3px 0 rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  user-select: none;
+  /* #ui-root defaults every child to pointer-events: none (see above) — this
+     is now a genuine click target (see MainMenuScreen.onLogoClick), so it
+     needs the same opt-in every other interactive element gets. */
+  pointer-events: auto;
+  animation: title-logo-breathe 4.5s ease-in-out infinite;
+}
+@keyframes title-logo-breathe {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.18); }
+}
+/* A brief, easter-egg-only message under the subtitle (see
+   MainMenuScreen.showSecretToast) — reserves no space while hidden, same
+   collapse/reveal pattern as .worldmap-toast. */
+.main-menu .menu-secret-toast {
+  max-width: min(90vw, 480px);
+  margin: 8px auto 0;
+  min-height: 0;
+  max-height: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-style: italic;
+  color: var(--accent);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.main-menu .menu-secret-toast.visible {
+  max-height: 60px;
+  opacity: 1;
+  padding-top: 4px;
 }
 .main-menu .subtitle {
   font-family: 'Cinzel', serif;

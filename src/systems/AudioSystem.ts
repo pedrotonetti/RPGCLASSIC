@@ -229,6 +229,13 @@ class AudioSystem {
     this.tone({ freq: 1180, duration: 0.08, type: 'square', gain: 0.09, delay: 0.15 });
   }
 
+  /** A hidden-secret-found cue for the title screen's easter eggs (see MainMenuScreen) — a low creak sliding into a bright, slightly dissonant chime, distinct from questComplete/chestOpen's warmer resolutions so a found secret reads as its own eerie kind of reward. */
+  secretFound(): void {
+    this.noiseBurst({ duration: 0.3, gain: 0.12, filterFreq: 500, filterType: 'lowpass' });
+    this.tone({ freq: 90, toFreq: 60, duration: 0.5, type: 'sawtooth', gain: 0.14 });
+    this.chord([622, 740, 932], 0.6, 'sine', 0.12, 0.2);
+  }
+
   // --- title theme ------------------------------------------------------
 
   /**
