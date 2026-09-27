@@ -1,7 +1,7 @@
 import { getClassById } from '../config/classes';
 import { CLASS_ZONE_THEMES } from '../data/classZones';
 import { getDungeonByZoneId } from '../data/dungeons';
-import { MAIN_CITY_ID, ZONE_DEFINITIONS } from '../data/zones';
+import { MAIN_CITY_ID, REGIONAL_SETTLEMENTS, ZONE_DEFINITIONS, type RegionalSettlementKind } from '../data/zones';
 
 /**
  * Pure (DOM-free, unit-testable) layout for the "Mapa Mundi" world-map
@@ -22,9 +22,17 @@ import { MAIN_CITY_ID, ZONE_DEFINITIONS } from '../data/zones';
  * media query. A true radial ring can't fit 16 readable village labels at
  * phone width, but a spoked two-sided layout keeps Pedravale in the center
  * with every class's territory still radiating out from it.
+ *
+ * The regional settlements (data/zones.ts's REGIONAL_SETTLEMENTS) belong to
+ * no class, so they stay out of that class-column math entirely and sit in
+ * the one band it leaves free — the strip through Pedravale between the two
+ * sides' territories (a horizontal strip in portrait, a vertical one in
+ * landscape): the satellite hamlet tucked right beside Pedravale's card, a
+ * short road away, and the frontier hub out at that strip's far end, on its
+ * own long spoke. See REGIONAL_POSITIONS.
  */
 
-export type WorldMapNodeKind = 'capital' | 'secondary' | 'start';
+export type WorldMapNodeKind = 'capital' | 'secondary' | 'start' | RegionalSettlementKind;
 
 export interface WorldMapPoint {
   x: number;
@@ -42,10 +50,14 @@ export interface WorldMapNode {
   zoneId: string;
   name: string;
   kind: WorldMapNodeKind;
-  /** Owning class — null only for Pedravale, which belongs to every class. */
+  /** Owning class — null for Pedravale (which belongs to every class) and for the regional settlements (which belong to none). */
   classId: string | null;
   portrait: WorldMapPoint;
   landscape: WorldMapPoint;
+  /** The zone's own soft level guide (ZoneDefinition.recommendedLevel), shown under its name — set only where the zone defines one. */
+  recommendedLevel?: number;
+  /** A classless regional settlement's own tint: its in-world `accentColor`, lifted like a territory's (see readableAccent). Class nodes take their territory's instead. */
+  displayHex?: string;
 }
 
 export interface WorldMapTerritory {
@@ -87,6 +99,21 @@ const CENTER: WorldMapPoint = { x: 0.5, y: 0.5 };
  */
 const PORTRAIT_RINGS = { start: 0.13, secondary: 0.31, territoryInner: 0.405, edge: 0.005, gap: 0.008 };
 const LANDSCAPE_RINGS = { start: 0.167, secondary: 0.31, territoryInner: 0.395, edge: 0.004, gap: 0.014 };
+
+/**
+ * Where each regional settlement kind sits — inside the free strip between
+ * the two sides' territories (portrait y / landscape x within
+ * `territoryInner`..`1 - territoryInner` above). Portrait's strip runs
+ * sideways past Pedravale's card (style.css keeps that card narrow enough
+ * to leave room): the satellite just off its right edge, the hub against
+ * the map's far left edge. Landscape's runs top to
+ * bottom: the satellite just above Pedravale, the hub at the very bottom,
+ * past where the class rows' own start villages sit.
+ */
+const REGIONAL_POSITIONS: Record<RegionalSettlementKind, { portrait: WorldMapPoint; landscape: WorldMapPoint }> = {
+  satellite: { portrait: { x: 0.82, y: 0.5 }, landscape: { x: 0.5, y: 0.28 } },
+  hub: { portrait: { x: 0.125, y: 0.5 }, landscape: { x: 0.5, y: 0.875 } },
+};
 
 export function hexString(color: number): string {
   return `#${color.toString(16).padStart(6, '0')}`;
@@ -235,6 +262,20 @@ export function buildWorldMapLayout(): WorldMapLayout {
       landscape: { x0: Math.min(lOuter, lInner), x1: Math.max(lOuter, lInner), y0: acrossLo + l.gap, y1: acrossHi - l.gap },
     });
   });
+
+  for (const settlement of REGIONAL_SETTLEMENTS) {
+    const pos = REGIONAL_POSITIONS[settlement.kind];
+    nodes.push({
+      zoneId: settlement.zoneId,
+      name: settlement.name,
+      kind: settlement.kind,
+      classId: null,
+      portrait: pos.portrait,
+      landscape: pos.landscape,
+      recommendedLevel: ZONE_DEFINITIONS[settlement.zoneId].recommendedLevel,
+      displayHex: rgbHex(readableAccent(settlement.accentColor)),
+    });
+  }
 
   // Roads come from the real zone exits — an undirected link per pair of
   // map settlements that an exit actually joins (each road has an exit at

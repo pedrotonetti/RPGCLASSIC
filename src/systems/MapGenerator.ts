@@ -100,28 +100,94 @@ function mulberry32(seed: number): () => number {
 }
 
 /**
- * One border opening per class, carved into the main city's map, each
- * leading out toward that class's own secondary village. Kept well clear of
- * the old-town plaza (top-left) and the pond so the walk-in stub never needs
- * to fight existing terrain. Coordinates scale with MAP_WIDTH/MAP_HEIGHT —
- * see the doubled dimensions above (this used to be a 40x24 map).
+ * One border opening carved into the main city's map, with a walk-in stub
+ * leading inward from it. `id` names where the gate leads: a class id for
+ * each class's own road out to its secondary village, or a regional
+ * settlement's zone id (see data/zones.ts's REGIONAL_SETTLEMENTS) — which
+ * data/zones.ts's mainCityExits resolves to the actual destination zone.
  */
-export const MAIN_CITY_GATES: Array<{ classId: string; x: number; y: number; side: 'east' | 'south' }> = [
-  { classId: 'warrior', x: MAP_WIDTH - 1, y: 6, side: 'east' },
-  { classId: 'mage', x: MAP_WIDTH - 1, y: 12, side: 'east' },
-  { classId: 'archer', x: MAP_WIDTH - 1, y: 20, side: 'east' },
-  { classId: 'cleric', x: MAP_WIDTH - 1, y: 28, side: 'east' },
-  { classId: 'paladin', x: MAP_WIDTH - 1, y: 36, side: 'east' },
-  { classId: 'assassin', x: MAP_WIDTH - 1, y: 42, side: 'east' },
-  { classId: 'necromancer', x: 28, y: MAP_HEIGHT - 1, side: 'south' },
-  { classId: 'monk', x: 56, y: MAP_HEIGHT - 1, side: 'south' },
+export interface MainCityGate {
+  id: string;
+  x: number;
+  y: number;
+  /** Which border the opening is on — its stub runs inward from there. */
+  side: 'east' | 'south' | 'west';
+}
+
+/**
+ * One border opening per class, each leading out toward that class's own
+ * secondary village. Kept well clear of the old-town plaza (top-left) and
+ * the pond so the walk-in stub never needs to fight existing terrain.
+ * Coordinates scale with MAP_WIDTH/MAP_HEIGHT — see the doubled dimensions
+ * above (this used to be a 40x24 map).
+ */
+const MAIN_CITY_CLASS_GATES: MainCityGate[] = [
+  { id: 'warrior', x: MAP_WIDTH - 1, y: 6, side: 'east' },
+  { id: 'mage', x: MAP_WIDTH - 1, y: 12, side: 'east' },
+  { id: 'archer', x: MAP_WIDTH - 1, y: 20, side: 'east' },
+  { id: 'cleric', x: MAP_WIDTH - 1, y: 28, side: 'east' },
+  { id: 'paladin', x: MAP_WIDTH - 1, y: 36, side: 'east' },
+  { id: 'assassin', x: MAP_WIDTH - 1, y: 42, side: 'east' },
+  { id: 'necromancer', x: 28, y: MAP_HEIGHT - 1, side: 'south' },
+  { id: 'monk', x: 56, y: MAP_HEIGHT - 1, side: 'south' },
 ];
 
-/** World-space arrival point just inside a main city gate, for a class arriving from its secondary village. */
-export function mainCityArrivalTile(classId: string): { x: number; y: number } {
-  const gate = MAIN_CITY_GATES.find((g) => g.classId === classId)!;
-  if (gate.side === 'east') return { x: gate.x - 2, y: gate.y };
-  return { x: gate.x, y: gate.y - 2 };
+/**
+ * The roads out to the two settlements that belong to no single class (see
+ * data/zones.ts's REGIONAL_SETTLEMENTS — each `id` here is that settlement's
+ * own zone id, kept as a literal since zones.ts imports this module, not
+ * the other way round). Both are on stretches of border no class gate uses:
+ *
+ *  - Ancoradouro do Vau, the hamlet just outside town: on the WEST border,
+ *    ten rows south of the Rua dos Ofícios' storefronts — the closest
+ *    border to the plazas, a short walk from the market.
+ *  - Baluarte do Amanhecer, the frontier bastion: on the far SOUTH-EAST
+ *    stretch of the south border, as far from the old-town square as
+ *    Pedravale goes — past the Verdegal's far reaches, like the bastion itself.
+ *
+ * Unlike the class gates, these are carved AFTER the procedural building
+ * pass (see generateOverworldMap) — carving them before it would change how
+ * many road tiles that pass shuffles, and with it every seeded building and
+ * tree placement across the whole existing map. So their stubs get a pair of
+ * banners at the inner end instead of procedural house frontage.
+ */
+const MAIN_CITY_REGIONAL_GATES: MainCityGate[] = [
+  { id: 'ancoradouro_vau', x: 0, y: 56, side: 'west' },
+  { id: 'baluarte_amanhecer', x: 200, y: MAP_HEIGHT - 1, side: 'south' },
+];
+
+/** Every border opening out of Pedravale — see MainCityGate. */
+export const MAIN_CITY_GATES: MainCityGate[] = [...MAIN_CITY_CLASS_GATES, ...MAIN_CITY_REGIONAL_GATES];
+
+/** Walk-in stub length for every main city gate (see generateOverworldMap). */
+const GATE_STUB_LENGTH = 16;
+
+function getMainCityGate(id: string): MainCityGate {
+  const gate = MAIN_CITY_GATES.find((g) => g.id === id);
+  if (!gate) throw new Error(`Portão desconhecido em Pedravale: ${id}`);
+  return gate;
+}
+
+/** One step inward (away from the border) from a gate on `side`. */
+function inwardStep(side: MainCityGate['side']): { dx: number; dy: number } {
+  if (side === 'east') return { dx: -1, dy: 0 };
+  if (side === 'west') return { dx: 1, dy: 0 };
+  return { dx: 0, dy: -1 };
+}
+
+/** The gate tile itself plus every tile of its walk-in stub, border outward-in. */
+export function mainCityGateStubTiles(gate: MainCityGate): Array<{ x: number; y: number }> {
+  const { dx, dy } = inwardStep(gate.side);
+  const out: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i <= GATE_STUB_LENGTH; i++) out.push({ x: gate.x + dx * i, y: gate.y + dy * i });
+  return out;
+}
+
+/** World-space arrival point just inside a main city gate, for whoever arrives through it (a class from its secondary village, or anyone from a regional settlement). */
+export function mainCityArrivalTile(gateId: string): { x: number; y: number } {
+  const gate = getMainCityGate(gateId);
+  const { dx, dy } = inwardStep(gate.side);
+  return { x: gate.x + dx * 2, y: gate.y + dy * 2 };
 }
 
 // --- procedural building placement, shared by every generated map --------
@@ -534,7 +600,8 @@ function placeFixed(
  * (unchanged in absolute position/size across the whole game's life so far),
  * connected by a long paved street to a much bigger new downtown plaza, the
  * crafts street one block south of that, plus a walled gate leading out to
- * each class's territory. Pedravale's NPCs stand at the named spots and
+ * each class's territory and to each regional settlement (the hamlet just
+ * outside town, the frontier bastion). Pedravale's NPCs stand at the named spots and
  * storefronts this lays out (MAIN_CITY_SPOTS / MAIN_CITY_SHOPS above).
  * Grass tiles are where random encounters can trigger; buildings line every
  * one of these roads/plazas so Pedravale reads as an actual city rather
@@ -599,16 +666,13 @@ export function generateOverworldMap(seed = 1337): GeneratedMap {
   // One gate per class, each with a longer walk-in stub than before — carved
   // last (before buildings/trees) so nothing scattered above ever blocks
   // them, and long enough to give each one a little building frontage too.
-  // Was 4 — quadrupled so each gate reads as its own small outpost/hamlet
-  // now that the field around it is ~9x bigger, instead of a bare 4-tile
-  // nub in the middle of a much larger empty stretch.
-  const GATE_STUB_LENGTH = 16;
-  for (const gate of MAIN_CITY_GATES) {
-    tiles[gate.y][gate.x] = TileType.Path;
-    for (let i = 1; i <= GATE_STUB_LENGTH; i++) {
-      if (gate.side === 'east') tiles[gate.y][gate.x - i] = TileType.Path;
-      else tiles[gate.y - i][gate.x] = TileType.Path;
-    }
+  // GATE_STUB_LENGTH was 4 — quadrupled so each gate reads as its own small
+  // outpost/hamlet now that the field around it is ~9x bigger, instead of a
+  // bare 4-tile nub in the middle of a much larger empty stretch. (The
+  // regional settlements' gates are carved further down — see
+  // MAIN_CITY_REGIONAL_GATES on why they can't be carved here.)
+  for (const gate of MAIN_CITY_CLASS_GATES) {
+    for (const t of mainCityGateStubTiles(gate)) tiles[t.y][t.x] = TileType.Path;
   }
 
   // Buildings line every street/plaza/gate stub laid out above — Pedravale
@@ -651,6 +715,19 @@ export function generateOverworldMap(seed = 1337): GeneratedMap {
   // Every NPC spot is guaranteed open paving, even the ones off the plazas.
   for (const spot of Object.values(MAIN_CITY_SPOTS)) tiles[spot.y][spot.x] = TileType.Path;
 
+  // The regional settlements' roads out, after the procedural pass so none
+  // of the rand() draws above change (see MAIN_CITY_REGIONAL_GATES), but
+  // before the tree scatter so no tree lands on them. A banner either side
+  // of each stub's inner end marks where the road leaves town.
+  for (const gate of MAIN_CITY_REGIONAL_GATES) {
+    const stub = mainCityGateStubTiles(gate);
+    for (const t of stub) tiles[t.y][t.x] = TileType.Path;
+    const inner = stub[stub.length - 1];
+    const across = gate.side === 'south' ? { dx: 1, dy: 0 } : { dx: 0, dy: 1 };
+    placeFixed(tiles, buildings, 'banner', inner.x - across.dx, inner.y - across.dy);
+    placeFixed(tiles, buildings, 'banner', inner.x + across.dx, inner.y + across.dy);
+  }
+
   // Scattered trees across the field — count scaled up with the map's area
   // (roughly 9x the old 80x48 map, same proportional-to-area approach as
   // the previous resize) so the bigger field doesn't read as barer than
@@ -677,7 +754,7 @@ export interface VillageMapOptions {
   width: number;
   height: number;
   seed: number;
-  /** Whether this village has a gate back toward its own starting village (secondary villages only). */
+  /** Whether this village has a north gate — a secondary village's road back toward its own starting village, or a regional settlement's road back to Pedravale. */
   hasNorthGate: boolean;
   /** Whether this village has a gate onward (starting villages, and secondary villages heading to the main city). */
   hasSouthGate: boolean;

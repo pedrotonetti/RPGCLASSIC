@@ -676,7 +676,9 @@ export const ACT3_QUESTS: QuestDefinition[] = [
  * QuestSystem's QuestSlot), separate from the main chain's activeQuestId, so
  * it runs ALONGSIDE whatever the main chain currently has active instead of
  * only ever while that's idle — only that side slot itself needs to be free.
- * Gated on q6_dragon so none of it competes with early-game pacing.
+ * Gated on q6_dragon so none of it competes with early-game pacing — except
+ * the regional settlements' own chains at the end, each gated on the story
+ * beat that matches its settlement's level band instead (see their comments).
  * Two-quest chains lean on the exact same generic nextQuestId/notifyTalkedTo/
  * notifyEnemyDefeated machinery as the main chain for their own second leg —
  * only the FIRST quest of each chain needs the special "offer" path.
@@ -980,6 +982,84 @@ export const SIDE_QUESTS: QuestDefinition[] = [
     rewardGold: 280,
     rewardItem: { templateId: 'bracelete_arcano', rarity: 'laranja' },
   },
+
+  // --- The regional settlements (data/zones.ts's REGIONAL_SETTLEMENTS) ----
+  // Each settlement's own short chain, handed out by its first NPC through
+  // SIDE_QUEST_STARTERS like every other side chain above — optional side
+  // content, never part of the main story's auto-assigned chain.
+
+  // Ancoradouro do Vau (recommended level 8), opened as soon as the player
+  // has reached Pedravale and met Tobias (q1_awaken). Rewards sit between
+  // the class preludes' (15-35 XP) and the class callings' (60/220/320 XP) —
+  // the level band a character is in right after reaching the city — with an
+  // 'amarelo' item, the same tier QUEST_CHAIN's own level-10 beat (q5) gives.
+  {
+    id: 'vau_r1_teias',
+    title: 'Teias no Leito Seco',
+    description:
+      'O vau que dava nome ao Ancoradouro virou um fio d\'água, e até esse fio as Tecelãs da Sede estão sufocando, tecendo raiz ressequida de uma margem à outra. O Barqueiro Joaquim cobra pedágio de um rio que quase não existe mais — e pede que você rasgue as teias antes que o último fio pare de correr.',
+    giverNpcId: 'joaquim_vau',
+    objective: { kind: 'defeat', targetId: 'giant_spider', amount: 5 },
+    rewardXp: 180,
+    rewardGold: 110,
+    nextQuestId: 'vau_r2_benzedura',
+    onCompleteEffect: { worldStateDelta: { corruption: -3, hope: 2 }, factionDelta: { factionId: 'pedravale', amount: 3 } },
+  },
+  {
+    id: 'vau_r2_benzedura',
+    title: 'A Benzedura do Vau',
+    description:
+      'Com as teias rasgadas, a água voltou a correr — pouca, mas correndo. Leve a notícia à Benzedeira Quitéria, junto ao poço do Ancoradouro: ela jura que o rio não secou, está sendo bebido por baixo, pela raiz, e vai querer ouvir de quem viu.',
+    giverNpcId: 'joaquim_vau',
+    objective: { kind: 'talkTo', targetId: 'quiteria_benzedeira', amount: 1 },
+    rewardXp: 240,
+    rewardGold: 150,
+    rewardItem: { templateId: 'talisma_velocidade', rarity: 'amarelo' },
+  },
+
+  // Baluarte do Amanhecer (recommended level 20), opened only once the
+  // story's own climax — the confrontation with Ilva, act3_q2_confront — is
+  // behind the player: genuinely post-story content, the same framing
+  // data/bosses.ts gives its level-20 dungeon boss ("content beyond the
+  // current story's own climax"). act3_q2_confront itself sits behind
+  // act3_q8_gathering's reach-level-20 beat, so whoever gets this chain is
+  // already level 20+. Rewards are the largest in the game on purpose — a
+  // clear step above Ato 3's own (420-600 XP), as that dungeon boss is above
+  // the story's own final boss — ending on a 'laranja' (top-tier) item.
+  {
+    id: 'baluarte_r1_muralha',
+    title: 'Pedra por Pedra',
+    description:
+      'Os Zeladores da Raiz ergueram o Baluarte do Amanhecer para vigiar o mar, e o esqueceram logo depois. Agora gente de toda Ipêra tenta reerguê-lo — mas guardiões de pedra rachada derrubam de noite cada trecho de muralha assentado de dia. A Capitã Jussara precisa da muralha de pé antes de qualquer outra coisa.',
+    giverNpcId: 'jussara_baluarte',
+    objective: { kind: 'defeat', targetId: 'stone_golem', amount: 6 },
+    rewardXp: 650,
+    rewardGold: 400,
+    nextQuestId: 'baluarte_r2_batedora',
+  },
+  {
+    id: 'baluarte_r2_batedora',
+    title: 'Sal e Raiz',
+    description:
+      'Com a muralha enfim de pé, a Capitã quer saber o que exatamente ela está segurando lá fora. A Batedora Inaê acabou de voltar da costa e não disse uma palavra a ninguém no Baluarte desde então — fale com ela.',
+    giverNpcId: 'jussara_baluarte',
+    objective: { kind: 'talkTo', targetId: 'inae_batedora', amount: 1 },
+    rewardXp: 420,
+    rewardGold: 260,
+    nextQuestId: 'baluarte_r3_cisterna',
+  },
+  {
+    id: 'baluarte_r3_cisterna',
+    title: 'A Última Cisterna',
+    description:
+      'Colossos ressequidos descem da mata funda direto para a cisterna do Baluarte — a última água limpa entre a fronteira e o mar. Se a cisterna cair, cai o Baluarte, e com ele o único lugar de Ipêra de onde se vê chegar o que vem do outro lado.',
+    giverNpcId: 'jussara_baluarte',
+    objective: { kind: 'defeat', targetId: 'troll', amount: 5 },
+    rewardXp: 1000,
+    rewardGold: 650,
+    rewardItem: { templateId: 'amuleto_vitalidade', rarity: 'laranja' },
+    onCompleteEffect: { worldStateDelta: { corruption: -6, hope: 6 }, markEventId: 'baluarte_amanhecer_reerguido' },
+  },
 ];
 
 /**
@@ -1011,6 +1091,9 @@ export const SIDE_QUEST_STARTERS: Array<{ questId: string; prerequisiteQuestId: 
   { questId: 'yuki_r1_meditacao', prerequisiteQuestId: 'q6_dragon' },
   { questId: 'nilza_r1_barracas', prerequisiteQuestId: 'q6_dragon' },
   { questId: 'renato_r1_armazens', prerequisiteQuestId: 'q6_dragon' },
+  // The regional settlements — see each chain's own comment in SIDE_QUESTS.
+  { questId: 'vau_r1_teias', prerequisiteQuestId: 'q1_awaken' },
+  { questId: 'baluarte_r1_muralha', prerequisiteQuestId: 'act3_q2_confront' },
 ];
 
 const ALL_QUESTS: QuestDefinition[] = [
