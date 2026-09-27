@@ -41,7 +41,11 @@ export function buildGlobeIconSvg(): SVGSVGElement {
 
 /** The map image's own real aspect ratio (1536x1024, whatever pixel size the served asset is actually resized to) — everything below fits the image to its box by this ratio, never the box's own. */
 const MAP_IMAGE_RATIO = 1536 / 1024;
-const MAP_IMAGE_URL = '/images/world-map-ipera.jpg';
+// Relative to the app's own base (see gltfModel.ts's MODELS_BASE) rather than
+// a hardcoded '/images/...' — the site is deployed under a subpath, and a
+// leading-slash URL resolves to the domain root instead, 404ing silently and
+// leaving the map blank behind its pins.
+const MAP_IMAGE_URL = `${import.meta.env.BASE_URL}images/world-map-ipera.jpg`;
 
 /**
  * Sizes/positions `stage` (an absolutely-positioned child of `wrap`) to
