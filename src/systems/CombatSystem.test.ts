@@ -437,11 +437,11 @@ describe('CombatEngine status effects', () => {
     engine.tick(0.1); // begins the telegraphed attack
     engine.tick(1.0); // resolves it
 
-    expect(player.statusEffects.some((s) => s.type === 'bleed')).toBe(true);
+    expect(player.statusEffects.some((s) => s.type === 'poison')).toBe(true);
     const hpBeforeTick = player.currentHp;
-    const tickEvents = engine.tick(1.0);
+    const tickEvents = engine.tick(1.5); // poison ticks every 1.5s (vs bleed/burn's 1s)
     expect(player.currentHp).toBeLessThan(hpBeforeTick);
-    expect(tickEvents.some((e) => e.kind === 'statusTick' && e.targetIsPlayer && e.statusType === 'bleed')).toBe(true);
+    expect(tickEvents.some((e) => e.kind === 'statusTick' && e.targetIsPlayer && e.statusType === 'poison')).toBe(true);
   });
 });
 

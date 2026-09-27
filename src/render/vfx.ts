@@ -52,7 +52,10 @@ function dotTexture(): THREE.Texture {
 const STATUS_COLOR: Record<StatusEffectType, number> = {
   bleed: 0xc41730,
   burn: 0xff8a2e,
+  poison: 0x7ed321,
   slow: 0x5fd0ff,
+  freeze: 0xb3f0ff,
+  stun: 0xffe066,
 };
 
 const HIT_COLOR: Record<'physical' | 'magical' | 'heal' | 'buff', number> = {
@@ -83,7 +86,11 @@ interface StatusVisual {
  * system per active status type, driven every frame by `sync`+`update`:
  *  - `bleed`: dripping red particles that fall from the target's midsection.
  *  - `burn`: flickering orange embers rising off the target.
- *  - `slow`: a slow blue-white frost mist swirling around the target.
+ *  - `poison`: the same dripping motion as bleed, sickly green instead of red.
+ *  - `slow`/`freeze`/`stun`: a slow frost mist swirling around the target —
+ *    freeze/stun each just their own brighter, more electric color, since
+ *    both are already a stronger version of the same "can't act" idea slow
+ *    represents (see systems/statusEffects.ts's own doc comment).
  */
 export class StatusEffectOverlay {
   private group = new THREE.Group();
@@ -152,7 +159,7 @@ export class StatusEffectOverlay {
       for (let i = 0; i < count; i++) {
         const bx = base[i * 3];
         const bz = base[i * 3 + 2];
-        if (type === 'bleed') {
+        if (type === 'bleed' || type === 'poison') {
           // A slow downward drip, each particle wrapping back to the top once it reaches the bottom.
           const fall = ((visual.phase * 0.4 + i * 0.17) % 1) * this.height;
           attr.setXYZ(i, bx, this.height - fall, bz);

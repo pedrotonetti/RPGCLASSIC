@@ -30,6 +30,7 @@ import { archetypeActionIntervalMultiplier, archetypeDamageMultiplier, archetype
 import { phaseActionIntervalMultiplier, phaseDamageMultiplier, phaseIndexForHp } from './BossPhaseSystem';
 import { computeSkillLevelStats } from './skillMath';
 import { applyStatusEffect, tickStatusEffects } from './statusEffects';
+import { checkFreezeShatter, checkStatusSynergy, type StatusSynergyResult } from './statusSynergies';
 
 export type CombatOutcome = 'ongoing' | 'victory' | 'defeat' | 'fled';
 
@@ -75,6 +76,9 @@ const STATUS_LABEL: Record<StatusEffectType, string> = {
   bleed: 'sangramento',
   burn: 'queimadura',
   slow: 'lentidão',
+  poison: 'veneno',
+  freeze: 'congelamento',
+  stun: 'atordoamento',
 };
 
 /** `'meter'`: a class ability (`useClassAbility`) tried before its class meter is full. */
@@ -416,7 +420,15 @@ export class CombatEngine {
       if (opts.feedsMeter) this.onEnemyDefeated();
     } else {
       this.registerHitForStagger(enemy, index, events);
-      if (opts.inflicts && Math.random() < opts.inflicts.chance) {
+
+      // "Estilhaçamento" — checked against the target's status list BEFORE
+      // this hit's own inflict roll below, so the hit that first freezes an
+      // enemy can never shatter it on the spot (see statusSynergies.ts).
+      const shatter = checkFreezeShatter(enemy);
+      if (shatter) this.applySynergyBonusToEnemy(enemy, index, dealt, shatter, events, opts.feedsMeter);
+
+      if (enemy.isAlive() && opts.inflicts && Math.random() < opts.inflicts.chance) {
+        const synergy = checkStatusSynergy(enemy, opts.inflicts.type);
         applyStatusEffect(enemy, opts.inflicts.type, dealt);
         events.push({
           kind: 'statusApplied',
@@ -425,6 +437,7 @@ export class CombatEngine {
           targetIndex: index,
           statusType: opts.inflicts.type,
         });
+        if (synergy) this.applySynergyBonusToEnemy(enemy, index, dealt, synergy, events, opts.feedsMeter);
       }
     }
     return dealt;
@@ -750,6 +763,44 @@ export class CombatEngine {
     events.push({ kind: 'stagger', text: `${enemy.name} foi atordoado!`, actorIsPlayer: true, targetIndex: index });
   }
 
+  /**
+   * A status-effect combo's payoff (see systems/statusSynergies.ts) landing
+   * on an enemy: burns off the consumed effect, deals its own bonus-damage
+   * event (reusing every existing 'damage'-event render path — HP bar,
+   * floating "-N", hit VFX — with zero new UI), and (only if the enemy
+   * survives it) inflicts a fresh stun. Mirrors the base hit's own
+   * defeated-handling exactly, since this bonus can finish an enemy off on
+   * its own.
+   */
+  private applySynergyBonusToEnemy(enemy: Enemy, index: number, triggeringDamage: number, result: StatusSynergyResult, events: CombatEvent[], feedsMeter: boolean): void {
+    enemy.statusEffects = enemy.statusEffects.filter((e) => e.type !== result.consumes);
+    const bonus = Math.max(1, Math.round(triggeringDamage * result.bonusDamageFraction));
+    const dealt = enemy.takeDamage(bonus);
+    events.push({ kind: 'damage', text: `${result.label}!`, actorIsPlayer: true, targetIndex: index, amount: dealt, targetHpAfter: enemy.currentHp, skillKind: 'physical' });
+    if (!enemy.isAlive()) {
+      events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
+      this.staggerStacks.delete(enemy);
+      if (feedsMeter) this.onEnemyDefeated();
+    } else if (result.inflictsStun) {
+      applyStatusEffect(enemy, 'stun', dealt);
+    }
+  }
+
+  /**
+   * Same as `applySynergyBonusToEnemy`, but for a synergy landing on the
+   * player — deliberately does NOT push its own 'defeat' event even if this
+   * bonus is the killing blow: `resolveEnemyAttack`'s own existing
+   * `!this.player.isAlive()` check (right after every call site of this
+   * method) already covers that uniformly, however the player actually died.
+   */
+  private applySynergyBonusToPlayer(triggeringDamage: number, result: StatusSynergyResult, events: CombatEvent[]): void {
+    this.player.statusEffects = this.player.statusEffects.filter((e) => e.type !== result.consumes);
+    const bonus = Math.max(1, Math.round(triggeringDamage * result.bonusDamageFraction));
+    const dealt = this.player.takeDamage(bonus);
+    events.push({ kind: 'damage', text: `${result.label}!`, actorIsPlayer: false, targetIsPlayer: true, amount: dealt, targetHpAfter: this.player.currentHp, skillKind: 'physical' });
+    if (this.player.isAlive() && result.inflictsStun) applyStatusEffect(this.player, 'stun', dealt);
+  }
+
   /** Suporte archetype's actual behavior: heals its most wounded ally (itself included) instead of attacking — see systems/enemyArchetypes.ts's own doc comment. */
   private resolveEnemySupportHeal(enemy: Enemy, skill: SkillDefinition, events: CombatEvent[]): void {
     const levelStats = computeSkillLevelStats(skill, 1);
@@ -833,15 +884,25 @@ export class CombatEngine {
       skillKind: kind,
     });
 
-    if (dealt > 0 && activeSkill.inflicts && Math.random() < activeSkill.inflicts.chance) {
-      applyStatusEffect(this.player, activeSkill.inflicts.type, dealt);
-      events.push({
-        kind: 'statusApplied',
-        text: `Você sofre ${STATUS_LABEL[activeSkill.inflicts.type]}!`,
-        actorIsPlayer: false,
-        targetIsPlayer: true,
-        statusType: activeSkill.inflicts.type,
-      });
+    if (dealt > 0) {
+      // "Estilhaçamento" — checked BEFORE this hit's own inflict roll below,
+      // so the hit that first freezes the player can never shatter it on
+      // the spot (see statusSynergies.ts).
+      const shatter = checkFreezeShatter(this.player);
+      if (shatter) this.applySynergyBonusToPlayer(dealt, shatter, events);
+
+      if (this.player.isAlive() && activeSkill.inflicts && Math.random() < activeSkill.inflicts.chance) {
+        const synergy = checkStatusSynergy(this.player, activeSkill.inflicts.type);
+        applyStatusEffect(this.player, activeSkill.inflicts.type, dealt);
+        events.push({
+          kind: 'statusApplied',
+          text: `Você sofre ${STATUS_LABEL[activeSkill.inflicts.type]}!`,
+          actorIsPlayer: false,
+          targetIsPlayer: true,
+          statusType: activeSkill.inflicts.type,
+        });
+        if (synergy) this.applySynergyBonusToPlayer(dealt, synergy, events);
+      }
     }
 
     if (!this.player.isAlive()) {

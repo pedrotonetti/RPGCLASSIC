@@ -12,8 +12,12 @@ export interface Stats {
 export type SkillTarget = 'enemy' | 'allEnemies' | 'self';
 export type SkillKind = 'physical' | 'magical' | 'heal' | 'buff';
 
-/** A real, ongoing affliction a skill can inflict on a hit target — see `systems/statusEffects.ts` for the mechanics. */
-export type StatusEffectType = 'bleed' | 'burn' | 'slow';
+/**
+ * A real, ongoing affliction a skill can inflict on a hit target — see
+ * `systems/statusEffects.ts` for the mechanics and `systems/statusSynergies.ts`
+ * for how two of these combine into a bonus effect (Fase 3 — PDF section 5).
+ */
+export type StatusEffectType = 'bleed' | 'burn' | 'slow' | 'poison' | 'freeze' | 'stun';
 
 /**
  * A recognizable AI personality an `EnemyDefinition` can opt into — see

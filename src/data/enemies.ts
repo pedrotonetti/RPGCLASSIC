@@ -157,7 +157,11 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     goldReward: 20,
     actionInterval: 2.3,
     skills: [
-      makeSkill({ id: 'spider_venom', name: 'Picada Venenosa', description: 'Injeta veneno corrosivo no alvo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.7, inflicts: { type: 'bleed', chance: 0.5 } }),
+      // Fase 3 (systems/statusSynergies.ts): 'bleed' -> 'poison' now that the
+      // type exists — "veneno corrosivo" was always poison in everything but
+      // mechanics, and this also makes Combustão Tóxica (poison+burn) and
+      // Paralisia Tóxica (poison+slow) reachable against a real enemy.
+      makeSkill({ id: 'spider_venom', name: 'Picada Venenosa', description: 'Injeta veneno corrosivo no alvo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.7, inflicts: { type: 'poison', chance: 0.5 } }),
     ],
     level: 7,
     archetype: 'controller',

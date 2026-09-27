@@ -52,7 +52,11 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
     skills: [
       makeSkill({ id: 'mage_fireball', name: 'Bola de Fogo', description: 'Lança uma bola de fogo que causa dano mágico e queima o alvo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.8, inflicts: { type: 'burn', chance: 0.6 } }),
       makeSkill({ id: 'mage_ice_lance', name: 'Lança de Gelo', description: 'Uma lâmina de gelo perfurante que retarda o alvo.', kind: 'magical', target: 'enemy', unlockLevel: 5, baseCooldown: 7, baseCost: 14, basePower: 2.0, inflicts: { type: 'slow', chance: 0.6 } }),
-      makeSkill({ id: 'mage_blizzard', name: 'Nevasca', description: 'Congela todos os inimigos com dano mágico em área, retardando-os.', kind: 'magical', target: 'allEnemies', unlockLevel: 10, baseCooldown: 12, baseCost: 20, basePower: 1.3, inflicts: { type: 'slow', chance: 0.5 } }),
+      // Fase 3 (systems/statusSynergies.ts): 'slow' -> 'freeze' — the
+      // description already said "congela" (freezes); the mechanic just
+      // hadn't caught up until the type existed. Also makes Estilhaçamento
+      // (freeze + any later hit) reachable for a mage.
+      makeSkill({ id: 'mage_blizzard', name: 'Nevasca', description: 'Congela todos os inimigos com dano mágico em área, retardando-os.', kind: 'magical', target: 'allEnemies', unlockLevel: 10, baseCooldown: 12, baseCost: 20, basePower: 1.3, inflicts: { type: 'freeze', chance: 0.5 } }),
       makeSkill({ id: 'mage_arcane_shield', name: 'Escudo Arcano', description: 'Envolve-se em energia que reduz o dano recebido.', kind: 'buff', target: 'self', unlockLevel: 15, baseCooldown: 18, baseCost: 16, basePower: 1.5, buffStat: 'defense' }),
       makeUltimate({ id: 'mage_ultimate', name: 'Meteoro Arcano', description: 'Invoca um meteoro flamejante que arrasa e queima todos os inimigos.', kind: 'magical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 28, baseCost: 45, basePower: 2.6, inflicts: { type: 'burn', chance: 0.55 } }),
     ],
