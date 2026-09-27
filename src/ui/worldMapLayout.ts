@@ -1,119 +1,44 @@
-import { getClassById } from '../config/classes';
 import { CLASS_ZONE_THEMES } from '../data/classZones';
 import { getDungeonByZoneId } from '../data/dungeons';
-import { MAIN_CITY_ID, REGIONAL_SETTLEMENTS, ZONE_DEFINITIONS, type RegionalSettlementKind } from '../data/zones';
+import { ANCORADOURO_VAU_ID, BALUARTE_AMANHECER_ID, MAIN_CITY_ID, REGIONAL_SETTLEMENTS, ZONE_DEFINITIONS, type RegionalSettlementKind } from '../data/zones';
 
 /**
- * Pure (DOM-free, unit-testable) layout for the "Mapa Mundi" world-map
- * overlay (see ui/worldMap.ts): which settlements it shows, where each one
- * sits, and which ones are joined by a road.
+ * Pure (DOM-free, unit-testable) layout for the "Mapa Mundi" overlay (see
+ * ui/worldMap.ts): which settlements it shows and where each one sits.
  *
- * The world's real topology is a hub-and-spokes: Pedravale (the shared main
- * city) in the middle, one road out to every class's secondary village, and
- * from each of those one more road out to that same class's starting
- * village. The ROADS here are read straight off the actual `ZoneExit`s in
- * data/zones.ts (never re-typed by hand), so the map can't drift out of sync
- * with where the exits really lead.
- *
- * Positions are fractions (0..1) of the map area, computed twice — once for
- * a portrait-shaped area (class territories as columns above/below
- * Pedravale) and once for a landscape-shaped one (territories as rows to its
- * left/right) — and the stylesheet picks between them with an orientation
- * media query. A true radial ring can't fit 16 readable village labels at
- * phone width, but a spoked two-sided layout keeps Pedravale in the center
- * with every class's territory still radiating out from it.
- *
- * The regional settlements (data/zones.ts's REGIONAL_SETTLEMENTS) belong to
- * no class, so they stay out of that class-column math entirely and sit in
- * the one band it leaves free — the strip through Pedravale between the two
- * sides' territories (a horizontal strip in portrait, a vertical one in
- * landscape): the satellite hamlet tucked right beside Pedravale's card, a
- * short road away, and the frontier hub out at that strip's far end, on its
- * own long spoke. See REGIONAL_POSITIONS.
+ * Positions are fractions (0..1) of `public/images/world-map-ipera.jpg`'s
+ * OWN box (1536x1024) — hand-placed to match that hand-painted map's real
+ * city positions, not computed from the world's hub-and-spokes topology the
+ * way the previous schematic-diagram layout was. The image is drawn at a
+ * fixed aspect ratio (ui/worldMap.ts wraps it in an `aspect-ratio` box), so a
+ * pin at (x, y) stays glued to its own painted city regardless of how large
+ * the box is drawn — one coordinate set covers every screen/orientation,
+ * unlike the old portrait/landscape pair.
  */
 
-export type WorldMapNodeKind = 'capital' | 'secondary' | 'start' | RegionalSettlementKind;
+export type WorldMapPinKind = 'capital' | 'secondary' | 'start' | RegionalSettlementKind;
 
 export interface WorldMapPoint {
   x: number;
   y: number;
 }
 
-export interface WorldMapRect {
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-}
-
-export interface WorldMapNode {
+export interface WorldMapPin {
   zoneId: string;
   name: string;
-  kind: WorldMapNodeKind;
+  kind: WorldMapPinKind;
   /** Owning class — null for Pedravale (which belongs to every class) and for the regional settlements (which belong to none). */
   classId: string | null;
-  portrait: WorldMapPoint;
-  landscape: WorldMapPoint;
-  /** The zone's own soft level guide (ZoneDefinition.recommendedLevel), shown under its name — set only where the zone defines one. */
+  point: WorldMapPoint;
+  /** The zone's own soft level guide (ZoneDefinition.recommendedLevel) — set only where the zone defines one. */
   recommendedLevel?: number;
-  /** A classless regional settlement's own tint: its in-world `accentColor`, lifted like a territory's (see readableAccent). Class nodes take their territory's instead. */
-  displayHex?: string;
-}
-
-export interface WorldMapTerritory {
-  classId: string;
-  className: string;
-  /** The class's own in-world `accentColor` as a CSS hex string, lightened (hue kept) only if it's too dark to read on the dark UI panels — see readableAccent. */
-  displayHex: string;
-  displayRgb: [number, number, number];
-  /** Which half of the map this territory sits in: 'a' = above (portrait) / left (landscape) of Pedravale, 'b' = below / right. Its caption sits at the outer end. */
-  side: 'a' | 'b';
-  portrait: WorldMapRect;
-  landscape: WorldMapRect;
-}
-
-export interface WorldMapLink {
-  from: string;
-  to: string;
-  /** 'main' = a road into Pedravale itself; 'local' = a road inside one class's own territory. */
-  kind: 'main' | 'local';
-  /** Owning class of a 'local' road, null for a 'main' one. */
-  classId: string | null;
+  /** This pin's dot color, already lifted to MIN_ACCENT_LUMINANCE where needed — worldMap.ts never touches a raw class/theme color itself. */
+  color: string;
 }
 
 export interface WorldMapLayout {
-  nodes: WorldMapNode[];
-  territories: WorldMapTerritory[];
-  links: WorldMapLink[];
+  pins: WorldMapPin[];
 }
-
-const CENTER: WorldMapPoint = { x: 0.5, y: 0.5 };
-
-/**
- * Radial distance (fraction of the map area) from the map's outer edge for
- * each ring, per orientation. Landscape's start ring sits further in than
- * portrait's because there the class caption shares the SAME axis as the
- * cards (it's at the row's outer end, left of the start card) — style.css
- * caps that caption to the first ~0.1 of the width (.wm-territory-caption's
- * landscape max-width), and the start card begins just past it.
- */
-const PORTRAIT_RINGS = { start: 0.13, secondary: 0.31, territoryInner: 0.405, edge: 0.005, gap: 0.008 };
-const LANDSCAPE_RINGS = { start: 0.167, secondary: 0.31, territoryInner: 0.395, edge: 0.004, gap: 0.014 };
-
-/**
- * Where each regional settlement kind sits — inside the free strip between
- * the two sides' territories (portrait y / landscape x within
- * `territoryInner`..`1 - territoryInner` above). Portrait's strip runs
- * sideways past Pedravale's card (style.css keeps that card narrow enough
- * to leave room): the satellite just off its right edge, the hub against
- * the map's far left edge. Landscape's runs top to
- * bottom: the satellite just above Pedravale, the hub at the very bottom,
- * past where the class rows' own start villages sit.
- */
-const REGIONAL_POSITIONS: Record<RegionalSettlementKind, { portrait: WorldMapPoint; landscape: WorldMapPoint }> = {
-  satellite: { portrait: { x: 0.82, y: 0.5 }, landscape: { x: 0.5, y: 0.28 } },
-  hub: { portrait: { x: 0.125, y: 0.5 }, landscape: { x: 0.5, y: 0.875 } },
-};
 
 export function hexString(color: number): string {
   return `#${color.toString(16).padStart(6, '0')}`;
@@ -169,19 +94,19 @@ function hslToRgb([h, s, l]: [number, number, number]): [number, number, number]
 }
 
 /**
- * Minimum luminance a class color is lifted to before it's used for text or
- * borders on the map: ~4.5:1 contrast against the dark `--panel` background
- * the overlay is drawn on. Two classes' real territory tints (Assassino's
- * 0x2a2a35, Necromante's 0x2f1f3a) are near-black and would otherwise simply
- * vanish against it.
+ * Minimum luminance a class color is lifted to before it's used for a pin
+ * dot on the map image: ~4.5:1 contrast against both the image's own dark
+ * water and its bright parchment-toned land. Two classes' real territory
+ * tints (Assassino's 0x2a2a35, Necromante's 0x2f1f3a) are near-black and
+ * would otherwise simply vanish.
  */
 export const MIN_ACCENT_LUMINANCE = 0.22;
 
 /**
- * `color` unchanged if it's already bright enough to read on the dark UI,
- * otherwise the same hue/saturation with its HSL lightness raised just far
- * enough to clear MIN_ACCENT_LUMINANCE — so every class keeps its own
- * recognizable tint instead of all the dark ones collapsing to one grey.
+ * `color` unchanged if it's already bright enough to read, otherwise the
+ * same hue/saturation with its HSL lightness raised just far enough to
+ * clear MIN_ACCENT_LUMINANCE — so every class keeps its own recognizable
+ * tint instead of all the dark ones collapsing to one grey.
  */
 export function readableAccent(color: number): [number, number, number] {
   const rgb = rgbOf(color);
@@ -194,7 +119,8 @@ export function readableAccent(color: number): [number, number, number] {
   return [255, 255, 255];
 }
 
-function rgbHex([r, g, b]: [number, number, number]): string {
+export function readableAccentHex(color: number): string {
+  const [r, g, b] = readableAccent(color);
   return hexString((r << 16) | (g << 8) | b);
 }
 
@@ -207,98 +133,62 @@ export function worldMapFocusZone(zoneId: string): string {
   return getDungeonByZoneId(zoneId)?.portal.hostZoneId ?? zoneId;
 }
 
+/**
+ * Every class's two villages' positions on the painted map image, read by
+ * hand off `public/images/world-map-ipera.jpg` — see this module's own doc
+ * comment. Keyed by classId (not zoneId): `buildWorldMapLayout` below joins
+ * this against `CLASS_ZONE_THEMES` for the real zoneId/name, so a class's
+ * name/id can never drift out of sync with the actual game data the way a
+ * flat hand-typed zoneId table could.
+ */
+const CLASS_VILLAGE_POSITIONS: Record<string, { start: WorldMapPoint; secondary: WorldMapPoint }> = {
+  warrior: { start: { x: 0.26, y: 0.148 }, secondary: { x: 0.26, y: 0.208 } },
+  mage: { start: { x: 0.433, y: 0.205 }, secondary: { x: 0.456, y: 0.244 } },
+  archer: { start: { x: 0.294, y: 0.322 }, secondary: { x: 0.304, y: 0.363 } },
+  cleric: { start: { x: 0.267, y: 0.479 }, secondary: { x: 0.267, y: 0.518 } },
+  paladin: { start: { x: 0.41, y: 0.64 }, secondary: { x: 0.41, y: 0.604 } },
+  assassin: { start: { x: 0.735, y: 0.205 }, secondary: { x: 0.722, y: 0.244 } },
+  necromancer: { start: { x: 0.684, y: 0.322 }, secondary: { x: 0.658, y: 0.327 } },
+  monk: { start: { x: 0.573, y: 0.64 }, secondary: { x: 0.573, y: 0.601 } },
+};
+
+/** Pedravale's own position on the painted map — the gold crowned-castle badge near its center. */
+const CAPITAL_POSITION: WorldMapPoint = { x: 0.485, y: 0.376 };
+
+/** Gold, matching --accent — Pedravale belongs to every class, so it gets the map's own signature color instead of any one class's tint. */
+const CAPITAL_COLOR = '#f2c14e';
+/** A neutral parchment tone for the regional settlements, which (unlike a class's two villages) don't belong to any class's tint. */
+const REGIONAL_COLOR = '#c9b98a';
+
+/** The two regional settlements' positions — the anchor badge (west coast) and the cliffside bastion (far east coast). */
+const REGIONAL_SETTLEMENT_POSITIONS: Record<string, WorldMapPoint> = {
+  [ANCORADOURO_VAU_ID]: { x: 0.173, y: 0.654 },
+  [BALUARTE_AMANHECER_ID]: { x: 0.911, y: 0.42 },
+};
+
 export function buildWorldMapLayout(): WorldMapLayout {
-  const themes = CLASS_ZONE_THEMES;
-  const sideACount = Math.ceil(themes.length / 2);
-  const sideBCount = themes.length - sideACount;
-
-  const nodes: WorldMapNode[] = [
-    { zoneId: MAIN_CITY_ID, name: ZONE_DEFINITIONS[MAIN_CITY_ID].name, kind: 'capital', classId: null, portrait: CENTER, landscape: CENTER },
+  const pins: WorldMapPin[] = [
+    { zoneId: MAIN_CITY_ID, name: ZONE_DEFINITIONS[MAIN_CITY_ID].name, kind: 'capital', classId: null, point: CAPITAL_POSITION, color: CAPITAL_COLOR },
   ];
-  const territories: WorldMapTerritory[] = [];
 
-  themes.forEach((theme, i) => {
-    const side: 'a' | 'b' = i < sideACount ? 'a' : 'b';
-    const slot = side === 'a' ? i : i - sideACount;
-    const count = side === 'a' ? sideACount : sideBCount;
-    // Position ACROSS the spread axis (portrait x / landscape y)…
-    const across = (slot + 0.5) / count;
-    const acrossLo = slot / count;
-    const acrossHi = (slot + 1) / count;
-    // …and ALONG the radial axis, measured in from whichever edge this side's territories grow out toward.
-    const radial = (d: number) => (side === 'a' ? d : 1 - d);
-
-    const p = PORTRAIT_RINGS;
-    const l = LANDSCAPE_RINGS;
-    nodes.push({
-      zoneId: theme.secondaryVillageId,
-      name: theme.secondaryVillageName,
-      kind: 'secondary',
-      classId: theme.classId,
-      portrait: { x: across, y: radial(p.secondary) },
-      landscape: { x: radial(l.secondary), y: across },
-    });
-    nodes.push({
-      zoneId: theme.startVillageId,
-      name: theme.startVillageName,
-      kind: 'start',
-      classId: theme.classId,
-      portrait: { x: across, y: radial(p.start) },
-      landscape: { x: radial(l.start), y: across },
-    });
-
-    const displayRgb = readableAccent(theme.accentColor);
-    const pOuter = radial(p.edge);
-    const pInner = radial(p.territoryInner);
-    const lOuter = radial(l.edge);
-    const lInner = radial(l.territoryInner);
-    territories.push({
-      classId: theme.classId,
-      className: getClassById(theme.classId).name,
-      displayHex: rgbHex(displayRgb),
-      displayRgb,
-      side,
-      portrait: { x0: acrossLo + p.gap, x1: acrossHi - p.gap, y0: Math.min(pOuter, pInner), y1: Math.max(pOuter, pInner) },
-      landscape: { x0: Math.min(lOuter, lInner), x1: Math.max(lOuter, lInner), y0: acrossLo + l.gap, y1: acrossHi - l.gap },
-    });
-  });
+  for (const theme of CLASS_ZONE_THEMES) {
+    const pos = CLASS_VILLAGE_POSITIONS[theme.classId];
+    const color = readableAccentHex(theme.accentColor);
+    pins.push({ zoneId: theme.secondaryVillageId, name: theme.secondaryVillageName, kind: 'secondary', classId: theme.classId, point: pos.secondary, color });
+    pins.push({ zoneId: theme.startVillageId, name: theme.startVillageName, kind: 'start', classId: theme.classId, point: pos.start, color });
+  }
 
   for (const settlement of REGIONAL_SETTLEMENTS) {
-    const pos = REGIONAL_POSITIONS[settlement.kind];
-    nodes.push({
+    pins.push({
       zoneId: settlement.zoneId,
       name: settlement.name,
       kind: settlement.kind,
       classId: null,
-      portrait: pos.portrait,
-      landscape: pos.landscape,
+      point: REGIONAL_SETTLEMENT_POSITIONS[settlement.zoneId],
       recommendedLevel: ZONE_DEFINITIONS[settlement.zoneId].recommendedLevel,
-      displayHex: rgbHex(readableAccent(settlement.accentColor)),
+      color: REGIONAL_COLOR,
     });
   }
 
-  // Roads come from the real zone exits — an undirected link per pair of
-  // map settlements that an exit actually joins (each road has an exit at
-  // both ends, so dedupe by the sorted pair).
-  const nodeById = new Map(nodes.map((n) => [n.zoneId, n]));
-  const links: WorldMapLink[] = [];
-  const seen = new Set<string>();
-  for (const node of nodes) {
-    for (const exit of ZONE_DEFINITIONS[node.zoneId]?.exits ?? []) {
-      const other = nodeById.get(exit.toZone);
-      if (!other || other.zoneId === node.zoneId) continue;
-      const key = [node.zoneId, other.zoneId].sort().join('|');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const touchesCapital = node.kind === 'capital' || other.kind === 'capital';
-      links.push({
-        from: node.zoneId,
-        to: other.zoneId,
-        kind: touchesCapital ? 'main' : 'local',
-        classId: touchesCapital ? null : node.classId,
-      });
-    }
-  }
-
-  return { nodes, territories, links };
+  return { pins };
 }

@@ -2550,7 +2550,7 @@ export class OverworldScreen implements Screen {
       });
       this.game.uiRoot.append(this.worldMap.root);
     }
-    this.worldMap.setLocationText(this.worldMapLocationText());
+    this.worldMap.refreshLocation(this.player.zoneId, this.worldMapLocationText());
     this.worldMap.root.hidden = false;
     this.worldMapReturnToPause = this.paused;
     if (this.paused) this.pauseOverlay.hidden = true;
