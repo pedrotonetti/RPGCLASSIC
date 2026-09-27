@@ -15,6 +15,18 @@ export type SkillKind = 'physical' | 'magical' | 'heal' | 'buff';
 /** A real, ongoing affliction a skill can inflict on a hit target — see `systems/statusEffects.ts` for the mechanics. */
 export type StatusEffectType = 'bleed' | 'burn' | 'slow';
 
+/**
+ * A recognizable AI personality an `EnemyDefinition` can opt into — see
+ * `systems/enemyArchetypes.ts` for what each one actually does (movement,
+ * skill choice, HP-threshold behavior changes). Left unset on an
+ * `EnemyDefinition`, an enemy behaves exactly as it always has (the neutral
+ * default profile) — this field only ever adds behavior, never removes any.
+ * `summoner`/`mimic` are reserved: declared here so the type is already
+ * complete, but not yet assigned to any real enemy (see that module's own
+ * doc comment on why).
+ */
+export type EnemyArchetype = 'predator' | 'tank' | 'support' | 'ambusher' | 'summoner' | 'berserker' | 'controller' | 'guardian' | 'mimic';
+
 /** Carried on a `SkillDefinition` that can inflict a status effect on a successful damaging hit. */
 export interface StatusInflict {
   type: StatusEffectType;
@@ -160,6 +172,8 @@ export interface EnemyDefinition {
   skills: SkillDefinition[];
   /** True for boss-tier enemies (bigger, tougher, shown with a boss banner). */
   isBoss?: boolean;
+  /** This enemy's AI personality — see `systems/enemyArchetypes.ts`. Unset = the neutral default profile (today's existing generic behavior, unchanged). */
+  archetype?: EnemyArchetype;
   /**
    * This enemy's own difficulty tier, independent of whatever level the
    * player who kills it happens to be. Drives loot scaling (see

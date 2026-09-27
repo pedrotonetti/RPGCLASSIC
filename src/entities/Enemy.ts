@@ -1,5 +1,5 @@
 import { applyEnemyBalance } from '../config/balance';
-import type { EnemyDefinition, SkillDefinition, Stats } from '../config/types';
+import type { EnemyArchetype, EnemyDefinition, SkillDefinition, Stats } from '../config/types';
 import { getBossById } from '../data/bosses';
 import { getEnemyById } from '../data/enemies';
 import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder } from '../systems/statusEffects';
@@ -97,6 +97,11 @@ export class Enemy implements StatusEffectHolder {
     return this.def.isBoss ?? false;
   }
 
+  /** This enemy's AI personality, if any — see `systems/enemyArchetypes.ts`. */
+  get archetype(): EnemyArchetype | undefined {
+    return this.def.archetype;
+  }
+
   get stats(): Stats {
     return this.def.stats;
   }
@@ -113,5 +118,12 @@ export class Enemy implements StatusEffectHolder {
     const dmg = Math.max(0, Math.round(amount));
     this.currentHp = Math.max(0, this.currentHp - dmg);
     return dmg;
+  }
+
+  /** For a Suporte archetype's own heal skill (see CombatSystem.resolveEnemySupportHeal) — mirrors Player.heal. Returns the amount actually restored. */
+  heal(amount: number): number {
+    const before = this.currentHp;
+    this.currentHp = Math.min(this.stats.maxHp, this.currentHp + Math.max(0, Math.round(amount)));
+    return this.currentHp - before;
   }
 }

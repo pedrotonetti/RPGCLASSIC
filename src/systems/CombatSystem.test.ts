@@ -243,6 +243,40 @@ describe('CombatEngine enemy damage vs armor (config/balance.ts)', () => {
   });
 });
 
+describe('Suporte archetype: enemy heals its most wounded ally (data/enemies.ts tags "skeleton" archetype: "support")', () => {
+  it('heals the wounded ally instead of attacking the player, when one exists', () => {
+    mockRandom(0.01); // succeeds every "use a skill"/"prefer this skill" roll and always lands on index 0 of whichever pool gets filtered to
+    const player = freshPlayer('warrior');
+    const healer = new Enemy('skeleton');
+    const wounded = new Enemy('skeleton');
+    wounded.takeDamage(20);
+    healer.actionTimer = 0;
+    wounded.actionTimer = 999; // isolates this tick to the healer's own action
+    const engine = new CombatEngine(player, [healer, wounded]);
+    engine.tick(0.1); // begins the healer's telegraphed action
+    const events = engine.tick(0.5); // telegraph elapses: resolves
+
+    const heal = events.find((e) => e.kind === 'heal' && !e.actorIsPlayer);
+    expect(heal).toBeDefined();
+    expect(heal?.amount).toBeGreaterThan(0);
+    expect(heal?.targetHpAfter).toBe(wounded.currentHp);
+    expect(wounded.currentHp).toBeGreaterThan(wounded.stats.maxHp - 20);
+    // The player took no damage this tick — the healer spent its action on its ally, not on an attack.
+    expect(events.some((e) => e.kind === 'damage' && e.targetIsPlayer)).toBe(false);
+  });
+
+  it('never wastes its heal when every ally is already near-full HP (falls back to a normal action instead)', () => {
+    mockRandom(0.01);
+    const player = freshPlayer('warrior');
+    const healer = new Enemy('skeleton');
+    healer.actionTimer = 0;
+    const engine = new CombatEngine(player, [healer]);
+    engine.tick(0.1);
+    const events = engine.tick(0.5);
+    expect(events.some((e) => e.kind === 'heal' && !e.actorIsPlayer)).toBe(false);
+  });
+});
+
 describe('CombatEngine loot scaling by enemy tier', () => {
   it('drop-chance helpers scale with enemy level, cap sensibly, and give bosses a large floor regardless of level', () => {
     expect(lootDropChance(1, false)).toBeCloseTo(0.32 + 1 * 0.018, 5);

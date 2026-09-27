@@ -26,6 +26,7 @@ import {
   flowLevelForCombo,
   precisionCritBonus,
 } from './classMechanics';
+import { archetypeActionIntervalMultiplier, archetypeDamageMultiplier, archetypeProfileFor, pickSkillForArchetype, telegraphTextFor } from './enemyArchetypes';
 import { computeSkillLevelStats } from './skillMath';
 import { applyStatusEffect, tickStatusEffects } from './statusEffects';
 
@@ -173,6 +174,8 @@ const BLOCK_DAMAGE_REDUCTION = 0.65;
 export const BLOCK_COOLDOWN = 1.6;
 const PERFECT_BLOCK_STUN = 0.8;
 const TELEGRAPH_DURATION = 0.45;
+/** The plain chance `beginEnemyAction` rolls to use a skill at all instead of a basic attack, before an archetype's own `skillUseChanceMult` (see systems/enemyArchetypes.ts) scales it. */
+const BASE_SKILL_USE_CHANCE = 0.55;
 // Exported only so classMechanics.test.ts can pin the monk's Fluxo levels
 // (which re-read this same counter) against them.
 export const COMBO_WINDOW = 3.0;
@@ -208,6 +211,8 @@ export class CombatEngine {
   private lastComboHitAt = -Infinity;
   private staggerStacks = new Map<Enemy, number>();
   private pendingAttacks = new Map<Enemy, { resolveAt: number; skill: SkillDefinition | null }>();
+  /** Which enemies have already landed their first action this fight — an Emboscador's one-time surprise bonus (`ArchetypeProfile.ambushFirstHitMult`) only ever applies once per enemy per fight. */
+  private hasActed = new Set<Enemy>();
 
   /**
    * The player's class-mechanic resource (Fúria/Precisão/Fé/Almas — see
@@ -639,7 +644,9 @@ export class CombatEngine {
         // its overworld movement speed.
         enemy.actionTimer -= dt * enemy.speedMultiplier;
         if (enemy.actionTimer > 0) continue;
-        enemy.actionTimer = enemy.def.actionInterval * (0.85 + Math.random() * 0.3);
+        const profile = archetypeProfileFor(enemy.archetype);
+        const hpFraction = enemy.currentHp / enemy.stats.maxHp;
+        enemy.actionTimer = enemy.def.actionInterval * (0.85 + Math.random() * 0.3) * archetypeActionIntervalMultiplier(profile, hpFraction);
         this.beginEnemyAction(enemy, events);
       }
     }
@@ -693,13 +700,20 @@ export class CombatEngine {
 
   /** Picks the enemy's next move and opens a short, telegraphed wind-up before it actually lands — the player's real window to block. */
   private beginEnemyAction(enemy: Enemy, events: CombatEvent[]): void {
+    const profile = archetypeProfileFor(enemy.archetype);
     const usable = enemy.skills.filter((s) => enemy.currentMp >= computeSkillLevelStats(s, 1).cost);
-    const skill = usable.length > 0 && Math.random() < 0.55 ? usable[Math.floor(Math.random() * usable.length)] : null;
+    const wantsSkill = usable.length > 0 && Math.random() < Math.min(1, BASE_SKILL_USE_CHANCE * profile.skillUseChanceMult);
+    let skill = wantsSkill ? pickSkillForArchetype(profile, usable) : null;
+    // A Suporte with nobody actually hurt would otherwise "heal" a full-HP
+    // target for 0 — falls back to a normal action instead of wasting its turn.
+    if (skill?.kind === 'heal' && !this.aliveEnemies().some((e) => e.currentHp < e.stats.maxHp * 0.9)) {
+      skill = null;
+    }
     if (skill) enemy.currentMp -= computeSkillLevelStats(skill, 1).cost;
 
     this.pendingAttacks.set(enemy, { resolveAt: this.clock + TELEGRAPH_DURATION, skill });
     const actorIndex = this.enemies.indexOf(enemy);
-    events.push({ kind: 'telegraph', text: `${enemy.name} vai atacar!`, actorIsPlayer: false, actorIndex });
+    events.push({ kind: 'telegraph', text: telegraphTextFor(profile, enemy.name), actorIsPlayer: false, actorIndex });
   }
 
   /** Enough clean hits in a row on one enemy breaks its poise: cancels whatever it's winding up and delays its next move. */
@@ -715,14 +729,44 @@ export class CombatEngine {
     events.push({ kind: 'stagger', text: `${enemy.name} foi atordoado!`, actorIsPlayer: true, targetIndex: index });
   }
 
+  /** Suporte archetype's actual behavior: heals its most wounded ally (itself included) instead of attacking — see systems/enemyArchetypes.ts's own doc comment. */
+  private resolveEnemySupportHeal(enemy: Enemy, skill: SkillDefinition, events: CombatEvent[]): void {
+    const levelStats = computeSkillLevelStats(skill, 1);
+    const target = [...this.aliveEnemies()].sort((a, b) => a.currentHp / a.stats.maxHp - b.currentHp / b.stats.maxHp)[0];
+    if (!target) return;
+    const healed = target.heal(resolveHeal(enemy.stats, levelStats.power));
+    const actorIndex = this.enemies.indexOf(enemy);
+    const targetIndex = this.enemies.indexOf(target);
+    events.push({
+      kind: 'heal',
+      text: target === enemy ? `${enemy.name} usou ${skill.name} e se curou.` : `${enemy.name} usou ${skill.name} em ${target.name}.`,
+      actorIsPlayer: false,
+      actorIndex,
+      targetIndex,
+      amount: healed,
+      targetHpAfter: target.currentHp,
+      skillKind: 'heal',
+    });
+  }
+
   private resolveEnemyAttack(enemy: Enemy, skill: SkillDefinition | null, events: CombatEvent[]): void {
     if (!enemy.isAlive()) return; // died mid wind-up
 
     const activeSkill = skill ?? BASIC_ENEMY_ATTACK;
+    if (activeSkill.kind === 'heal') {
+      this.resolveEnemySupportHeal(enemy, activeSkill, events);
+      return;
+    }
     const levelStats = computeSkillLevelStats(activeSkill, 1);
     const kind = activeSkill.kind === 'magical' ? 'magical' : 'physical';
     const roll = resolveAttack(enemy.stats, this.effectiveStats(), levelStats.power, kind, { minFraction: ENEMY_BALANCE.minDamageFraction });
     roll.damage = Math.max(1, Math.round(roll.damage * ENEMY_BALANCE.damageMult));
+    const profile = archetypeProfileFor(enemy.archetype);
+    const hpFraction = enemy.currentHp / enemy.stats.maxHp;
+    let archetypeMult = archetypeDamageMultiplier(profile, hpFraction);
+    if (profile.ambushFirstHitMult && !this.hasActed.has(enemy)) archetypeMult *= profile.ambushFirstHitMult;
+    this.hasActed.add(enemy);
+    if (archetypeMult !== 1) roll.damage = Math.max(1, Math.round(roll.damage * archetypeMult));
     const actorIndex = this.enemies.indexOf(enemy);
 
     if (roll.missed) {

@@ -47,6 +47,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     actionInterval: 3.2,
     skills: [],
     level: 1,
+    archetype: 'guardian',
   },
   {
     id: 'bat',
@@ -59,6 +60,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     actionInterval: 2.2,
     skills: [],
     level: 2,
+    archetype: 'ambusher',
   },
   {
     id: 'goblin',
@@ -73,6 +75,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
       makeSkill({ id: 'goblin_slash', name: 'Golpe Sujo', description: 'Um ataque físico rápido e traiçoeiro.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 6, baseCost: 0, basePower: 1.4 }),
     ],
     level: 3,
+    archetype: 'predator',
   },
   {
     id: 'bandit',
@@ -87,6 +90,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
       makeSkill({ id: 'bandit_ambush', name: 'Emboscada', description: 'Ataca de surpresa por trás.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.6 }),
     ],
     level: 4,
+    archetype: 'ambusher',
   },
   {
     id: 'dark_wolf',
@@ -101,6 +105,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
       makeSkill({ id: 'wolf_bite', name: 'Mordida Feroz', description: 'Uma mordida selvagem com dano elevado.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 6, baseCost: 0, basePower: 1.6 }),
     ],
     level: 5,
+    archetype: 'predator',
   },
   {
     id: 'skeleton',
@@ -113,8 +118,11 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     actionInterval: 3.0,
     skills: [
       makeSkill({ id: 'skeleton_bone_throw', name: 'Arremesso de Ossos', description: 'Arremessa fragmentos ósseos afiados.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.5 }),
+      // Suporte archetype's own real behavior (see systems/enemyArchetypes.ts and CombatSystem.resolveEnemySupportHeal): a self/ally heal, so an ancestor's rot-pulled bones knit back together mid-fight instead of just attacking.
+      makeSkill({ id: 'skeleton_bone_mend', name: 'Remendo Ancestral', description: 'Chama fragmentos ósseos de volta para remendar a si mesmo.', kind: 'heal', target: 'self', unlockLevel: 1, baseCooldown: 10, baseCost: 0, basePower: 1.8 }),
     ],
     level: 6,
+    archetype: 'support',
   },
   {
     id: 'giant_spider',
@@ -129,6 +137,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
       makeSkill({ id: 'spider_venom', name: 'Picada Venenosa', description: 'Injeta veneno corrosivo no alvo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.7, inflicts: { type: 'bleed', chance: 0.5 } }),
     ],
     level: 7,
+    archetype: 'controller',
   },
   {
     id: 'orc',
@@ -143,6 +152,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
       makeSkill({ id: 'orc_cleave', name: 'Golpe Cortante', description: 'Um golpe pesado de machado.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 8, baseCost: 0, basePower: 1.8 }),
     ],
     level: 8,
+    archetype: 'tank',
   },
   {
     id: 'fire_elemental',
@@ -157,6 +167,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
       makeSkill({ id: 'elemental_flame_burst', name: 'Explosão Flamejante', description: 'Libera uma onda de fogo que deixa o alvo queimando.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.9, inflicts: { type: 'burn', chance: 0.55 } }),
     ],
     level: 9,
+    archetype: 'berserker',
   },
   {
     id: 'troll',
@@ -171,6 +182,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
       makeSkill({ id: 'troll_smash', name: 'Esmagar', description: 'Um golpe brutal com os punhos.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 9, baseCost: 0, basePower: 2.0 }),
     ],
     level: 10,
+    archetype: 'berserker',
   },
   {
     id: 'stone_golem',
@@ -185,6 +197,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
       makeSkill({ id: 'golem_slam', name: 'Impacto Sísmico', description: 'Bate no chão com força devastadora.', kind: 'physical', target: 'allEnemies', unlockLevel: 1, baseCooldown: 12, baseCost: 0, basePower: 1.6 }),
     ],
     level: 11,
+    archetype: 'guardian',
   },
   {
     id: 'young_dragon',
@@ -201,6 +214,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
       makeSkill({ id: 'dragon_breath', name: 'Sopro Flamejante', description: 'Um sopro de fogo que atinge tudo à frente e deixa queimaduras.', kind: 'magical', target: 'allEnemies', unlockLevel: 1, baseCooldown: 11, baseCost: 0, basePower: 1.9, inflicts: { type: 'burn', chance: 0.45 } }),
     ],
     level: 18,
+    archetype: 'berserker',
   },
 ];
 

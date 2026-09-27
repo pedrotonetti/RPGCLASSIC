@@ -14,6 +14,7 @@ import { VfxManager, hitImpactColor } from '../render/vfx';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from './CombatSystem';
 import { audio } from './AudioSystem';
 import { CLASS_METER_MAX, FLOW_MAX_LEVEL, comboLabel } from './classMechanics';
+import { archetypeProfileFor, chaseSpeedMultiplierFor } from './enemyArchetypes';
 import { computeSkillLevelStats } from './skillMath';
 import { activeStatusTypes } from './statusEffects';
 import { pickEncounterEnemyIds } from './EncounterSystem';
@@ -489,15 +490,24 @@ export class OverworldCombat {
       return;
     }
 
-    if (dist <= AGGRO_RADIUS) {
+    // Each archetype's own aggro/deaggro reach and chase pace (see
+    // systems/enemyArchetypes.ts) — a plain multiplier on this file's own
+    // existing constants, so an enemy with no archetype behaves exactly as
+    // before (every multiplier defaults to 1).
+    const profile = archetypeProfileFor(m.enemy.archetype);
+    const aggroRadius = AGGRO_RADIUS * profile.aggroRadiusMult;
+    const deaggroRadius = DEAGGRO_RADIUS * profile.deaggroRadiusMult;
+
+    if (dist <= aggroRadius) {
       m.state = 'chase';
-    } else if (m.state === 'chase' && dist > DEAGGRO_RADIUS) {
+    } else if (m.state === 'chase' && dist > deaggroRadius) {
       m.state = 'idle';
       m.wanderTarget = null;
     }
 
     if (m.state === 'chase') {
-      const speed = CHASE_BASE_SPEED + m.enemy.stats.speed * CHASE_SPEED_PER_STAT;
+      const playerHpFraction = this.player.currentHp / this.player.stats.maxHp;
+      const speed = (CHASE_BASE_SPEED + m.enemy.stats.speed * CHASE_SPEED_PER_STAT) * profile.chaseSpeedMult * chaseSpeedMultiplierFor(profile, playerHpFraction);
       m.model.position.x += (dx / dist) * speed * dt;
       m.model.position.z += (dz / dist) * speed * dt;
       m.model.rotation.y = Math.atan2(dx, dz);
