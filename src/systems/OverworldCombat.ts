@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { getClassById } from '../config/classes';
 import { TILE_SIZE } from '../config/gameConfig';
 import { TileType } from '../config/tiles';
-import type { SkillDefinition } from '../config/types';
+import type { ClassMechanicDefinition, SkillDefinition, SkillTarget } from '../config/types';
 import type { Game } from '../engine/Game';
 import { Enemy } from '../entities/Enemy';
 import type { Player } from '../entities/Player';
@@ -13,6 +13,7 @@ import { HELD_MESHES, DEFAULT_CLASS } from '../render/playerAvatar';
 import { VfxManager, hitImpactColor } from '../render/vfx';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from './CombatSystem';
 import { audio } from './AudioSystem';
+import { CLASS_METER_MAX, FLOW_MAX_LEVEL, comboLabel } from './classMechanics';
 import { computeSkillLevelStats } from './skillMath';
 import { activeStatusTypes } from './statusEffects';
 import { pickEncounterEnemyIds } from './EncounterSystem';
@@ -123,6 +124,8 @@ const WANDER_RADIUS = 1.8;
 const WANDER_SPEED = 0.55;
 const RESPAWN_DELAY = 40; // seconds
 const LABEL_VISIBLE_DISTANCE = 13; // world units — roughly where the scene fog starts hiding things anyway
+/** Fires the class ability (Golpe Selvagem / Milagre da Fé / Dreno das Almas) — "R" for "recurso". Unbound anywhere else during combat (OverworldScreen only reads E/M/Escape/WASD/arrows). */
+const CLASS_ABILITY_KEY = 'r';
 
 /** Owns every monster on the map (model + simple AI) and the combat HUD that appears while the player is fighting one. */
 export class OverworldCombat {
@@ -141,6 +144,24 @@ export class OverworldCombat {
   private dodgeFillEl!: HTMLElement;
   private messageHideAt = 0;
   private hudBuilt = false;
+
+  /** This player's class mechanic (see config/classes.ts / classMechanics.ts), resolved once — a player's class never changes within one OverworldCombat. */
+  private readonly classMechanic: ClassMechanicDefinition | undefined;
+  /**
+   * Persistent class-resource panel (Fúria/Precisão/Fé/Almas bar, or the
+   * monk's Fluxo level) — built once in `ensureBaseHud`, then mounted INTO
+   * each fight's hotbar element (absolutely positioned just above its slots,
+   * so it tracks however many rows the hotbar wraps to) and detached along
+   * with it at fight end. Null for a class without a mechanic.
+   */
+  private classMeterEl: HTMLElement | null = null;
+  private classMeterFillEl: HTMLElement | null = null;
+  private classMeterValueEl: HTMLElement | null = null;
+  /** This fight's class-ability hotbar button — only for mechanics with an active ability (warrior/cleric/necromancer). */
+  private classAbilityBtnEl: HTMLElement | null = null;
+  /** Last-rendered state of the class panel — skips redundant per-frame DOM writes and detects the "just filled" moment. */
+  private lastClassMeterText = '';
+  private lastClassMeterReady = false;
 
   /** Prominent top-of-screen name/health banner shown only while fighting an `isBoss` enemy — distinct from the small per-monster nameplate every wandering monster gets. */
   private bossBannerEl: HTMLElement | null = null;
@@ -171,6 +192,7 @@ export class OverworldCombat {
     this.vfx = new VfxManager(this.scene);
     this.playerVfxAnchor = new THREE.Object3D();
     this.scene.add(this.playerVfxAnchor);
+    this.classMechanic = player.classDef.classMechanic;
   }
 
   get inCombat(): boolean {
@@ -277,6 +299,49 @@ export class OverworldCombat {
     ]);
     this.bossBannerEl.hidden = true;
     this.game.uiRoot.append(this.messageEl, this.comboEl, this.bossBannerEl);
+    this.buildClassMeter();
+  }
+
+  /**
+   * The class-resource panel (see `classMeterEl`): a name + value line over a
+   * bar that fills UP as the resource grows (width-based, like the boss
+   * banner's HP bar — the opposite of the hotbar's draining cooldown
+   * overlays). For the monk's `combo` mechanic it shows the Fluxo level
+   * instead, over a segmented bar. The mechanic's own description is its
+   * tooltip/aria-label, so the HUD element itself explains what it does.
+   */
+  private buildClassMeter(): void {
+    const mechanic = this.classMechanic;
+    if (!mechanic) return;
+    this.classMeterFillEl = el('div', { className: 'class-meter-fill' });
+    this.classMeterValueEl = el('span', { className: 'class-meter-value' });
+    this.classMeterEl = el(
+      'div',
+      {
+        className: `class-meter mech-${mechanic.id} kind-${mechanic.kind}`,
+        attrs: {
+          title: mechanic.description,
+          'aria-label': `${mechanic.name}: ${mechanic.description}`,
+          role: 'meter',
+          'aria-valuemin': '0',
+          'aria-valuemax': '100',
+          'aria-valuenow': '0',
+        },
+      },
+      [
+        el('div', { className: 'class-meter-label' }, [el('span', { className: 'class-meter-name', text: mechanic.name }), this.classMeterValueEl]),
+        el('div', { className: 'class-meter-bg' }, [this.classMeterFillEl]),
+      ],
+    );
+    this.classMeterEl.hidden = true;
+
+    if (mechanic.kind === 'combo') {
+      // The combo badge itself is also relabeled for this class (see
+      // refreshCombo) — give it the same explanation for assistive tech.
+      this.comboEl.classList.add('flow');
+      this.comboEl.setAttribute('aria-label', `${mechanic.name}: ${mechanic.description}`);
+      this.comboEl.setAttribute('title', mechanic.description);
+    }
   }
 
   private buildMonster(enemyId: string, tx: number, ty: number, opts: { visualId?: string; scale?: number; tierMultiplier?: number } = {}): WorldMonster {
@@ -378,6 +443,7 @@ export class OverworldCombat {
         this.processEvents(events);
         this.refreshHotbarCooldowns();
         this.refreshCombo();
+        this.refreshClassResource();
         this.refreshStatusOverlays();
         if (this.engine.outcome !== 'ongoing') this.endEngagement(this.engine.outcome);
       }
@@ -571,6 +637,16 @@ export class OverworldCombat {
     this.hotbarEl = null;
     this.itemBarEl = null;
     this.comboEl.hidden = true;
+    // The class panel was mounted inside the (now removed) hotbar — detach it
+    // explicitly too and forget its last-rendered state, so the next fight
+    // (whose engine starts every meter back at 0) re-renders it from scratch.
+    if (this.classMeterEl) {
+      this.classMeterEl.hidden = true;
+      this.classMeterEl.remove();
+    }
+    this.classAbilityBtnEl = null;
+    this.lastClassMeterText = '';
+    this.lastClassMeterReady = false;
     this.activeBossMonster = null;
     if (this.bossBannerEl) this.bossBannerEl.hidden = true;
   }
@@ -614,8 +690,35 @@ export class OverworldCombat {
       this.hotbar.push({ skill, totalCooldown: stats.cooldown, cost: stats.cost, el: slotEl, fillEl });
     });
 
-    this.hotbarEl = el('div', { className: 'hotbar' }, [...slotEls, dodgeBtn, blockBtn]);
+    // Class ability (warrior/cleric/necromancer): appended AFTER dodge/block so
+    // it never shifts the numbered skill slots' own indices/keys.
+    const mechanic = this.classMechanic;
+    const extraSlots: HTMLElement[] = [];
+    if (mechanic?.ability && this.engine?.classAbilityTarget()) {
+      const ability = mechanic.ability;
+      this.classAbilityBtnEl = el(
+        'div',
+        {
+          className: `hotbar-slot class-ability mech-${mechanic.id}`,
+          onClick: () => this.onClassAbilityClicked(),
+          attrs: { title: ability.description, 'aria-label': `${ability.name} (${CLASS_ABILITY_KEY.toUpperCase()}): ${ability.description}` },
+        },
+        [
+          el('div', { className: 'hotbar-name', text: ability.name }),
+          el('div', { className: 'hotbar-level', text: CLASS_ABILITY_KEY.toUpperCase() }),
+          el('div', { className: 'hotbar-cost', text: mechanic.name }),
+        ],
+      );
+      extraSlots.push(this.classAbilityBtnEl);
+    }
+
+    this.hotbarEl = el('div', { className: 'hotbar' }, [...slotEls, dodgeBtn, blockBtn, ...extraSlots]);
+    if (this.classMeterEl) {
+      this.hotbarEl.append(this.classMeterEl);
+      this.classMeterEl.hidden = false;
+    }
     this.game.uiRoot.append(this.hotbarEl);
+    this.refreshClassResource();
   }
 
   private buildItemBar(): void {
@@ -659,6 +762,10 @@ export class OverworldCombat {
     }
     if (e.key === 'Shift') {
       this.onDodgeClicked();
+      return true;
+    }
+    if (e.key.toLowerCase() === CLASS_ABILITY_KEY && this.classAbilityBtnEl) {
+      this.onClassAbilityClicked();
       return true;
     }
     const num = Number(e.key);
@@ -723,7 +830,7 @@ export class OverworldCombat {
     } else {
       this.processEvents(result.events);
     }
-    if (skill?.isUltimate) this.playUltimateVfx(skill, targetIndex);
+    if (skill?.isUltimate) this.playUltimateVfx(skill.target, targetIndex);
     this.refreshHotbarCooldowns();
   }
 
@@ -817,12 +924,12 @@ export class OverworldCombat {
     return 'attack';
   }
 
-  /** Plays that class's own bespoke ultimate burst (see `render/vfx.ts`'s `ULTIMATE_BUILDERS`) at every position the ultimate actually connected with. */
-  private playUltimateVfx(skill: SkillDefinition, targetIndex?: number): void {
+  /** Plays that class's own bespoke ultimate burst (see `render/vfx.ts`'s `ULTIMATE_BUILDERS`) at every position an ultimate — or a full-meter class ability — actually connected with. */
+  private playUltimateVfx(target: SkillTarget, targetIndex?: number): void {
     let positions: THREE.Vector3[];
-    if (skill.target === 'self') {
+    if (target === 'self') {
       positions = [this.playerWorldPos.clone()];
-    } else if (skill.target === 'allEnemies') {
+    } else if (target === 'allEnemies') {
       positions = this.engagedMonsters.map((m) => m.model.position.clone());
     } else {
       const enemy = this.engine && targetIndex !== undefined ? this.engine.enemies[targetIndex] : undefined;
@@ -866,6 +973,56 @@ export class OverworldCombat {
     this.animator.play('dodge');
     audio.dodge();
     this.processEvents(result.events);
+  }
+
+  /** The class-ability button / key: checks the meter FIRST (so a multi-enemy fight never asks for a target it then can't use), then routes targeting exactly like a hotbar skill (`onHotbarClicked`). */
+  private onClassAbilityClicked(): void {
+    if (!this.engine) return;
+    const ability = this.classMechanic?.ability;
+    const target = this.engine.classAbilityTarget();
+    if (!ability || !target) return;
+    if (!this.engine.isClassMeterFull()) {
+      this.showClassMeterNotReady();
+      return;
+    }
+    if (target === 'enemy') {
+      const alive = this.engagedMonsters.filter((m) => m.enemy.isAlive());
+      if (alive.length === 0) return;
+      if (alive.length === 1) {
+        this.tryUseClassAbility(target, this.engine.enemies.indexOf(alive[0].enemy));
+        return;
+      }
+      this.showMessage(`Escolha o alvo de ${ability.name} (clique em um inimigo)...`, 4000);
+      this.pendingTargetPick = (m) => this.tryUseClassAbility(target, this.engine!.enemies.indexOf(m.enemy));
+      return;
+    }
+    this.tryUseClassAbility(target);
+  }
+
+  private tryUseClassAbility(target: SkillTarget, targetIndex?: number): void {
+    if (!this.engine) return;
+    const result = this.engine.useClassAbility(targetIndex);
+    if (!result.ok) {
+      if (result.reason === 'meter') this.showClassMeterNotReady();
+      return;
+    }
+    if (target !== 'self') this.faceCurrentTarget(targetIndex);
+    // A melee strike for the warrior's Golpe Selvagem, a spell for the
+    // cleric's/necromancer's — both with the class's own ultimate clip and
+    // burst, since a full-meter payoff should read as a big moment.
+    const action: ActionName = target === 'enemy' ? 'attack' : 'cast';
+    this.animator.play(action, undefined, { isUltimate: true });
+    if (action === 'cast') audio.castSpell();
+    else audio.attackSwing();
+    this.processEvents(result.events);
+    this.playUltimateVfx(target, targetIndex);
+    this.refreshClassResource();
+  }
+
+  private showClassMeterNotReady(): void {
+    const mechanic = this.classMechanic;
+    if (!mechanic?.ability) return;
+    this.showMessage(`${mechanic.ability.name} ainda não está pronto — encha a barra de ${mechanic.name}.`, 1400);
   }
 
   // --- event processing ---------------------------------------------------
@@ -1050,15 +1207,54 @@ export class OverworldCombat {
     this.dodgeFillEl.style.height = `${Math.min(1, dodgeRemaining / DODGE_COOLDOWN) * 100}%`;
   }
 
+  /** Every class sees "Combo xN"; the monk sees the same counter as its named Fluxo levels instead (see classMechanics.ts's `comboLabel`). */
   private refreshCombo(): void {
     if (!this.engine) return;
-    const hits = this.engine.comboHits;
-    if (hits > 1) {
-      this.comboEl.textContent = `Combo x${hits}`;
+    const label = comboLabel(this.classMechanic?.id, this.engine.comboHits);
+    if (label) {
+      this.comboEl.textContent = label;
       this.comboEl.hidden = false;
+      this.comboEl.classList.toggle('finisher', this.engine.flowLevel >= FLOW_MAX_LEVEL);
     } else {
       this.comboEl.hidden = true;
     }
+  }
+
+  /** Syncs the class panel (and the class-ability button's ready glow) with the engine — same read-state-then-write-DOM shape as `refreshCombo`, called every frame while engaged. */
+  private refreshClassResource(): void {
+    const mechanic = this.classMechanic;
+    if (!this.engine || !mechanic || !this.classMeterEl || !this.classMeterFillEl || !this.classMeterValueEl) return;
+
+    let fraction: number;
+    let valueText: string;
+    let full: boolean;
+    if (mechanic.kind === 'combo') {
+      const level = this.engine.flowLevel;
+      fraction = level / FLOW_MAX_LEVEL;
+      valueText = `Nível ${level}/${FLOW_MAX_LEVEL}`;
+      full = level >= FLOW_MAX_LEVEL;
+    } else {
+      fraction = this.engine.classMeterFraction();
+      valueText = `${Math.floor(this.engine.classMeterValue)}/${CLASS_METER_MAX}`;
+      full = this.engine.isClassMeterFull();
+    }
+    if (valueText === this.lastClassMeterText) return;
+    this.lastClassMeterText = valueText;
+
+    this.classMeterFillEl.style.width = `${fraction * 100}%`;
+    this.classMeterValueEl.textContent = valueText;
+    this.classMeterEl.setAttribute('aria-valuenow', String(Math.round(fraction * 100)));
+    this.classMeterEl.classList.toggle('full', full);
+    this.classAbilityBtnEl?.classList.toggle('ready', full);
+    // Announce the moment a spendable meter fills — on touch screens (no
+    // hover tooltips) this is what tells the player the button is live. Only
+    // while the fight is still on: a killing blow that also fills the meter
+    // is followed by one more refresh before `endEngagement` tears the HUD
+    // down, and announcing there would bury the "Vitória!" message.
+    if (full && !this.lastClassMeterReady && mechanic.ability && this.classAbilityBtnEl && this.engine.outcome === 'ongoing') {
+      this.showMessage(`${mechanic.ability.name} pronto! (${CLASS_ABILITY_KEY.toUpperCase()})`, 2200);
+    }
+    this.lastClassMeterReady = full;
   }
 
   private refreshItemHotbarCounts(): void {

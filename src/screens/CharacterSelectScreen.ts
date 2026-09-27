@@ -152,10 +152,15 @@ export class CharacterSelectScreen implements Screen {
     ].join('\n');
     const skillNames = def.skills.map((sk) => (sk.isUltimate ? `${sk.name} (Ultimate)` : sk.name)).join(', ');
 
+    // The class's unique combat identity (Fúria, Precisão...), explained up
+    // front — the in-combat HUD explains it too, but only as a hover tooltip,
+    // which touch screens never show.
+    const mechanic = def.classMechanic;
     this.detailsEl.replaceChildren(
       el('div', { className: 'desc', text: def.description }),
       el('div', { className: 'stats', text: statLines }),
       el('div', { className: 'skills', text: `Habilidades: ${skillNames}` }),
+      ...(mechanic ? [el('div', { className: 'mechanic', text: `${mechanic.name}: ${mechanic.description}` })] : []),
     );
   }
 
