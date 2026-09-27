@@ -1580,8 +1580,15 @@ export class OverworldScreen implements Screen {
 
       this.scratchLabelAnchor.copy(c.mesh.group.position);
       this.scratchLabelAnchor.y += 0.9;
+      // Distance in WORLD space, read before .project() below mutates this
+      // same vector into screen/NDC space — comparing world-space distance
+      // against a post-projection vector (as this used to) compares two
+      // unrelated coordinate systems, so it was effectively always "too far"
+      // for any chest not standing right at the world origin. That's why no
+      // chest label has ever actually shown up in play.
+      const distance = this.scratchLabelAnchor.distanceTo(this.avatar.position);
       const proj = this.scratchLabelAnchor.project(this.camera);
-      if (proj.z > 1 || this.scratchLabelAnchor.distanceTo(this.avatar.position) > INTERACT_RANGE * 2.5) {
+      if (proj.z > 1 || distance > INTERACT_RANGE * 2.5) {
         c.labelEl.hidden = true;
         continue;
       }
