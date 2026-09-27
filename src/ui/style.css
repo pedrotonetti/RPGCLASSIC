@@ -338,6 +338,29 @@ body {
   color: var(--text-dim);
 }
 
+/* Thin always-on XP readout pinned to the very bottom edge — sits clear of
+   the joystick (whose own circle starts 22px above the edge) and the hotbar
+   (150px+ up), so it never competes for touch input. Purely visual (no
+   pointer-events), refreshed every frame in refreshHud() so a single kill's
+   XP gain reads as an immediate nudge instead of only being visible at the
+   moment of a level-up. */
+.xp-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--safe-b);
+  height: 5px;
+  background: rgba(10, 8, 14, 0.55);
+  pointer-events: none;
+}
+.xp-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #7fd0e0, var(--accent));
+  box-shadow: 0 0 6px rgba(242, 193, 78, 0.6);
+  transition: width 0.25s ease-out;
+}
+
 .minimap-canvas {
   position: absolute;
   top: calc(8px + var(--safe-t));

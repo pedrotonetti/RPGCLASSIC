@@ -370,9 +370,12 @@ export class OverworldScreen implements Screen {
   private shopNpc: NpcDefinition | null = null;
 
   private promptEl!: HTMLElement;
+  private nameLineEl!: HTMLElement;
   private hpEl!: HTMLElement;
   private mpEl!: HTMLElement;
   private goldEl!: HTMLElement;
+  /** Thin always-on bar pinned to the bottom of the screen — its inner fill's width is set by refreshHud() to player.xp/xpToNextLevel, so a kill's XP gain reads as immediate visible progress even between level-ups. */
+  private xpBarFillEl!: HTMLElement;
   private dialogueOverlay!: HTMLElement;
   private dialogueNameEl!: HTMLElement;
   private dialogueLineEl!: HTMLElement;
@@ -2254,15 +2257,15 @@ export class OverworldScreen implements Screen {
     this.questArrowEl = el('div', { className: 'quest-arrow' });
     this.questArrowEl.hidden = true;
 
+    this.nameLineEl = el('div', { className: 'name-line' });
     this.hpEl = el('div', { className: 'hud-hp' });
     this.mpEl = el('div', { className: 'hud-mp' });
     this.goldEl = el('div', {});
-    const panel = el('div', { className: 'panel hud-panel' }, [
-      el('div', { className: 'name-line', text: `${this.player.name} — ${this.player.classDef.name} Nv.${this.player.level}` }),
-      this.hpEl,
-      this.mpEl,
-      this.goldEl,
-    ]);
+    const panel = el('div', { className: 'panel hud-panel' }, [this.nameLineEl, this.hpEl, this.mpEl, this.goldEl]);
+
+    this.xpBarFillEl = el('div', { className: 'xp-bar-fill' });
+    const xpBar = el('div', { className: 'xp-bar', attrs: { title: 'Experiência até o próximo nível' } }, [this.xpBarFillEl]);
+
     this.refreshHud();
 
     const hint = el('div', { className: 'hud-hint', text: 'ESC: menu · M: montaria' });
@@ -2295,6 +2298,7 @@ export class OverworldScreen implements Screen {
       this.questZoneHintEl,
       this.questArrowEl,
       this.promptEl,
+      xpBar,
     );
   }
 
@@ -2313,12 +2317,15 @@ export class OverworldScreen implements Screen {
     this.cameraAngleBtn.setAttribute('title', `Ângulo da câmera: ${preset.label}`);
   }
 
-  /** Keeps the always-visible HP/MP/gold readout live now that combat happens in-place instead of in a separate screen with its own status bar. */
+  /** Keeps the always-visible HP/MP/gold/level/XP readout live now that combat happens in-place instead of in a separate screen with its own status bar. Called every frame (see update()), so a level-up or an XP tick from a kill shows immediately — this used to build the name-line's "Nv.X" once in buildHud() and never touch it again, silently going stale the moment the player leveled up. */
   private refreshHud(): void {
     const stats = this.player.stats;
+    this.nameLineEl.textContent = `${this.player.name} — ${this.player.classDef.name} Nv.${this.player.level}`;
     this.hpEl.textContent = `HP ${this.player.currentHp}/${stats.maxHp}`;
     this.mpEl.textContent = `MP ${this.player.currentMp}/${stats.maxMp}`;
     this.goldEl.textContent = `Ouro: ${this.player.gold}`;
+    const xpFraction = Math.min(1, Math.max(0, this.player.xp / this.player.xpToNextLevel));
+    this.xpBarFillEl.style.width = `${xpFraction * 100}%`;
   }
 
   private refreshQuestTracker(): void {
