@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EQUIPMENT_TEMPLATES, getEquipmentTemplate } from './equipment';
 import { GEM_DEFINITIONS } from './gems';
 import { ITEM_DEFINITIONS } from './items';
-import { NPC_DEFINITIONS, type VendorKind } from './npcs';
+import { dialogueLinesFor, getNpcById, NPC_DEFINITIONS, type VendorKind } from './npcs';
 
 const vendors = NPC_DEFINITIONS.filter((n) => n.vendor);
 function vendorOf(kind: VendorKind) {
@@ -50,5 +50,26 @@ describe('vendor stock matches each vendor\'s own trade', () => {
       const sellers = vendors.filter((n) => n.vendor!.equipmentTemplateIds?.includes(t.id));
       expect(sellers.map((n) => n.id), t.id).toHaveLength(1);
     }
+  });
+});
+
+describe('Capitã Jussara (Baluarte do Amanhecer) speaks to where the player actually is in the story', () => {
+  const jussara = getNpcById('jussara_baluarte');
+
+  it('turns away anyone who hasn\'t reached the story\'s climax yet with her default lines', () => {
+    expect(dialogueLinesFor(jussara, ['act3_q8_gathering', null], ['q6_dragon'])).toBe(jussara.dialogue);
+  });
+
+  it('asks a post-climax player whose side slot is still busy to come back with their hands free', () => {
+    const lines = dialogueLinesFor(jussara, ['nilza_r1_barracas', null], ['act3_q2_confront']);
+    expect(lines).not.toBe(jussara.dialogue);
+    expect(lines.join(' ')).toContain('mãos livres');
+  });
+
+  it('briefs the chain\'s first quest once it\'s been handed out, and closes on its own completed line', () => {
+    const r1 = dialogueLinesFor(jussara, [null, 'baluarte_r1_muralha'], ['act3_q2_confront']);
+    expect(r1.join(' ')).toContain('muralha');
+    const done = dialogueLinesFor(jussara, [null, null], ['act3_q2_confront', 'baluarte_r1_muralha', 'baluarte_r2_batedora', 'baluarte_r3_cisterna']);
+    expect(done.join(' ')).toContain('cisterna cheia');
   });
 });

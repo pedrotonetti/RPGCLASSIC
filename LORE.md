@@ -213,6 +213,15 @@ origem maior do que a guerra contra o Jugo.
   criaturas corrompidas pela Sede.
 - O dragão-chefe do fim da demo é reaproveitado narrativamente como um
   antigo guardião corrompido pela Sede, não um dragão aleatório.
+- Dois lugares fora do território de qualquer classe, ambos a partir de
+  Pedravale: o **Ancoradouro do Vau**, um povoado à beira de um vau que a
+  Sede quase secou (o rio "não secou — está sendo bebido por baixo, pela
+  raiz", diz a benzedeira de lá), e o **Baluarte do Amanhecer**, um forte de
+  vigia dos Zeladores voltado para o mar, abandonado por gerações e agora
+  reerguido por gente de toda Ipêra. O Baluarte só abre sua cadeia de missões
+  depois do confronto com Ilva, e é onde a primeira pista concreta do gancho
+  "a Sede não é só nossa" chega à praia: raízes de ipê que nenhum ipê de
+  Ipêra produziria, e que não falam a nossa língua — como a Raiz Sem Voz.
 - Toda a estrutura foi pensada para crescer: novas quests só precisam de um
   novo `QuestDefinition` encadeado via `nextQuestId`, e novas regiões só
   precisam de um novo mapa em `systems/MapGenerator.ts` — o Capítulo 1 conta

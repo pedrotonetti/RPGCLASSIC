@@ -2,7 +2,7 @@ import type { CharacterAppearance } from '../config/customization';
 import { MAIN_CITY_SHOPS, MAIN_CITY_SPOTS, villageClearingBounds, type Signage } from '../systems/MapGenerator';
 import { CLASS_ZONE_THEMES } from './classZones';
 import { getDungeonById } from './dungeons';
-import { MAIN_CITY_ID, SECONDARY_VILLAGE_SIZE, START_VILLAGE_SIZE } from './zones';
+import { ANCORADOURO_VAU_ID, BALUARTE_AMANHECER_ID, getRegionalSettlement, MAIN_CITY_ID, SECONDARY_VILLAGE_SIZE, START_VILLAGE_SIZE } from './zones';
 
 /** A vendor's trade — also which of Pedravale's storefronts (MapGenerator's `MAIN_CITY_SHOPS`) they keep. */
 export type VendorKind = Extract<Signage, 'ferreiro' | 'tecelao' | 'artesao' | 'boticario' | 'joalheiro'>;
@@ -1529,6 +1529,322 @@ NPC_DEFINITIONS.push(
         lines: [
           'Afaste-os dos armazéns antes que o inverno chegue e a Praça do Mercado sinta falta do que devia estar guardado.',
           'Não sei desde quando entram por aqui. Sei que quero saber onde é a entrada antes que fiquem mais espertos.',
+        ],
+      },
+    ],
+  },
+);
+
+// The two regional settlements (data/zones.ts's REGIONAL_SETTLEMENTS) — the
+// first zones reached from Pedravale that belong to no single class. Every
+// NPC stands on its own settlement's paved town square, placed relative to
+// that map's own clearing (villageClearingBounds), never a bare tile; the
+// ones standing by a square prop (a well, the fountain) stand one tile NORTH
+// of it, so the fixed north-side camera sees them in front of it, the same
+// convention Pedravale's own spots follow (see MapGenerator's
+// MAIN_CITY_SPOTS). Each settlement's quest chain (data/quests.ts's
+// SIDE_QUESTS) is handed out by its first NPC through the ordinary
+// SIDE_QUEST_STARTERS/offerSideQuest path.
+function regionalClearing(zoneId: string): ReturnType<typeof villageClearingBounds> {
+  const { width, height } = getRegionalSettlement(zoneId).size;
+  return villageClearingBounds(width, height);
+}
+
+// --- Ancoradouro do Vau: a hamlet on a ford the Sede has all but dried up.
+const vau = regionalClearing(ANCORADOURO_VAU_ID);
+NPC_DEFINITIONS.push(
+  {
+    id: 'joaquim_vau',
+    name: 'Barqueiro Joaquim',
+    role: 'Cobrador do Vau',
+    // An old river hand who poled barges across the ford for forty years — the rugged Barbarian rig reads as a lifetime of hauling.
+    classAnalogId: 'warrior',
+    zoneId: ANCORADOURO_VAU_ID,
+    // Just inside the square's north opening — the road in from Pedravale —
+    // two tiles off the road column: where anyone arriving has to pass him.
+    mapX: vau.cx + 2,
+    mapY: vau.cy - vau.vh + 3,
+    appearance: npcAppearance({
+      hairStyle: 'entradas',
+      hairColor: 0x9a9a9a,
+      facialHair: 'bigode',
+      skinTone: 0x93643f,
+      primaryColor: 0x5a626b,
+      secondaryColor: 0xb3925a,
+      bodyType: 'robusto',
+      headAccessory: 'chapeu',
+    }),
+    dialogue: [
+      'Pedágio do Vau: duas moedas por cabeça, uma por bicho de carga. (Ele olha por cima do ombro, para o leito seco.) ...É. Cobro de costume.',
+      'Meu avô ancorava barcaça aqui toda semana — sal, farinha e rapadura descendo o rio pra Pedravale. Hoje não desce nem folha.',
+      'O rio não secou de uma vez. Foi minguando, feito gente doente. Começou no mesmo ano em que as Ipê-árvores pararam de florir.',
+    ],
+    questDialogue: [
+      {
+        questId: 'vau_r2_benzedura',
+        when: 'completed',
+        lines: [
+          'O pedágio continua duas moedas. Pra você, uma. (Ele quase sorri.) Não conte pra ninguém.',
+          'Se o rio voltar de verdade, a primeira barcaça que descer vai levar seu nome no casco.',
+        ],
+      },
+      {
+        questId: 'vau_r2_benzedura',
+        lines: [
+          'Ouviu? (Ele inclina a cabeça na direção do leito.) Água. Pouca, mas correndo. Fazia meses.',
+          'Leve a notícia à Benzedeira Quitéria, ali no poço. Ela vai querer ouvir de quem viu — e ela sempre sabe o que a água quer dizer.',
+        ],
+      },
+      {
+        questId: 'vau_r1_teias',
+        lines: [
+          'As tecelãs vieram junto com a seca. Tecem raiz ressequida de uma margem à outra, bem em cima do último fio d\'água que sobrou.',
+          'Rasgue essas teias e derrube as bichas. Se o fio ainda correr, talvez o Vau não morra de vez.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'quiteria_benzedeira',
+    name: 'Benzedeira Quitéria',
+    role: 'Benzedeira do Ancoradouro',
+    // A folk healer who blesses with herbs and prayer — the staff-carrying cleric rig is the healer analog.
+    classAnalogId: 'cleric',
+    zoneId: ANCORADOURO_VAU_ID,
+    // Just north of the square's well (see generateVillageMap's square props),
+    // where she keeps her dried herbs on the well's rim.
+    mapX: vau.cx + Math.ceil(vau.vw / 2),
+    mapY: vau.cy + Math.ceil(vau.vh / 2) - 2,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'coque',
+      hairColor: 0xe8e4dc,
+      skinTone: 0x74492f,
+      primaryColor: 0xe8e0d0,
+      secondaryColor: 0x3f8a5b,
+      bodyType: 'magro',
+      headAccessory: 'bandana',
+    }),
+    dialogue: [
+      '(Uma senhora de lenço na cabeça espalha arruda seca na borda do poço.) Não precisa falar nada, filho(a). O cansaço a gente vê de longe.',
+      'Benzo quebranto, espinhela caída e mau-olhado. Mas o que o rio tem, reza minha nenhuma tira: ele não secou. Está sendo bebido por baixo, pela raiz.',
+      'Em Pedravale acham que benzedeira é superstição de beira de rio. Pode ser. Mas foi a gente de beira de rio que viu a Sede chegar primeiro.',
+    ],
+    questDialogue: [
+      {
+        questId: 'vau_r2_benzedura',
+        when: 'completed',
+        lines: [
+          'O patuá ainda está com você? Bom. Não tire nem pra dormir.',
+          'Se as Raízes do Vau voltaram a beber, é porque alguém ainda lembra delas. Continue lembrando.',
+        ],
+      },
+      {
+        questId: 'vau_r2_benzedura',
+        lines: [
+          '(Ela para de mexer na arruda quando você conta.) Correndo de novo? Então as Raízes do Vau ainda não se entregaram de todo.',
+          'Chegue perto. (Ela passa um ramo verde sobre os seus ombros, murmurando baixo, numa reza que parece mais antiga que ela.) Pronto.',
+          'Leve este patuá. Costurei com fibra do último junco verde que o rio deu. Anda leve quem carrega um pouco d\'água consigo.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'zefa_lavadeira',
+    name: 'Lavadeira Zefa',
+    role: 'Lavadeira do Vau',
+    // A washerwoman with nothing but her own two hands — unarmed monk loadout, same civilian choice as Dona Ilma/Feirante Nilza.
+    classAnalogId: 'monk',
+    zoneId: ANCORADOURO_VAU_ID,
+    // On the square's west side, across from the well.
+    mapX: vau.cx - 4,
+    mapY: vau.cy - 1,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'trancado',
+      hairColor: 0x1c1712,
+      skinTone: 0x93643f,
+      primaryColor: 0x2ea89a,
+      secondaryColor: 0xf2ede1,
+      bodyType: 'robusto',
+    }),
+    dialogue: [
+      'Lavo roupa neste Vau desde menina. Agora lavo com água de poço, carregada no balde — e as pedras de bater ficaram lá, no seco, esperando o rio voltar.',
+      'Quando a água baixou, apareceu de tudo no leito: barco virado, panela, osso. Osso demais pra um rio só. A gente parou de descer lá depois que os ossos começaram a andar.',
+      'Dizem que em Pedravale tem um Escolhido Verde que ouve os mortos. Se for você... pergunte a eles por que o rio foi embora.',
+    ],
+    questDialogue: [
+      {
+        questId: 'vau_r1_teias',
+        when: 'completed',
+        lines: ['(Zefa está de pé na lama rasa do leito, batendo um lençol na pedra.) Pouca água, mas é água de rio. Faz diferença na mão da gente.'],
+      },
+      {
+        questId: 'vau_r1_teias',
+        lines: ['Joaquim te mandou pro leito? Cuidado com as teias — grudam feito seiva e secam em cima da pele.'],
+      },
+    ],
+  },
+);
+
+// --- Baluarte do Amanhecer: a Zeladores-era watch-fort on Ipêra's far
+// frontier, facing the sea, abandoned for generations and now being rebuilt
+// by people from every village. Its quest chain only opens once the story's
+// own climax (the confrontation with Ilva) is behind the player — see
+// SIDE_QUEST_STARTERS — so its lines stay agnostic about which ending they
+// chose, and its default lines (what anyone arriving earlier hears) warn
+// them off instead of assuming they've been through it.
+const baluarte = regionalClearing(BALUARTE_AMANHECER_ID);
+NPC_DEFINITIONS.push(
+  {
+    id: 'jussara_baluarte',
+    name: 'Capitã Jussara',
+    role: 'Comandante do Baluarte do Amanhecer',
+    // The fort's commander — armored sword-and-shield Knight rig, the same silhouette as every guard captain in the game.
+    classAnalogId: 'paladin',
+    zoneId: BALUARTE_AMANHECER_ID,
+    // Just inside the square's north opening, where the road in from
+    // Pedravale arrives — the first person anyone walking in meets.
+    mapX: baluarte.cx + 2,
+    mapY: baluarte.cy - baluarte.vh + 3,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'rabocavalo',
+      hairColor: 0x1c1712,
+      skinTone: 0xb8875a,
+      primaryColor: 0x5a626b,
+      secondaryColor: 0xc98bb0,
+      bodyType: 'musculoso',
+      scarStyle: 'queixo',
+    }),
+    dialogue: [
+      'Baluarte do Amanhecer. Ou o que sobrou dele: meia muralha, uma torre de vigia e muita gente teimosa.',
+      'Os Zeladores ergueram isto aqui para vigiar o mar, porque é o primeiro lugar de Ipêra onde o sol bate. Depois esqueceram por quê — e o mato engoliu o resto.',
+      'Daqui pra fora não tem estrada segura, e o que ronda a muralha não é bicho de campo. Quem chega aqui ainda com assunto por terminar em Pedravale, eu mando de volta. Termine o que a Sede começou por lá — depois conversamos.',
+    ],
+    questDialogue: [
+      {
+        questId: 'baluarte_r3_cisterna',
+        when: 'completed',
+        lines: [
+          'Muralha de pé, cisterna cheia, vigia na torre toda noite. Faz três gerações que ninguém pode dizer isso deste lugar.',
+          'O que vier do mar vai encontrar gente acordada. Não é vitória — é só o começo de uma. Por hoje, basta.',
+        ],
+      },
+      {
+        questId: 'baluarte_r3_cisterna',
+        lines: [
+          'Colossos ressequidos descendo da mata, direto pra nossa cisterna. É a última água limpa entre aqui e o mar — eles sentem o cheiro dela de longe.',
+          'Se a cisterna cai, cai o Baluarte. E aí não sobra ninguém de pé para ver chegar o que a Inaê viu na praia.',
+        ],
+      },
+      {
+        questId: 'baluarte_r2_batedora',
+        lines: [
+          'A muralha segura. Agora quero saber o que exatamente ela está segurando lá fora.',
+          'A Batedora Inaê voltou da costa ontem e não disse uma palavra a ninguém. Fale com ela — talvez fale com você.',
+        ],
+      },
+      {
+        questId: 'baluarte_r1_muralha',
+        lines: [
+          'Você enfrentou a Semeadora e voltou para contar. Seja lá o que decidiu lá dentro, a Sede aqui na fronteira não ficou sabendo.',
+          'Os guardiões de pedra rachada derrubam de noite o trecho de muralha que a gente assenta de dia. Sem muralha, não tem Baluarte — só gente teimosa ao relento.',
+        ],
+      },
+      {
+        questId: 'act3_q2_confront',
+        when: 'completed',
+        lines: [
+          'Ouvi falar do que aconteceu diante da Semeadora. Então é você.',
+          'Tenho trabalho de verdade para quem aguenta — mas quero você de mãos livres. Termine a missão que ainda carrega e volte a falar comigo.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'tome_pedreiro',
+    name: 'Mestre-de-Obras Tomé',
+    role: 'Pedreiro do Baluarte',
+    // A stonemason hauling blocks all day — the rugged Barbarian rig, same working-hands choice as Ferreira Elira.
+    classAnalogId: 'warrior',
+    zoneId: BALUARTE_AMANHECER_ID,
+    // Just north of the square's old fountain (see generateVillageMap's
+    // developed-village fountain), the one Zeladores-era piece still standing.
+    mapX: baluarte.cx - 4,
+    mapY: baluarte.cy - Math.max(3, baluarte.vh - 4) - 1,
+    appearance: npcAppearance({
+      hairStyle: 'careca',
+      facialHair: 'completa',
+      hairColor: 0x7a5233,
+      skinTone: 0xd2a679,
+      primaryColor: 0x9a6a3a,
+      secondaryColor: 0x5a626b,
+      bodyType: 'musculoso',
+      tattooStyle: 'ambosbracos',
+    }),
+    dialogue: [
+      'Cada pedra desta muralha eu assentei duas vezes. Uma pra erguer, outra depois que um guardião de pedra rachada passou por cima.',
+      'Veio gente de todo canto ajudar: refugiado do Forte de Ferro, peregrino do Santuário da Aurora, até monge descido da serra. Muita gente aqui não tem mais casa pra voltar — então a gente constrói uma.',
+      'Esta fonte é a única coisa que os Zeladores deixaram inteira. O resto, estamos inventando de novo.',
+    ],
+    questDialogue: [
+      {
+        questId: 'baluarte_r1_muralha',
+        when: 'completed',
+        lines: ['Três trechos de muralha de pé numa semana só. Nunca achei que ia ver isso de novo antes de ficar velho demais pra carregar pedra.'],
+      },
+      {
+        questId: 'baluarte_r1_muralha',
+        lines: [
+          'Os guardiões de pedra não atacam a gente — atacam a muralha. Como se reconhecessem nela alguma coisa que eles mesmos já foram, um dia.',
+          'Derrube-os antes que derrubem mais um trecho. O resto eu resolvo com argamassa.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'inae_batedora',
+    name: 'Batedora Inaê',
+    role: 'Batedora do Baluarte',
+    // The fort's scout, just back from the coast — bow-carrying archer rig.
+    classAnalogId: 'archer',
+    zoneId: BALUARTE_AMANHECER_ID,
+    // Just north of the square's cistern (generateVillageMap's well prop) — the
+    // water the bastion's last quest is about keeping.
+    mapX: baluarte.cx + Math.ceil(baluarte.vw / 2),
+    mapY: baluarte.cy + Math.ceil(baluarte.vh / 2) - 2,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'trancado',
+      hairColor: 0x2e2620,
+      skinTone: 0x74492f,
+      eyeColor: 0x4a9a5a,
+      primaryColor: 0x3f6a5a,
+      secondaryColor: 0x9a6a3a,
+      bodyType: 'esbelto',
+      tattooStyle: 'rosto',
+    }),
+    dialogue: [
+      '(Uma mulher com lama seca até os joelhos limpa uma flecha na manga.) Não repare. Voltei da costa agora e ainda não tirei o sal da roupa.',
+      'Daqui até o mar é mata fechada e raiz queimada. Não queimada de fogo — queimada de sede.',
+    ],
+    questDialogue: [
+      {
+        questId: 'baluarte_r3_cisterna',
+        when: 'completed',
+        lines: ['Volto pra costa quando a maré baixar. Alguém precisa estar lá quando chegar o que vem depois das raízes.'],
+      },
+      {
+        questId: 'baluarte_r3_cisterna',
+        lines: ['A Capitã acha que os colossos vêm atrás da cisterna. Eu acho que vêm fugindo de alguma coisa. As duas coisas podem ser verdade.'],
+      },
+      {
+        questId: 'baluarte_r2_batedora',
+        lines: [
+          'Foi a Capitã que te mandou? Então escute bem, porque não gosto de repetir isto.',
+          'A maré trouxe raízes para a praia. Raízes de ipê, grossas feito braço — só que nenhum ipê de Ipêra cresce daquele jeito. Encostei a mão numa. Ela não falava a nossa língua.',
+          '(Ela esfrega a palma na calça, como se ainda sentisse.) Igual ao que contam da coisa sem voz lá no fundo da Fenda da Raiz Silenciosa. Não é daqui. Vem do outro lado do mar.',
         ],
       },
     ],

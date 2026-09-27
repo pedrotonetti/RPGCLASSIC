@@ -34,6 +34,14 @@ export interface ZoneDefinition {
   monsterIds?: string[];
   monsterCount: number;
   /**
+   * Character level this zone is meant for — shown on the world map (see
+   * ui/worldMapLayout.ts) as a soft guide, never an enforced gate, exactly
+   * like `DungeonDefinition.recommendedLevel` at a dungeon's portal. Nothing
+   * in this game hard-gates entering a zone by level. Set only on the
+   * regional settlements so far.
+   */
+  recommendedLevel?: number;
+  /**
    * Set for a dungeon instance's own linear-corridor zone (see
    * `data/dungeons.ts`) — when present, `OverworldScreen` spawns this
    * dungeon's fixed encounter pods and boss (via
@@ -108,19 +116,145 @@ function buildClassVillageZones(): Record<string, ZoneDefinition> {
   return zones;
 }
 
-function mainCityExits(): ZoneExit[] {
-  return MAIN_CITY_GATES.map((gate) => {
-    const theme = getClassZoneTheme(gate.classId);
-    const secondarySize = SECONDARY_VILLAGE_SIZE;
-    return {
-      atTile: { x: gate.x, y: gate.y },
-      toZone: theme.secondaryVillageId,
-      arriveTile: { x: Math.floor(secondarySize.width / 2), y: secondarySize.height - 3 },
+/**
+ * Settlements that belong to no single class — every class reaches them
+ * the same way, from Pedravale, instead of through its own territory. Each
+ * is an ordinary `ZoneDefinition` built from the same `generateVillageMap`
+ * every class village uses (see buildRegionalSettlementZones), with one road
+ * (its north gate) back to its own gate on Pedravale's border — see
+ * MapGenerator's MAIN_CITY_REGIONAL_GATES, keyed by this same `zoneId`.
+ *
+ *  - 'satellite': a small settlement just outside Pedravale itself, for a
+ *    character who has reached the city but not gone far past it yet.
+ *  - 'hub': a regional hub further out — the first place with real content
+ *    past the current story's own climax.
+ *
+ * Monster pools reuse existing `data/enemies.ts` ids only, picked by each
+ * enemy's own `level` tier. The difficulty lever here is density (see
+ * config/balance.ts: a single same-level trash mob is a short fight, a pair
+ * costs a real chunk of HP, a pack of three is genuinely dangerous), set
+ * against each class village's own ~1 monster per ~310-350 tiles:
+ *
+ *  - Ancoradouro do Vau: skeleton/giant_spider/orc/fire_elemental (tiers
+ *    6-9) — one step past the tier 3-8 pools every class's secondary village
+ *    fields, right for the roughly level 8-14 character who has just reached
+ *    Pedravale. ~1 per 260 tiles: a little busier than a class village, so
+ *    pairs happen, but still mostly single fights.
+ *  - Baluarte do Amanhecer: fire_elemental/troll/stone_golem (tiers 9-11),
+ *    the three toughest regular enemies in the game. `young_dragon` is
+ *    deliberately left out: it's `isBoss` (boss HP curve, boss banner, boss
+ *    loot odds) and it IS the story's own one-of-a-kind corrupted guardian
+ *    (q6_dragon) — scattering dozens of them would cheapen that fight and
+ *    flood the HUD with boss banners. The regular tiers top out at 11, below
+ *    a level-20+ character, so this zone leans on density instead: ~1 per 245
+ *    tiles, the densest open-world field in the game (still no more monsters
+ *    in total than Pedravale's own 65), so pairs and packs of three — the
+ *    fights config/balance.ts measured as genuinely dangerous — are routine
+ *    here instead of occasional.
+ */
+export type RegionalSettlementKind = 'satellite' | 'hub';
+
+export interface RegionalSettlement {
+  /** This settlement's zone id — also its own gate's id in MapGenerator's MAIN_CITY_GATES. */
+  zoneId: string;
+  name: string;
+  kind: RegionalSettlementKind;
+  /** See ZoneDefinition.recommendedLevel — a soft guide only. */
+  recommendedLevel: number;
+  size: { width: number; height: number };
+  /** Must not collide with any other generated map's seed (class villages 4000-4007/5000-5007, dungeons 9001+, Pedravale 1337). */
+  seed: number;
+  treeCount: number;
+  development: 'sparse' | 'developed';
+  accentColor: number;
+  monsterIds: string[];
+  monsterCount: number;
+}
+
+export const ANCORADOURO_VAU_ID = 'ancoradouro_vau';
+export const BALUARTE_AMANHECER_ID = 'baluarte_amanhecer';
+
+export const REGIONAL_SETTLEMENTS: RegionalSettlement[] = [
+  {
+    zoneId: ANCORADOURO_VAU_ID,
+    name: 'Ancoradouro do Vau',
+    kind: 'satellite',
+    recommendedLevel: 8,
+    // Smaller than even a class's starting village — a hamlet, not a town.
+    size: { width: 90, height: 70 },
+    seed: 6001,
+    treeCount: 330,
+    development: 'sparse',
+    // Dry river-clay ochre: the ford this hamlet was built on has all but
+    // dried up under the Sede (see its NPCs in data/npcs.ts).
+    accentColor: 0xb3925a,
+    monsterIds: ['skeleton', 'giant_spider', 'orc', 'fire_elemental'],
+    monsterCount: 24,
+  },
+  {
+    zoneId: BALUARTE_AMANHECER_ID,
+    name: 'Baluarte do Amanhecer',
+    kind: 'hub',
+    recommendedLevel: 20,
+    size: { width: 140, height: 105 },
+    seed: 6002,
+    // Denser than any class village (~6% of tiles vs ~4.5-5%): the forest
+    // is still pressing in on a fort nobody has kept up for generations.
+    treeCount: 900,
+    // 'developed' for its landmark tower (the bastion's watchtower) and its
+    // square's fountain; everything else about it is a frontier outpost.
+    development: 'developed',
+    // A cold rose dawn — muted to a dusty, ashen green on the ground.
+    accentColor: 0xc98bb0,
+    monsterIds: ['fire_elemental', 'troll', 'stone_golem'],
+    monsterCount: 60,
+  },
+];
+
+export function getRegionalSettlement(zoneId: string): RegionalSettlement {
+  const found = REGIONAL_SETTLEMENTS.find((s) => s.zoneId === zoneId);
+  if (!found) throw new Error(`Assentamento regional desconhecido: ${zoneId}`);
+  return found;
+}
+
+/** Where someone arriving from Pedravale lands in a regional settlement: just inside its north gate. */
+function regionalArrivalTile(settlement: RegionalSettlement): { x: number; y: number } {
+  return { x: Math.floor(settlement.size.width / 2), y: 2 };
+}
+
+function buildRegionalSettlementZones(): Record<string, ZoneDefinition> {
+  const zones: Record<string, ZoneDefinition> = {};
+  for (const s of REGIONAL_SETTLEMENTS) {
+    zones[s.zoneId] = {
+      id: s.zoneId,
+      name: s.name,
+      accentColor: s.accentColor,
+      monsterIds: s.monsterIds,
+      monsterCount: s.monsterCount,
+      recommendedLevel: s.recommendedLevel,
+      generate: () =>
+        generateVillageMap({ ...s.size, seed: s.seed, hasNorthGate: true, hasSouthGate: false, treeCount: s.treeCount, development: s.development }),
+      exits: [{ atTile: { x: Math.floor(s.size.width / 2), y: 0 }, toZone: MAIN_CITY_ID, arriveTile: mainCityArrivalTile(s.zoneId) }],
     };
-  });
+  }
+  return zones;
+}
+
+/** Where one of Pedravale's gates leads: a regional settlement (gate id = its zone id) or a class's own secondary village (gate id = that class id). */
+function mainCityGateDestination(gateId: string): Pick<ZoneExit, 'toZone' | 'arriveTile'> {
+  const settlement = REGIONAL_SETTLEMENTS.find((s) => s.zoneId === gateId);
+  if (settlement) return { toZone: settlement.zoneId, arriveTile: regionalArrivalTile(settlement) };
+  const theme = getClassZoneTheme(gateId);
+  const secondarySize = SECONDARY_VILLAGE_SIZE;
+  return { toZone: theme.secondaryVillageId, arriveTile: { x: Math.floor(secondarySize.width / 2), y: secondarySize.height - 3 } };
+}
+
+function mainCityExits(): ZoneExit[] {
+  return MAIN_CITY_GATES.map((gate) => ({ atTile: { x: gate.x, y: gate.y }, ...mainCityGateDestination(gate.id) }));
 }
 
 const CLASS_VILLAGE_ZONES = buildClassVillageZones();
+const REGIONAL_SETTLEMENT_ZONES = buildRegionalSettlementZones();
 
 /** A sickly, corrupted-root tint distinct from every village's own accent and from the main city's plain grass green — every dungeon shares it so an instance always reads as "not open-world" the instant it loads. */
 const DUNGEON_ACCENT = 0x5a4a6e;
@@ -155,6 +289,7 @@ export const ZONE_DEFINITIONS: Record<string, ZoneDefinition> = {
     monsterCount: 65,
   },
   ...CLASS_VILLAGE_ZONES,
+  ...REGIONAL_SETTLEMENT_ZONES,
   ...DUNGEON_ZONES,
 };
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CLASS_ZONE_THEMES } from '../data/classZones';
 import { DUNGEON_DEFINITIONS } from '../data/dungeons';
-import { MAIN_CITY_ID } from '../data/zones';
+import { ANCORADOURO_VAU_ID, BALUARTE_AMANHECER_ID, MAIN_CITY_ID, REGIONAL_SETTLEMENTS } from '../data/zones';
 import {
   buildWorldMapLayout,
   hexString,
@@ -19,8 +19,8 @@ const linked = (a: string, b: string) => linkKeys.has([a, b].sort().join('|'));
 const dist = (a: WorldMapPoint, b: WorldMapPoint) => Math.hypot(a.x - b.x, a.y - b.y);
 
 describe('world map layout', () => {
-  it('shows Pedravale plus every class’s secondary and starting village, once each', () => {
-    expect(layout.nodes).toHaveLength(1 + CLASS_ZONE_THEMES.length * 2);
+  it('shows Pedravale plus every class’s secondary and starting village, and each regional settlement, once each', () => {
+    expect(layout.nodes).toHaveLength(1 + CLASS_ZONE_THEMES.length * 2 + REGIONAL_SETTLEMENTS.length);
     expect(new Set(layout.nodes.map((n) => n.zoneId)).size).toBe(layout.nodes.length);
     expect(nodeById.get(MAIN_CITY_ID)?.name).toBe('Pedravale');
     for (const theme of CLASS_ZONE_THEMES) {
@@ -35,8 +35,11 @@ describe('world map layout', () => {
     expect(capital.landscape).toEqual({ x: 0.5, y: 0.5 });
   });
 
-  it('draws exactly the roads the real zone exits create: Pedravale to each secondary village, each secondary to its own start village', () => {
-    expect(layout.links).toHaveLength(CLASS_ZONE_THEMES.length * 2);
+  it('draws exactly the roads the real zone exits create: Pedravale to each secondary village, each secondary to its own start village, Pedravale to each regional settlement', () => {
+    expect(layout.links).toHaveLength(CLASS_ZONE_THEMES.length * 2 + REGIONAL_SETTLEMENTS.length);
+    for (const settlement of REGIONAL_SETTLEMENTS) {
+      expect(linked(MAIN_CITY_ID, settlement.zoneId), settlement.zoneId).toBe(true);
+    }
     for (const theme of CLASS_ZONE_THEMES) {
       expect(linked(MAIN_CITY_ID, theme.secondaryVillageId)).toBe(true);
       expect(linked(theme.secondaryVillageId, theme.startVillageId)).toBe(true);
@@ -83,6 +86,48 @@ describe('world map layout', () => {
           const b = rects[j];
           const overlap = a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
           expect(overlap).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('shows both regional settlements as their own classless node kinds, with their soft level guide and a readable tint', () => {
+    expect(nodeById.get(ANCORADOURO_VAU_ID)).toMatchObject({ kind: 'satellite', classId: null, name: 'Ancoradouro do Vau', recommendedLevel: 8 });
+    expect(nodeById.get(BALUARTE_AMANHECER_ID)).toMatchObject({ kind: 'hub', classId: null, name: 'Baluarte do Amanhecer', recommendedLevel: 20 });
+    for (const settlement of REGIONAL_SETTLEMENTS) {
+      const node = nodeById.get(settlement.zoneId)!;
+      const hex = parseInt(node.displayHex!.slice(1), 16);
+      expect(relativeLuminance([(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff])).toBeGreaterThanOrEqual(MIN_ACCENT_LUMINANCE);
+    }
+  });
+
+  it('places the satellite hamlet right beside Pedravale and the frontier hub further out, both in the strip no class territory uses', () => {
+    const capital = nodeById.get(MAIN_CITY_ID)!;
+    const satellite = nodeById.get(ANCORADOURO_VAU_ID)!;
+    const hub = nodeById.get(BALUARTE_AMANHECER_ID)!;
+    for (const o of ['portrait', 'landscape'] as const) {
+      expect(dist(satellite[o], capital[o]), o).toBeLessThan(dist(hub[o], capital[o]));
+      for (const n of [satellite, hub]) {
+        expect(n[o].x).toBeGreaterThan(0);
+        expect(n[o].x).toBeLessThan(1);
+        expect(n[o].y).toBeGreaterThan(0);
+        expect(n[o].y).toBeLessThan(1);
+        for (const t of layout.territories) {
+          const r = t[o];
+          const inside = n[o].x > r.x0 && n[o].x < r.x1 && n[o].y > r.y0 && n[o].y < r.y1;
+          expect(inside, `${n.zoneId} inside ${t.classId}'s territory (${o})`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('never stacks two settlements on the same spot', () => {
+    for (const o of ['portrait', 'landscape'] as const) {
+      for (let i = 0; i < layout.nodes.length; i++) {
+        for (let j = i + 1; j < layout.nodes.length; j++) {
+          const a = layout.nodes[i];
+          const b = layout.nodes[j];
+          expect(dist(a[o], b[o]), `${a.zoneId} vs ${b.zoneId} (${o})`).toBeGreaterThan(0.1);
         }
       }
     }

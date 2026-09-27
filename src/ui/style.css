@@ -910,8 +910,27 @@ body {
 .wm-node.secondary {
   border-width: 2px;
 }
+/* The regional settlements (data/zones.ts's REGIONAL_SETTLEMENTS): the
+   hamlet just outside Pedravale is a small card like a start village's; the
+   frontier hub gets a double-ruled border, a fortified line. Both carry
+   their own zone's tint as --wm-color (set in worldMap.ts). */
+.wm-node.satellite {
+  width: 21%;
+}
+.wm-node.hub {
+  border-style: double;
+  border-width: 3px;
+}
+/* "Nv. 20+" — a soft level guide under a regional settlement's name. */
+.wm-node-level {
+  color: var(--wm-color, var(--text-dim));
+}
+/* Was 46% — narrowed so the strip beside it (worldMapLayout.ts's
+   REGIONAL_POSITIONS) has room for the regional settlements' own cards AND
+   a visible road into each: a short one to the hamlet on the right, a
+   longer one out to the frontier on the left. "Pedravale" still fits. */
 .wm-node.capital {
-  width: 46%;
+  width: 34%;
   gap: 3px;
   padding: 6px 6px 7px;
   background: #2b2138;
@@ -1035,7 +1054,8 @@ body {
     padding: 4px 6px;
     text-align: left;
   }
-  .wm-node.start {
+  .wm-node.start,
+  .wm-node.satellite {
     width: 11%;
   }
   .wm-node.capital {

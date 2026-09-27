@@ -5,7 +5,8 @@ import { buildWorldMapLayout, worldMapFocusZone, type WorldMapNode, type WorldMa
 /**
  * "Mapa Mundi" — a read-only, bird's-eye diagram of the whole world's
  * settlement layout (Pedravale in the middle, every class's secondary and
- * starting village radiating out from it), as opposed to the per-zone
+ * starting village radiating out from it, plus the classless regional
+ * settlements beside and beyond it), as opposed to the per-zone
  * minimap's local terrain. Plain DOM + one tiny inline SVG per orientation
  * for the roads: no canvas, no images, no per-frame work — it's built once
  * (lazily, the first time it's opened) and only shown/hidden after that.
@@ -65,6 +66,34 @@ function castleIcon(className = 'wm-node-icon'): SVGSVGElement {
   ]);
 }
 
+/** A small hut above two lines of water — a riverside hamlet just outside Pedravale (the 'satellite' regional settlement). */
+function fordHutIcon(className = 'wm-node-icon'): SVGSVGElement {
+  const wave = { fill: 'none', stroke: 'currentColor', 'stroke-width': 1.2, 'stroke-linecap': 'round' };
+  return iconSvg('0 0 16 16', className, [
+    svg('path', { d: 'M3 7.4 L8 2.6 L13 7.4 Z', fill: 'currentColor' }),
+    svg('rect', { x: 4.4, y: 7.4, width: 7.2, height: 4.2, fill: 'currentColor' }),
+    svg('rect', { x: 7, y: 8.9, width: 2, height: 2.7, fill: DOOR }),
+    svg('path', { d: 'M1.2 13.4 Q3 12.3 4.8 13.4 T8.4 13.4 T12 13.4 T15.2 13.2', ...wave }),
+    svg('path', { d: 'M2.8 15.3 Q4.6 14.2 6.4 15.3 T10 15.3 T13.4 15.2', ...wave, 'stroke-opacity': 0.6 }),
+  ]);
+}
+
+/** A pointed-stake palisade with a gate and a dawn-colored pennant — a frontier outpost (the 'hub' regional settlement). */
+function palisadeIcon(className = 'wm-node-icon'): SVGSVGElement {
+  const stakes: SVGElement[] = [];
+  for (const x of [0.8, 3.8, 9.8, 12.8]) {
+    stakes.push(svg('path', { d: `M${x} 15 V8.4 L${x + 1.2} 6.6 L${x + 2.4} 8.4 V15 Z`, fill: 'currentColor' }));
+  }
+  return iconSvg('0 0 16 16', className, [
+    ...stakes,
+    // The gatehouse between the stakes, taller, carrying the pennant.
+    svg('path', { d: 'M6.6 15 V6.8 H9.4 V15 Z', fill: 'currentColor' }),
+    svg('path', { d: 'M8 6.8 V0.8', stroke: 'currentColor', 'stroke-width': 0.8 }),
+    svg('path', { d: 'M8.2 0.8 L12.2 2 L8.2 3.2 Z', fill: '#f2a65a' }),
+    svg('path', { d: 'M7.1 15 V12.2 A0.9 0.9 0 0 1 8.9 12.2 V15 Z', fill: DOOR }),
+  ]);
+}
+
 /** Globe — the HUD badge that opens this map (see OverworldScreen.buildMinimap). */
 export function buildGlobeIconSvg(): SVGSVGElement {
   const stroke = { fill: 'none', stroke: 'currentColor', 'stroke-width': 1.4 };
@@ -79,12 +108,16 @@ const ICON_FOR_KIND: Record<WorldMapNodeKind, (className?: string) => SVGSVGElem
   capital: castleIcon,
   secondary: towerIcon,
   start: hutIcon,
+  satellite: fordHutIcon,
+  hub: palisadeIcon,
 };
 
 const KIND_LABEL: Record<WorldMapNodeKind, string> = {
   capital: 'cidade principal',
   secondary: 'vila secundária',
   start: 'vila inicial',
+  satellite: 'povoado',
+  hub: 'posto de fronteira',
 };
 
 const pct = (f: number) => `${(f * 100).toFixed(2)}%`;
@@ -173,7 +206,9 @@ export function buildWorldMapOverlay(opts: WorldMapOverlayOptions): WorldMapOver
   const nodeEl = (n: WorldMapNode): HTMLElement => {
     const territory = n.classId ? territoryByClass.get(n.classId) : undefined;
     const current = n.zoneId === focusZoneId;
-    const describe = territory ? `${n.name} — ${KIND_LABEL[n.kind]} (${territory.className})` : `${n.name} — ${KIND_LABEL[n.kind]}`;
+    const hasLevel = n.recommendedLevel !== undefined;
+    const levelText = hasLevel ? `Nv. ${n.recommendedLevel}+` : null;
+    const describe = `${n.name} — ${KIND_LABEL[n.kind]}${territory ? ` (${territory.className})` : ''}${hasLevel ? ` · nível recomendado ${n.recommendedLevel}` : ''}`;
     const node = el(
       'div',
       {
@@ -185,6 +220,8 @@ export function buildWorldMapOverlay(opts: WorldMapOverlayOptions): WorldMapOver
         el('div', { className: 'wm-node-text' }, [
           el('div', { className: 'wm-node-name', text: n.name }),
           n.kind === 'capital' ? el('div', { className: 'wm-node-sub', text: 'Cidade principal' }) : null,
+          // A soft level guide, like a dungeon portal's "Nv. recomendado" — never a gate.
+          levelText ? el('div', { className: 'wm-node-sub wm-node-level', text: levelText }) : null,
         ]),
         current ? el('span', { className: 'wm-pin', attrs: { 'aria-label': 'Você está aqui' } }) : null,
       ],
@@ -192,7 +229,9 @@ export function buildWorldMapOverlay(opts: WorldMapOverlayOptions): WorldMapOver
     setPointVars(node, n.portrait, n.landscape);
     // The class's real in-world accent wherever it's bright enough to read
     // on the dark panel — only the near-black ones get lifted (see readableAccent).
-    if (territory) node.style.setProperty('--wm-color', territory.displayHex);
+    // A classless regional settlement carries its own, computed the same way.
+    const color = territory?.displayHex ?? n.displayHex;
+    if (color) node.style.setProperty('--wm-color', color);
     return node;
   };
 
@@ -214,6 +253,8 @@ export function buildWorldMapOverlay(opts: WorldMapOverlayOptions): WorldMapOver
     legendItem(castleIcon('wm-legend-icon capital'), 'Cidade principal'),
     legendItem(towerIcon('wm-legend-icon'), 'Vila secundária'),
     legendItem(hutIcon('wm-legend-icon'), 'Vila inicial'),
+    legendItem(fordHutIcon('wm-legend-icon'), 'Povoado'),
+    legendItem(palisadeIcon('wm-legend-icon'), 'Fronteira'),
     legendItem(el('span', { className: 'wm-pin static' }), 'Você está aqui'),
     legendItem(el('span', { className: 'wm-legend-star', text: '★' }), 'Sua classe'),
   ]);

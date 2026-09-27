@@ -613,3 +613,66 @@ describe('concurrent main-chain + side quest tracking', () => {
     expect(player.completedQuestIds).toContain('contrato_troll_lagoa');
   });
 });
+
+describe('regional settlements\' side chains', () => {
+  it('Ancoradouro do Vau: offered by Joaquim only once the player has reached Pedravale (q1_awaken), then runs kill -> talk to Quitéria', () => {
+    const player = freshPlayer();
+    expect(offerSideQuest(player, 'joaquim_vau')).toBeNull();
+    expect(player.sideQuestId).toBeNull();
+
+    player.completedQuestIds.push('q1_awaken');
+    player.activeQuestId = 'q4_goblin_hunt'; // the main chain keeps its own slot throughout (goblins only — untouched by anything below)
+    expect(offerSideQuest(player, 'joaquim_vau')).not.toBeNull();
+    expect(player.sideQuestId).toBe('vau_r1_teias');
+
+    for (let i = 0; i < 4; i++) notifyEnemyDefeated(player, 'giant_spider');
+    expect(player.sideQuestId).toBe('vau_r1_teias');
+    notifyEnemyDefeated(player, 'giant_spider');
+    expect(player.sideQuestId).toBe('vau_r2_benzedura');
+    expect(getFactionReputation(player.worldState, 'pedravale')).toBe(3);
+
+    // Talking to the giver again doesn't complete it — only Quitéria does.
+    expect(notifyTalkedTo(player, 'joaquim_vau')).toBeNull();
+    const bagBefore = player.bag.length;
+    expect(notifyTalkedTo(player, 'quiteria_benzedeira')).not.toBeNull();
+    expect(player.sideQuestId).toBeNull();
+    expect(player.completedQuestIds).toEqual(expect.arrayContaining(['vau_r1_teias', 'vau_r2_benzedura']));
+    expect(player.bag.length).toBe(bagBefore + 1);
+    expect(player.activeQuestId).toBe('q4_goblin_hunt');
+
+    // One-and-done: not offered a second time.
+    expect(offerSideQuest(player, 'joaquim_vau')).toBeNull();
+  });
+
+  it('Baluarte do Amanhecer: stays closed until the story\'s climax (act3_q2_confront) is behind the player — q6_dragon alone is not enough', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push('q1_awaken', 'q6_dragon', 'act3_q8_gathering');
+    expect(offerSideQuest(player, 'jussara_baluarte')).toBeNull();
+
+    player.completedQuestIds.push('act3_q2_confront');
+    expect(offerSideQuest(player, 'jussara_baluarte')).not.toBeNull();
+    expect(player.sideQuestId).toBe('baluarte_r1_muralha');
+  });
+
+  it('Baluarte do Amanhecer: runs golems -> talk to Inaê -> trolls, paying out more than any Ato 3 quest', () => {
+    const player = freshPlayer();
+    player.completedQuestIds.push('act3_q2_confront');
+    offerSideQuest(player, 'jussara_baluarte');
+
+    for (let i = 0; i < 6; i++) notifyEnemyDefeated(player, 'stone_golem');
+    expect(player.sideQuestId).toBe('baluarte_r2_batedora');
+    notifyTalkedTo(player, 'inae_batedora');
+    expect(player.sideQuestId).toBe('baluarte_r3_cisterna');
+    // Only trolls count toward the last leg.
+    notifyEnemyDefeated(player, 'stone_golem');
+    expect(player.questProgress['baluarte_r3_cisterna'] ?? 0).toBe(0);
+    const bagBefore = player.bag.length;
+    for (let i = 0; i < 5; i++) notifyEnemyDefeated(player, 'troll');
+    expect(player.sideQuestId).toBeNull();
+    expect(player.bag.length).toBe(bagBefore + 1);
+    expect(player.worldState.completedEvents['baluarte_amanhecer_reerguido']).toBe(true);
+
+    const act3Best = Math.max(...['act3_q1_trail', 'act3_q9_final_march', 'act3_q2_confront'].map((id) => getQuestById(id)!.rewardXp));
+    expect(getQuestById('baluarte_r3_cisterna')!.rewardXp).toBeGreaterThan(act3Best);
+  });
+});

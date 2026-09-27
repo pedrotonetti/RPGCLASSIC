@@ -188,12 +188,18 @@ plugar um serviço real (Firebase/Supabase/API própria) exigiria só trocar
 Cada classe nasce na própria vila inicial (monstros fracos, primeiras
 missões), evolui para uma vila secundária ainda ligada ao território da
 classe (monstros mais fortes) e por fim chega a Pedravale, a cidade
-principal compartilhada por todas as classes — 17 zonas no total
-(`src/data/zones.ts`, `data/classZones.ts`), todas geradas por um único
-gerador de mapa paramétrico (`generateVillageMap` em
-`systems/MapGenerator.ts`) diferenciado por cor de destaque, NPCs e pool de
-monstros. Atravessar um portão entre zonas recarrega o `Overworld` na nova
-zona (ver `OverworldScreen.transitionToZone`).
+principal compartilhada por todas as classes — 17 zonas
+(`src/data/zones.ts`, `data/classZones.ts`). Além delas, dois assentamentos
+regionais que não pertencem a classe nenhuma saem direto de Pedravale
+(`REGIONAL_SETTLEMENTS` em `data/zones.ts`): o **Ancoradouro do Vau**, um
+povoado logo fora da cidade (nível recomendado 8), e o **Baluarte do
+Amanhecer**, um posto de fronteira para depois do clímax da história (nível
+recomendado 20) — cada um com seus NPCs e uma pequena cadeia de missões
+opcionais. Todas as vilas são geradas por um único gerador de mapa
+paramétrico (`generateVillageMap` em `systems/MapGenerator.ts`) diferenciado
+por cor de destaque, NPCs e pool de monstros. Atravessar um portão entre
+zonas recarrega o `Overworld` na nova zona (ver
+`OverworldScreen.transitionToZone`).
 
 ## NPCs, vendedores e missões
 

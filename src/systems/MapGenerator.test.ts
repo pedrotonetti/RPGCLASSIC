@@ -10,9 +10,13 @@ import {
   MAP_HEIGHT,
   BUILDING_FOOTPRINTS,
   MAIN_CITY_SHOPS,
+  mainCityGateStubTiles,
 } from './MapGenerator';
 import { CLASS_ZONE_THEMES } from '../data/classZones';
+import { DUNGEON_DEFINITIONS } from '../data/dungeons';
+import { getEnemyById } from '../data/enemies';
 import { NPC_DEFINITIONS } from '../data/npcs';
+import { MAIN_CITY_ID, REGIONAL_SETTLEMENTS, ZONE_DEFINITIONS } from '../data/zones';
 import { isWalkable, TileType } from '../config/tiles';
 
 /** Flood-fills from `from` over every walkable tile, for connectivity checks. */
@@ -45,6 +49,13 @@ function footprintCells(buildings: Array<{ x: number; y: number; w: number; h: n
   return cells;
 }
 
+/** Every tile reachable on foot from the map's own spawn, with building/prop footprints counted as solid (they block movement in-game even though their tiles are Path). */
+function reachableFromSpawn(map: { tiles: TileType[][]; buildings: Array<{ x: number; y: number; w: number; h: number }>; playerStart: { x: number; y: number } }): Set<string> {
+  const occupied = footprintCells(map.buildings);
+  const open = map.tiles.map((row, y) => row.map((t, x) => (occupied.has(`${x},${y}`) ? TileType.Tree : t)));
+  return reachableTiles(open, map.playerStart);
+}
+
 describe('MapGenerator (procedural buildings)', () => {
   it('main city has the expected dimensions and every NPC/gate/arrival tile stays walkable and clear of buildings', () => {
     const { tiles, buildings } = generateOverworldMap();
@@ -59,11 +70,11 @@ describe('MapGenerator (procedural buildings)', () => {
     }
 
     for (const gate of MAIN_CITY_GATES) {
-      expect(isWalkable(tileAt(tiles, gate.x, gate.y)), `gate ${gate.classId}`).toBe(true);
+      expect(isWalkable(tileAt(tiles, gate.x, gate.y)), `gate ${gate.id}`).toBe(true);
       expect(occupied.has(`${gate.x},${gate.y}`)).toBe(false);
-      const arrive = mainCityArrivalTile(gate.classId);
-      expect(isWalkable(tileAt(tiles, arrive.x, arrive.y)), `arrival ${gate.classId}`).toBe(true);
-      expect(occupied.has(`${arrive.x},${arrive.y}`), `arrival ${gate.classId} inside a building`).toBe(false);
+      const arrive = mainCityArrivalTile(gate.id);
+      expect(isWalkable(tileAt(tiles, arrive.x, arrive.y)), `arrival ${gate.id}`).toBe(true);
+      expect(occupied.has(`${arrive.x},${arrive.y}`), `arrival ${gate.id} inside a building`).toBe(false);
     }
   });
 
@@ -137,7 +148,7 @@ describe('MapGenerator (procedural buildings)', () => {
         expect(d, `${city[i].id} vs ${city[j].id}`).toBeGreaterThanOrEqual(2);
       }
     }
-    const reservedTiles = [playerStart, ...MAIN_CITY_GATES.map((g) => mainCityArrivalTile(g.classId))];
+    const reservedTiles = [playerStart, ...MAIN_CITY_GATES.map((g) => mainCityArrivalTile(g.id))];
     for (const npc of city) {
       for (const t of reservedTiles) expect(npc.mapX === t.x && npc.mapY === t.y, `${npc.id} on ${t.x},${t.y}`).toBe(false);
     }
@@ -153,11 +164,91 @@ describe('MapGenerator (procedural buildings)', () => {
     }
   });
 
+  it('every gate out of Pedravale — class and regional — has its whole stub open and clear of buildings, and is reachable from the zone spawn', () => {
+    const map = generateOverworldMap();
+    const occupied = footprintCells(map.buildings);
+    const reachable = reachableFromSpawn(map);
+    for (const gate of MAIN_CITY_GATES) {
+      for (const t of mainCityGateStubTiles(gate)) {
+        expect(tileAt(map.tiles, t.x, t.y), `gate ${gate.id} stub ${t.x},${t.y}`).toBe(TileType.Path);
+        expect(occupied.has(`${t.x},${t.y}`), `gate ${gate.id} stub ${t.x},${t.y} under a building`).toBe(false);
+      }
+      expect(reachable.has(`${gate.x},${gate.y}`), `gate ${gate.id} unreachable`).toBe(true);
+    }
+    expect(new Set(MAIN_CITY_GATES.map((g) => `${g.x},${g.y}`)).size, 'two gates share a tile').toBe(MAIN_CITY_GATES.length);
+  });
+
   it('every building kind has a positive tile footprint', () => {
     for (const k of Object.keys(BUILDING_FOOTPRINTS) as Array<keyof typeof BUILDING_FOOTPRINTS>) {
       expect(BUILDING_FOOTPRINTS[k].w).toBeGreaterThanOrEqual(1);
       expect(BUILDING_FOOTPRINTS[k].h).toBeGreaterThanOrEqual(1);
     }
+  });
+});
+
+describe('regional settlements (Ancoradouro do Vau, Baluarte do Amanhecer)', () => {
+  it.each(REGIONAL_SETTLEMENTS.map((s) => s.zoneId))('%s: every NPC stands on open paving, off every building/prop, and can be walked up to from the zone spawn', (zoneId) => {
+    const map = ZONE_DEFINITIONS[zoneId].generate();
+    const occupied = footprintCells(map.buildings);
+    const reachable = reachableFromSpawn(map);
+    const npcs = NPC_DEFINITIONS.filter((n) => n.zoneId === zoneId);
+    expect(npcs.length, 'NPC count').toBeGreaterThanOrEqual(2);
+    expect(npcs.length, 'NPC count').toBeLessThanOrEqual(3);
+    for (const npc of npcs) {
+      expect(isWalkable(tileAt(map.tiles, npc.mapX, npc.mapY)), `${npc.id} tile`).toBe(true);
+      expect(occupied.has(`${npc.mapX},${npc.mapY}`), `${npc.id} stranded inside a building/prop`).toBe(false);
+      expect(reachable.has(`${npc.mapX},${npc.mapY}`), `${npc.id} unreachable`).toBe(true);
+      expect(npc.mapX === map.playerStart.x && npc.mapY === map.playerStart.y, `${npc.id} on the spawn tile`).toBe(false);
+    }
+    for (let i = 0; i < npcs.length; i++) {
+      for (let j = i + 1; j < npcs.length; j++) {
+        expect(Math.hypot(npcs[i].mapX - npcs[j].mapX, npcs[i].mapY - npcs[j].mapY), `${npcs[i].id} vs ${npcs[j].id}`).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it.each(REGIONAL_SETTLEMENTS.map((s) => s.zoneId))('%s: the round trip with Pedravale lands just inside each end\'s own gate, both ends reachable on foot', (zoneId) => {
+    const zone = ZONE_DEFINITIONS[zoneId];
+    const map = zone.generate();
+    const reachable = reachableFromSpawn(map);
+
+    // Pedravale -> settlement: through the one Pedravale gate named after it.
+    const gates = MAIN_CITY_GATES.filter((g) => g.id === zoneId);
+    expect(gates).toHaveLength(1);
+    const cityExit = ZONE_DEFINITIONS[MAIN_CITY_ID].exits.find((e) => e.atTile.x === gates[0].x && e.atTile.y === gates[0].y)!;
+    expect(cityExit.toZone).toBe(zoneId);
+    expect(reachable.has(`${cityExit.arriveTile.x},${cityExit.arriveTile.y}`), 'arrival from Pedravale unreachable').toBe(true);
+
+    // settlement -> Pedravale: its one exit, arriving just inside that same gate.
+    expect(zone.exits).toHaveLength(1);
+    const [back] = zone.exits;
+    expect(back.toZone).toBe(MAIN_CITY_ID);
+    expect(reachable.has(`${back.atTile.x},${back.atTile.y}`), 'exit back to Pedravale unreachable').toBe(true);
+    expect(back.arriveTile).toEqual(mainCityArrivalTile(zoneId));
+    const city = generateOverworldMap();
+    expect(reachableFromSpawn(city).has(`${back.arriveTile.x},${back.arriveTile.y}`), 'Pedravale arrival tile unreachable').toBe(true);
+    // Arriving back must not drop the player straight onto the exit tile again.
+    expect(back.arriveTile).not.toEqual(cityExit.atTile);
+    expect(cityExit.arriveTile).not.toEqual(back.atTile);
+  });
+
+  it('every settlement uses its own map seed — none shared with Pedravale, a class village or a dungeon', () => {
+    const taken = new Set<number>([1337, ...CLASS_ZONE_THEMES.flatMap((_, i) => [4000 + i, 5000 + i]), ...DUNGEON_DEFINITIONS.map((d) => d.seed)]);
+    for (const s of REGIONAL_SETTLEMENTS) {
+      expect(taken.has(s.seed), `${s.zoneId} seed ${s.seed}`).toBe(false);
+      taken.add(s.seed);
+    }
+  });
+
+  it('fields only existing regular (non-boss) enemies, and a tougher pool for the hub than for the satellite', () => {
+    const maxTier = (ids: string[]) => Math.max(...ids.map((id) => getEnemyById(id).level));
+    for (const s of REGIONAL_SETTLEMENTS) {
+      for (const id of s.monsterIds) expect(getEnemyById(id).isBoss ?? false, `${s.zoneId}: ${id} is a boss`).toBe(false);
+    }
+    const satellite = REGIONAL_SETTLEMENTS.find((s) => s.kind === 'satellite')!;
+    const hub = REGIONAL_SETTLEMENTS.find((s) => s.kind === 'hub')!;
+    expect(maxTier(hub.monsterIds)).toBeGreaterThan(maxTier(satellite.monsterIds));
+    expect(hub.recommendedLevel).toBeGreaterThan(satellite.recommendedLevel);
   });
 });
 
