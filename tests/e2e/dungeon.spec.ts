@@ -63,7 +63,7 @@ test('walking up to the Root Hollow portal and entering it switches zones and sh
 });
 
 test('reaching the boss shows the boss banner; defeating it completes the run and returns to town', async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const pageErrors: string[] = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
 
@@ -100,7 +100,10 @@ test('reaching the boss shows the boss banner; defeating it completes the run an
   await hotbar.waitFor({ state: 'visible' });
 
   const completeOverlay = page.locator('.dungeon-complete-overlay');
-  for (let i = 0; i < 20 && (await hotbar.isVisible()); i++) {
+  // ~7 basic hits at level 20 against the boss's balanced HP pool
+  // (config/balance.ts's bossHpMult) — generous budget for headless game
+  // time running behind wall time (see combat.spec.ts).
+  for (let i = 0; i < 60 && (await hotbar.isVisible()); i++) {
     await page.keyboard.press('1');
     await page.waitForTimeout(1300);
     if (await completeOverlay.isVisible()) break;

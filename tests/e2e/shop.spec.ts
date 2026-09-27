@@ -11,8 +11,10 @@
 import { test, expect } from '@playwright/test';
 import { buildSave, continueFromSlot, seedSave, tileCenter, waitForOverworld } from './helpers';
 
-// Elira's fixed position in the main city's old-town plaza — data/npcs.ts.
-const ELIRA_TILE = { x: 3, y: 6 };
+// Elira's fixed position: at her forge's counter on the main city's crafts
+// street (MapGenerator's MAIN_CITY_SHOPS.ferreiro.stand — data/npcs.ts
+// positions her from it).
+const ELIRA_TILE = { x: 16, y: 43 };
 
 test('buying an item from a shop deducts gold and adds the item', async ({ page }) => {
   const pageErrors: string[] = [];
@@ -20,8 +22,8 @@ test('buying an item from a shop deducts gold and adds the item', async ({ page 
 
   // Seeded right next to Elira (within interact range) so the "walk up"
   // itself is a short, deterministic hop rather than a full city crossing —
-  // the plaza's fixed layout (MapGenerator.generateOverworldMap) guarantees
-  // no buildings/obstacles between adjacent old-town tiles.
+  // the tile east of her is the other end of her shop's own paved apron
+  // (MapGenerator.generateOverworldMap stamps the whole apron clear).
   const near = tileCenter(ELIRA_TILE.x + 1, ELIRA_TILE.y);
   await seedSave(page, 0, buildSave({ classId: 'warrior', level: 4, gold: 200, mapX: near.x, mapY: near.y }));
   await continueFromSlot(page, 0);

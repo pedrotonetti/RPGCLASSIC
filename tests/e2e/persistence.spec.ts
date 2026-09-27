@@ -10,12 +10,14 @@ import { test, expect } from '@playwright/test';
 import { buildSave, continueFromSlot, pauseSnapshot, ROOT_HOLLOW_LAYOUT, ROOT_HOLLOW_ZONE_ID, seedSave, slotCard, tileCenter, waitForOverworld } from './helpers';
 
 test('progress survives a full page reload and "Continuar"', async ({ page }) => {
+  // A real two-slime fight, then a full reload and a second zone mount.
+  test.setTimeout(240_000);
   const pageErrors: string[] = [];
   page.on('pageerror', (err) => pageErrors.push(err.message));
 
-  // A near-dead slime (Root Hollow's first pod) so one basic attack ends
-  // the fight and grants gold/XP — this test cares about the save round
-  // trip, not re-proving combat math (see combat.spec.ts for that).
+  // Root Hollow's first pod (two slimes) — the cheapest real fight that
+  // grants gold/XP; this test cares about the save round trip, not
+  // re-proving combat math (see combat.spec.ts for that).
   const start = tileCenter(ROOT_HOLLOW_LAYOUT.encounterTiles[0].x, ROOT_HOLLOW_LAYOUT.encounterTiles[0].y + 2);
   await seedSave(
     page,
@@ -42,7 +44,9 @@ test('progress survives a full page reload and "Continuar"', async ({ page }) =>
 
   const battleMessage = page.locator('.battle-message-bar');
   let victorious = false;
-  for (let i = 0; i < 20 && (await hotbar.isVisible()); i++) {
+  // Generous budget: the pod is two slimes at ~3 hits each (config/balance.ts),
+  // and headless game time runs behind wall time (see combat.spec.ts).
+  for (let i = 0; i < 60 && (await hotbar.isVisible()); i++) {
     await page.keyboard.press('1');
     await page.waitForTimeout(150);
     const prompt = await battleMessage.textContent().catch(() => null);

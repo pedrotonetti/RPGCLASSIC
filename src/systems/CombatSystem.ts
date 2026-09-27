@@ -1,3 +1,4 @@
+import { ENEMY_BALANCE } from '../config/balance';
 import { generateLoot } from '../data/equipment';
 import { MATERIAL_DEFINITIONS, MATERIAL_DROP_CHANCE } from '../data/materials';
 import type { EquipmentInstance, SkillDefinition, StatusEffectType, Stats } from '../config/types';
@@ -67,7 +68,14 @@ interface AttackRoll {
   missed: boolean;
 }
 
-function resolveAttack(atk: Stats, def: Stats, power: number, kind: 'physical' | 'magical'): AttackRoll {
+/**
+ * `minFraction` is the smallest share of the hit's raw power (atkStat *
+ * power) defense may leave standing — 0 (the default, used for the player's
+ * own attacks) keeps the plain subtract-defense formula; enemy attacks pass
+ * `ENEMY_BALANCE.minDamageFraction` (see config/balance.ts) so armor can
+ * blunt a monster's hit but never erase it.
+ */
+function resolveAttack(atk: Stats, def: Stats, power: number, kind: 'physical' | 'magical', minFraction = 0): AttackRoll {
   const missChance = Math.min(0.25, Math.max(0.02, 0.05 + (def.luck - atk.luck) * 0.01));
   if (Math.random() < missChance) return { damage: 0, crit: false, missed: true };
   const atkStat = kind === 'physical' ? atk.attack : atk.magicAttack;
@@ -75,7 +83,8 @@ function resolveAttack(atk: Stats, def: Stats, power: number, kind: 'physical' |
   const critChance = Math.min(0.5, Math.max(0.05, 0.05 + atk.luck * 0.015));
   const isCrit = Math.random() < critChance;
   const variance = 0.9 + Math.random() * 0.2;
-  const raw = atkStat * power - defStat * 0.6;
+  const rawPower = atkStat * power;
+  const raw = Math.max(rawPower * minFraction, rawPower - defStat * 0.6);
   const damage = Math.max(1, Math.round(raw * variance * (isCrit ? 1.6 : 1)));
   return { damage, crit: isCrit, missed: false };
 }
@@ -119,10 +128,9 @@ export function lootDropChance(enemyLevel: number, isBoss: boolean | undefined):
 export function materialDropChance(enemyLevel: number): number {
   return Math.min(MATERIAL_DROP_CHANCE_MAX, MATERIAL_DROP_CHANCE + enemyLevel * MATERIAL_DROP_CHANCE_PER_LEVEL);
 }
-// Enemies can now approach and gang up on the player in the open world
-// instead of appearing in a controlled, fixed-size battle group, so their
-// per-hit damage is toned down to compensate for that added exposure.
-const ENEMY_DAMAGE_MULT = 0.65;
+// Enemy-hit tuning (the post-mitigation damage multiplier that compensates
+// for monsters ganging up in the open world, and the armor floor) lives in
+// config/balance.ts's ENEMY_BALANCE, alongside the enemy HP/attack curve.
 
 // --- action-combat depth: telegraphed enemy attacks, a timed block/parry
 // window, and a combo counter that rewards consecutive clean hits ---------
@@ -498,8 +506,8 @@ export class CombatEngine {
     const activeSkill = skill ?? BASIC_ENEMY_ATTACK;
     const levelStats = computeSkillLevelStats(activeSkill, 1);
     const kind = activeSkill.kind === 'magical' ? 'magical' : 'physical';
-    const roll = resolveAttack(enemy.stats, this.effectiveStats(), levelStats.power, kind);
-    roll.damage = Math.max(1, Math.round(roll.damage * ENEMY_DAMAGE_MULT));
+    const roll = resolveAttack(enemy.stats, this.effectiveStats(), levelStats.power, kind, ENEMY_BALANCE.minDamageFraction);
+    roll.damage = Math.max(1, Math.round(roll.damage * ENEMY_BALANCE.damageMult));
     const actorIndex = this.enemies.indexOf(enemy);
 
     if (roll.missed) {

@@ -1,3 +1,4 @@
+import { applyEnemyBalance } from '../config/balance';
 import type { EnemyDefinition, SkillDefinition, Stats } from '../config/types';
 import { getBossById } from '../data/bosses';
 import { getEnemyById } from '../data/enemies';
@@ -21,12 +22,20 @@ export class Enemy implements StatusEffectHolder {
    * of it per tier.
    */
   private readonly tierMultiplier: number;
+  /**
+   * This instance's full runtime stat sheet, resolved once at construction
+   * (the source definitions are static data) instead of rebuilt on every
+   * `def`/`stats` read — those are hit several times per frame per engaged
+   * enemy by `CombatEngine.tick`/`OverworldCombat`.
+   */
+  private readonly resolvedDef: EnemyDefinition;
   /** Active bleed/burn/slow afflictions — see `systems/statusEffects.ts`; ticked by `CombatEngine.tick`. */
   statusEffects: ActiveStatusEffect[] = [];
 
   constructor(definitionId: string, tierMultiplier = 1) {
     this.definitionId = definitionId;
     this.tierMultiplier = tierMultiplier;
+    this.resolvedDef = this.resolveDef();
     this.currentHp = this.stats.maxHp;
     this.currentMp = this.stats.maxMp;
     // Stagger initial actions a little so multiple enemies don't act in lockstep.
@@ -39,10 +48,16 @@ export class Enemy implements StatusEffectHolder {
   }
 
   get def(): EnemyDefinition {
+    return this.resolvedDef;
+  }
+
+  private resolveDef(): EnemyDefinition {
     // Dungeon bosses (data/bosses.ts) live outside data/enemies.ts's own
     // ENEMY_DEFINITIONS on purpose (see that file's header) — checked first
-    // so a boss id never falls through to getEnemyById's throw.
-    const base = getBossById(this.definitionId) ?? getEnemyById(this.definitionId);
+    // so a boss id never falls through to getEnemyById's throw. The shared
+    // difficulty curve (config/balance.ts) applies to both lists alike,
+    // before any repeat-dungeon tier multiplier below stacks on top of it.
+    const base = applyEnemyBalance(getBossById(this.definitionId) ?? getEnemyById(this.definitionId));
     if (this.tierMultiplier === 1) return base;
     const mult = this.tierMultiplier;
     // A stat that's genuinely 0 (e.g. a melee-only enemy's magicAttack) stays

@@ -16,6 +16,9 @@ import type { EnemyDefinition } from '../config/types';
  * dungeon boss below is intentionally a clear step above that, since it's
  * framed (see LORE.md's ending hooks) as content beyond the current story's
  * own climax.
+ *
+ * Like `data/enemies.ts`, these are BASE sheets: every fight scales them by
+ * `config/balance.ts`'s shared curve (bosses get its flat `bossHpMult`).
  */
 export const BOSS_DEFINITIONS: EnemyDefinition[] = [
   {

@@ -1,8 +1,25 @@
 import { describe, expect, it } from 'vitest';
+import { applyEnemyBalance } from '../config/balance';
+import { getBossById } from '../data/bosses';
+import { getEnemyById } from '../data/enemies';
 import { Enemy } from './Enemy';
 
+describe('Enemy stat resolution (shared difficulty curve)', () => {
+  it('an ordinary spawn fights with its definition run through config/balance.ts, not the raw hand-authored sheet', () => {
+    const slime = new Enemy('slime');
+    expect(slime.stats).toEqual(applyEnemyBalance(getEnemyById('slime')).stats);
+    expect(slime.stats.maxHp).toBeGreaterThan(getEnemyById('slime').stats.maxHp);
+    expect(slime.currentHp).toBe(slime.stats.maxHp);
+  });
+
+  it('dungeon bosses (data/bosses.ts) go through the same curve', () => {
+    const ooze = new Enemy('boss_root_ooze');
+    expect(ooze.stats).toEqual(applyEnemyBalance(getBossById('boss_root_ooze')!).stats);
+  });
+});
+
 describe('Enemy tierMultiplier (repeatable-dungeon scaling)', () => {
-  it('defaults to no scaling at all — identical to the plain, hand-authored definition', () => {
+  it('defaults to no tier scaling at all — identical to an explicit tier-1 spawn', () => {
     const plain = new Enemy('slime');
     const explicitTierOne = new Enemy('slime', 1);
     expect(plain.stats).toEqual(explicitTierOne.stats);
