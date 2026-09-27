@@ -361,6 +361,10 @@ body {
 .hud-mp {
   color: var(--mp);
 }
+.hud-clock {
+  color: var(--text-dim);
+  font-size: 15px;
+}
 .hud-hint {
   position: absolute;
   /* Below the minimap, which sits at top:8/right:10 — see .minimap-canvas. */

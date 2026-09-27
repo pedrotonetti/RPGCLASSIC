@@ -6,6 +6,7 @@ import { computeEquipmentBonus, createStarterItem, getEquipmentTemplate } from '
 import { getItemById } from '../data/items';
 import { computeSkillLevelStats, skillPointsForLevel, ultimateLevelForCharacter } from '../systems/skillMath';
 import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder } from '../systems/statusEffects';
+import { createInitialGameClock, type GameClockState } from '../systems/GameClock';
 import { createInitialWorldState, type WorldState } from '../systems/WorldStateSystem';
 import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, startZoneForClass } from '../data/zones';
 import { computeStatsAtLevel } from './statMath';
@@ -66,6 +67,8 @@ export interface PlayerSaveData {
   worldState: WorldState;
   /** Ids of `data/chests.ts` ChestDefinitions already looted — a chest in this list stays depleted (no second reward) on every later mount/reload. Absent on any save from before this field existed — defaulted the same way `hasSeenTutorial`/`dungeonTiers` were. */
   openedChestIds: string[];
+  /** The in-game clock (see systems/GameClock.ts) — hour-of-day for ambient lighting and (later) NPC schedules. Absent on any save from before this field existed — defaulted the same way worldState was. */
+  gameClock: GameClockState;
 }
 
 /** The three closures Ato 3 branches into — see LORE.md's "O final". */
@@ -106,6 +109,8 @@ export class Player implements StatusEffectHolder {
   worldState: WorldState;
   /** Ids of `data/chests.ts` ChestDefinitions already looted — a chest in this list stays depleted (no second reward) on every later mount/reload. Absent on any save from before this field existed — defaulted the same way `hasSeenTutorial`/`dungeonTiers` were. */
   openedChestIds: string[];
+  /** See PlayerSaveData.gameClock's own doc comment. */
+  gameClock: GameClockState;
   /**
    * Session-only "enter the next dungeon at this tier" hand-off — set by
    * OverworldScreen.enterDungeon just before swapping to the dungeon's own
@@ -148,6 +153,7 @@ export class Player implements StatusEffectHolder {
     this.hasSeenTutorial = data?.hasSeenTutorial ?? false;
     this.dungeonTiers = data?.dungeonTiers ?? {};
     this.worldState = data?.worldState ?? createInitialWorldState();
+    this.gameClock = data?.gameClock ?? createInitialGameClock();
     this.openedChestIds = data?.openedChestIds ?? [];
     this.currentHp = data?.currentHp ?? this.stats.maxHp;
     this.currentMp = data?.currentMp ?? this.stats.maxMp;
@@ -391,6 +397,7 @@ export class Player implements StatusEffectHolder {
         zoneStates: { ...this.worldState.zoneStates },
       },
       openedChestIds: [...this.openedChestIds],
+      gameClock: { ...this.gameClock },
     };
   }
 }

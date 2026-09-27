@@ -38,6 +38,7 @@ import {
   offerSideQuest,
   questTrackerText,
 } from '../systems/QuestSystem';
+import { advanceGameClock, dayNightFactor, formatTimeOfDay, isNight } from '../systems/GameClock';
 import { getZoneState, worldMoodFactor } from '../systems/WorldStateSystem';
 import type { QuestDefinition } from '../data/quests';
 import { saveGame } from '../systems/SaveSystem';
@@ -311,8 +312,9 @@ export class OverworldScreen implements Screen {
   private dirLight!: THREE.DirectionalLight;
   private ambientLight!: THREE.AmbientLight;
   private hemiLight!: THREE.HemisphereLight;
-  /** Cache of the last-applied worldMoodFactor (see applyWorldMood) — lets the per-frame check in update() skip re-writing light intensities/the vignette uniform on every single frame when nothing about WorldState has changed since. -1 (impossible for a 0..1 factor) forces the first call after mount to always apply. */
+  /** Cache of the last-applied worldMoodFactor/dayNightFactor (see applyWorldMood) — lets the per-frame check in update() skip re-writing light intensities/the vignette uniform when NEITHER has genuinely moved since. -1 (impossible for either 0..1 factor) forces the first call after mount to always apply. Once the game clock is actively advancing, dayNightFactor changes continuously, so this mostly only skips real work while paused/idle — mood alone used to be the only reason to ever write these. */
   private lastAppliedWorldMood = -1;
+  private lastAppliedDayNight = -1;
   private npcSlots: NpcSlot[] = [];
   private wildlife: WildlifeSlot[] = [];
   private combat!: OverworldCombat;
@@ -407,6 +409,7 @@ export class OverworldScreen implements Screen {
   private hpEl!: HTMLElement;
   private mpEl!: HTMLElement;
   private goldEl!: HTMLElement;
+  private clockEl!: HTMLElement;
   /** Thin always-on bar pinned to the bottom of the screen — its inner fill's width is set by refreshHud() to player.xp/xpToNextLevel, so a kill's XP gain reads as immediate visible progress even between level-ups. */
   private xpBarFillEl!: HTMLElement;
   private dialogueOverlay!: HTMLElement;
@@ -598,6 +601,7 @@ export class OverworldScreen implements Screen {
     this.time += dt;
 
     if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial && !this.minimapExpanded && !this.worldMapOpen) {
+      advanceGameClock(this.player.gameClock, dt);
       this.updateMovement(dt);
       this.updateInteraction();
       this.combat.update(dt, this.avatar.position, this.camera);
@@ -635,24 +639,32 @@ export class OverworldScreen implements Screen {
   }
 
   /**
-   * Reads worldMoodFactor(player.worldState) (0 = as dark/oppressive as
-   * Ipêra's corrupted baseline, 1 = fully hopeful/restored) and nudges the
-   * overworld's ambient/hemisphere light and the shared vignette darkness
-   * around their tuned defaults — subtly enough that a fresh, neutral
-   * (mood 0.5) game looks identical to before this system existed. Cheap
-   * per-frame check (a couple of subtractions), but the actual THREE.js
-   * writes only happen when the mood has genuinely moved since the last
-   * applied value, so completing a quest is what actually triggers a
-   * change, not every single frame.
+   * Blends two independent 0..1 signals into the overworld's ambient/
+   * hemisphere light and the shared vignette darkness:
+   *  - worldMoodFactor(player.worldState) — 0 = as dark/oppressive as
+   *    Ipêra's corrupted baseline, 1 = fully hopeful/restored. Only moves
+   *    when a quest/choice changes corruption/hope, so it's a slow nudge.
+   *  - dayNightFactor(player.gameClock) — 0 = deep night, 1 = full midday
+   *    (see systems/GameClock.ts). Changes continuously while the clock
+   *    runs, so THIS is now the dominant swing (a day/night cycle should
+   *    read as a real, visible change, not a subtle nudge) — mood stays a
+   *    smaller nudge on top of it, same shape as before day/night existed.
+   * At mood=0.5 and dayNight=0.5 (dawn/dusk, the cosine curve's own
+   * midpoint) this reproduces the exact original tuned defaults — the same
+   * "invisible at neutral" property the mood-only version had, just anchored
+   * to neutral TIME as well as neutral mood now.
    */
   private applyWorldMood(): void {
     const mood = worldMoodFactor(this.player.worldState);
-    if (Math.abs(mood - this.lastAppliedWorldMood) < 0.001) return;
+    const dayNight = dayNightFactor(this.player.gameClock);
+    if (Math.abs(mood - this.lastAppliedWorldMood) < 0.001 && Math.abs(dayNight - this.lastAppliedDayNight) < 0.001) return;
     this.lastAppliedWorldMood = mood;
+    this.lastAppliedDayNight = dayNight;
     const moodDelta = (mood - 0.5) * 2; // -1 (fully corrupted) .. 1 (fully hopeful)
-    this.ambientLight.intensity = 0.4 + moodDelta * 0.12;
-    this.hemiLight.intensity = 0.55 + moodDelta * 0.12;
-    this.game.setVignetteDarkness(1.15 - moodDelta * 0.15);
+    const dayNightDelta = (dayNight - 0.5) * 2; // -1 (deep night) .. 1 (full midday)
+    this.ambientLight.intensity = 0.4 + dayNightDelta * 0.22 + moodDelta * 0.12;
+    this.hemiLight.intensity = 0.55 + dayNightDelta * 0.25 + moodDelta * 0.12;
+    this.game.setVignetteDarkness(1.15 - dayNightDelta * 0.25 - moodDelta * 0.15);
   }
 
   private animateWater(): void {
@@ -2319,7 +2331,8 @@ export class OverworldScreen implements Screen {
     this.hpEl = el('div', { className: 'hud-hp' });
     this.mpEl = el('div', { className: 'hud-mp' });
     this.goldEl = el('div', {});
-    const panel = el('div', { className: 'panel hud-panel' }, [this.nameLineEl, this.hpEl, this.mpEl, this.goldEl]);
+    this.clockEl = el('div', { className: 'hud-clock' });
+    const panel = el('div', { className: 'panel hud-panel' }, [this.nameLineEl, this.hpEl, this.mpEl, this.goldEl, this.clockEl]);
 
     this.xpBarFillEl = el('div', { className: 'xp-bar-fill' });
     const xpBar = el('div', { className: 'xp-bar', attrs: { title: 'Experiência até o próximo nível' } }, [this.xpBarFillEl]);
@@ -2384,6 +2397,7 @@ export class OverworldScreen implements Screen {
     this.goldEl.textContent = `Ouro: ${this.player.gold}`;
     const xpFraction = Math.min(1, Math.max(0, this.player.xp / this.player.xpToNextLevel));
     this.xpBarFillEl.style.width = `${xpFraction * 100}%`;
+    this.clockEl.textContent = `${isNight(this.player.gameClock) ? '🌙' : '☀️'} ${formatTimeOfDay(this.player.gameClock)}`;
   }
 
   private refreshQuestTracker(): void {
