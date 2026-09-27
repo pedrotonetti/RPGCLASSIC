@@ -222,12 +222,29 @@ const FOX_MOVE_SPEED = 0.6; // world units per second
  */
 const LAGOA_TROLL_TILE = { x: 58, y: 22 };
 
+/**
+ * Frees GPU-side geometry/material/texture buffers for every Mesh under
+ * `group` — NOT for a group holding GLTF-loaded clones (NPCs, the player
+ * avatar, wildlife: see gltfModel.ts's `loadSkinnedInstance`/`loadNpcAvatar`,
+ * which clone the scene graph via SkeletonUtils but reuse the SAME
+ * geometry/material objects across every clone and the cached base model —
+ * disposing those would corrupt every other live instance of that rig, not
+ * just this one). Only ever call this on purely procedural content this
+ * screen itself builds fresh every mount and nothing else references:
+ * terrain/trees/buildings (worldBuilder.ts), dungeon portals, treasure
+ * chests. `.map` is disposed explicitly — Material.dispose() does not
+ * dispose textures assigned to it (grass/path ground textures are canvas
+ * textures built fresh per zone; only `.map` is ever used in this codebase).
+ */
 function disposeGroup(group: THREE.Object3D): void {
   group.traverse((obj) => {
     if (obj instanceof THREE.Mesh) {
       obj.geometry.dispose();
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      for (const m of mats) m.dispose();
+      for (const m of mats) {
+        (m as THREE.MeshStandardMaterial).map?.dispose();
+        m.dispose();
+      }
     }
   });
 }
@@ -264,6 +281,8 @@ export class OverworldScreen implements Screen {
   private waterMaterial: THREE.MeshStandardMaterial | null = null;
   private treeColliders: TreeCollider[] = [];
   private buildingColliders: BuildingCollider[] = [];
+  /** The procedural terrain/tree/building group built fresh every mount (buildOverworldMeshes) — kept so unmount() can dispose its GPU resources; see disposeGroup's own doc comment for why this is safe here but never for NPCs/wildlife/the player avatar. */
+  private terrainGroup!: THREE.Group;
   private minimapCanvas!: HTMLCanvasElement;
   /** One tile-per-pixel render of the current zone's terrain, built once per mount — updateMinimap() blits this (cheap) instead of re-walking the whole tile grid every frame. */
   private minimapBg: HTMLCanvasElement | null = null;
@@ -360,6 +379,20 @@ export class OverworldScreen implements Screen {
   private keyupHandler = (e: KeyboardEvent) => this.onKeyUp(e);
 
   private camLookAt = new THREE.Vector3();
+  // Reusable scratch vectors for the per-frame camera math below
+  // (desiredCameraPosition/updateCamera) — these used to be `new
+  // THREE.Vector3(...)` every single call, allocating garbage every frame
+  // regardless of whether anything actually moved. Safe to share across
+  // calls because each is fully consumed (read out into camera.position/
+  // dirLight.position) before the next frame reuses it — never held across
+  // frames or read after being overwritten.
+  private scratchCamForward = new THREE.Vector3();
+  private scratchDesiredCamPos = new THREE.Vector3();
+  private scratchLookAt = new THREE.Vector3();
+  /** Constant offset, never mutated — safe to `.add()` (which doesn't touch its argument) every frame without recreating it. */
+  private readonly scratchDirLightOffset = new THREE.Vector3(6, 10, 4);
+  /** Shared by updateNpcLabels/updateDungeonPortals/updateChests — all three run sequentially in update(), each fully finishing (reading the projected x/y into a label's CSS position) before the next entity or method reuses it. */
+  private scratchLabelAnchor = new THREE.Vector3();
 
   private paused = false;
   private dialogueNpc: NpcDefinition | null = null;
@@ -420,6 +453,7 @@ export class OverworldScreen implements Screen {
     this.waterMaterial = waterMaterial;
     this.treeColliders = treeColliders;
     this.buildingColliders = buildingColliders;
+    this.terrainGroup = group;
     this.scene.add(group);
 
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
@@ -538,6 +572,21 @@ export class OverworldScreen implements Screen {
   unmount(): void {
     window.removeEventListener('keydown', this.keydownHandler);
     window.removeEventListener('keyup', this.keyupHandler);
+
+    // Every zone travel / dungeon enter / dungeon exit constructs a brand
+    // new OverworldScreen (each with its own `scene`), so the outgoing one's
+    // whole scene graph becomes unreachable once Game.goTo swaps `current` —
+    // but the renderer's GPU-side buffers for any geometry/material/texture
+    // that was never disposed live on regardless (dispose() is what tells
+    // the renderer to free them; letting the JS object itself get GC'd does
+    // not). Without this, every single zone hop leaked the outgoing zone's
+    // entire terrain — a real, repeated cost in a dungeon-crawling ARPG,
+    // and the kind of thing that shows up as progressive slowdown over a
+    // long session on a weaker/mobile GPU. NPCs/wildlife/the player avatar
+    // are deliberately left alone — see disposeGroup's own doc comment.
+    disposeGroup(this.terrainGroup);
+    for (const p of this.dungeonPortals) disposeGroup(p.group);
+    for (const c of this.chestSlots) disposeGroup(c.mesh.group);
   }
 
   onResize(width: number, height: number): void {
@@ -1236,8 +1285,9 @@ export class OverworldScreen implements Screen {
 
   private updateNpcLabels(): void {
     for (const slot of this.npcSlots) {
-      const pos = slot.model.position.clone().add(new THREE.Vector3(0, 1.55, 0));
-      const p = pos.project(this.camera);
+      this.scratchLabelAnchor.copy(slot.model.position);
+      this.scratchLabelAnchor.y += 1.55;
+      const p = this.scratchLabelAnchor.project(this.camera);
       if (p.z > 1) {
         slot.labelEl.hidden = true;
         continue;
@@ -1461,8 +1511,9 @@ export class OverworldScreen implements Screen {
     for (const p of this.dungeonPortals) {
       animateDungeonPortal(p.glowMaterial, this.time);
 
-      const anchor = p.group.position.clone().add(new THREE.Vector3(0, 2.8, 0));
-      const proj = anchor.project(this.camera);
+      this.scratchLabelAnchor.copy(p.group.position);
+      this.scratchLabelAnchor.y += 2.8;
+      const proj = this.scratchLabelAnchor.project(this.camera);
       if (proj.z > 1) {
         p.labelEl.hidden = true;
         continue;
@@ -1527,9 +1578,10 @@ export class OverworldScreen implements Screen {
     for (const c of this.chestSlots) {
       if (!c.opened) animateChestGlow(c.mesh.glowMaterial, this.time);
 
-      const anchor = c.mesh.group.position.clone().add(new THREE.Vector3(0, 0.9, 0));
-      const proj = anchor.project(this.camera);
-      if (proj.z > 1 || anchor.distanceTo(this.avatar.position) > INTERACT_RANGE * 2.5) {
+      this.scratchLabelAnchor.copy(c.mesh.group.position);
+      this.scratchLabelAnchor.y += 0.9;
+      const proj = this.scratchLabelAnchor.project(this.camera);
+      if (proj.z > 1 || this.scratchLabelAnchor.distanceTo(this.avatar.position) > INTERACT_RANGE * 2.5) {
         c.labelEl.hidden = true;
         continue;
       }
@@ -2135,12 +2187,10 @@ export class OverworldScreen implements Screen {
    * height is applied separately (see cameraLiftBlend) so it can be eased
    * in smoothly instead of snapped, both here and by every caller.
    */
-  private desiredCameraPosition(target = new THREE.Vector3()): THREE.Vector3 {
-    const forward = new THREE.Vector3(Math.sin(CAMERA_YAW), 0, Math.cos(CAMERA_YAW));
-    target
-      .copy(this.avatar.position)
-      .addScaledVector(forward, -this.camDistance)
-      .add(new THREE.Vector3(0, this.camHeight, 0));
+  private desiredCameraPosition(target: THREE.Vector3 = this.scratchDesiredCamPos): THREE.Vector3 {
+    this.scratchCamForward.set(Math.sin(CAMERA_YAW), 0, Math.cos(CAMERA_YAW));
+    target.copy(this.avatar.position).addScaledVector(this.scratchCamForward, -this.camDistance);
+    target.y += this.camHeight;
 
     const resolved = this.resolveCameraXZ(target.x, target.z);
     target.x = resolved.x;
@@ -2232,11 +2282,12 @@ export class OverworldScreen implements Screen {
     this.cameraLiftBlend += (liftTarget - this.cameraLiftBlend) * (1 - Math.exp(-dt * 4));
     this.camera.position.y = this.cameraHeightFor(this.cameraLiftBlend);
 
-    const desiredLookAt = new THREE.Vector3().copy(this.avatar.position).add(new THREE.Vector3(0, this.camLookHeight, 0));
-    this.camLookAt.lerp(desiredLookAt, followLerp);
+    this.scratchLookAt.copy(this.avatar.position);
+    this.scratchLookAt.y += this.camLookHeight;
+    this.camLookAt.lerp(this.scratchLookAt, followLerp);
     this.camera.lookAt(this.camLookAt);
 
-    this.dirLight.position.copy(this.avatar.position).add(new THREE.Vector3(6, 10, 4));
+    this.dirLight.position.copy(this.avatar.position).add(this.scratchDirLightOffset);
     this.dirLight.target.position.copy(this.avatar.position);
   }
 

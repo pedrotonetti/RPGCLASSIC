@@ -54,7 +54,7 @@ export class Game {
   readonly renderer: THREE.WebGLRenderer;
   readonly uiRoot: HTMLElement;
   private current: Screen | null = null;
-  private clock = new THREE.Clock();
+  private timer = new THREE.Timer();
   private rafHandle = 0;
 
   private composer: EffectComposer;
@@ -62,8 +62,8 @@ export class Game {
   private vignettePass: ShaderPass;
 
   /**
-   * Phones/tablets get a cheaper render-quality tier: a 2048px soft shadow
-   * map that re-centers on the avatar every frame (see OverworldScreen's
+   * Phones/tablets get a cheaper render-quality tier: a 2048px shadow map
+   * that re-centers on the avatar every frame (see OverworldScreen's
    * dirLight setup) means a full-resolution shadow depth pass every single
    * frame, on top of bloom + MSAA — a PC-tier cost that reads as "the game
    * is heavy" specifically on the weaker GPUs phones/tablets carry. Desktop
@@ -76,7 +76,13 @@ export class Game {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !this.lowPowerTier });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.lowPowerTier ? 1.5 : 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = this.lowPowerTier ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    // Three r186 hard-removed PCFSoftShadowMap (it now silently falls back to
+    // PCFShadowMap and logs a console warning on every reference) — the
+    // desktop/mobile split below used to pick a softer map on desktop, but
+    // both tiers have been rendering identical PCFShadowMap output for a
+    // while now, this just makes that explicit instead of a dead ternary
+    // that only exists to spam the console.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     // Filmic tone mapping alone is one of the cheapest, highest-impact moves
     // away from a flat/cartoon look — it rolls off highlights and deepens
     // contrast the way a real camera/game-engine tonemapper does.
@@ -134,7 +140,8 @@ export class Game {
 
   private loop = (): void => {
     this.rafHandle = requestAnimationFrame(this.loop);
-    const dt = Math.min(this.clock.getDelta(), 0.1);
+    this.timer.update();
+    const dt = Math.min(this.timer.getDelta(), 0.1);
     if (this.current) {
       this.current.update(dt);
       this.composer.render();
