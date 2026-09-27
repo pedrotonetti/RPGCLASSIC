@@ -6,7 +6,10 @@ import type { CharacterClassDefinition } from './types';
  * append a new `CharacterClassDefinition` here — no other file needs to
  * change. Each class has a free basic attack, four regular tree skills
  * (level 1-10, upgraded with skill points) and one ultimate (auto-scales
- * with character level, up to 100).
+ * with character level, up to 100). A class may also declare one
+ * `classMechanic` — its unique combat identity (Fúria, Precisão, ...): the
+ * player-facing name/explanation live here, while the tuning numbers and
+ * rules behind each mechanic id live in `systems/classMechanics.ts`.
  */
 export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
   {
@@ -25,6 +28,17 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
       makeSkill({ id: 'warrior_sweep', name: 'Fúria Implacável', description: 'Um golpe giratório de machado que acerta todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 15, baseCooldown: 14, baseCost: 15, basePower: 1.3, inflicts: { type: 'bleed', chance: 0.35 } }),
       makeUltimate({ id: 'warrior_ultimate', name: 'Golpe do Titã', description: 'Concentra toda sua força em um golpe devastador.', kind: 'physical', target: 'enemy', unlockLevel: 20, baseCooldown: 25, baseCost: 20, basePower: 4.0 }),
     ],
+    classMechanic: {
+      id: 'fury',
+      name: 'Fúria',
+      description:
+        'Acertar golpes, bloquear ataques (um bloqueio perfeito rende mais) e levar dano sem se defender enchem a Fúria. Com a barra cheia, libere o Golpe Selvagem. A Fúria zera a cada batalha.',
+      kind: 'meter',
+      ability: {
+        name: 'Golpe Selvagem',
+        description: 'Com a Fúria cheia: um golpe físico devastador que nunca erra, em um único inimigo. Consome toda a Fúria.',
+      },
+    },
   },
   {
     id: 'mage',
@@ -59,6 +73,13 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
       makeSkill({ id: 'archer_agile_step', name: 'Passo Ágil', description: 'Aumenta sua velocidade e precisão por um tempo.', kind: 'buff', target: 'self', unlockLevel: 15, baseCooldown: 15, baseCost: 14, basePower: 1.4, buffStat: 'speed' }),
       makeUltimate({ id: 'archer_ultimate', name: 'Tempestade de Flechas', description: 'Um dilúvio de flechas cobre todo o campo de batalha, deixando feridas abertas.', kind: 'physical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 24, baseCost: 38, basePower: 2.4, inflicts: { type: 'bleed', chance: 0.4 } }),
     ],
+    classMechanic: {
+      id: 'precision',
+      name: 'Precisão',
+      description:
+        'Cada ataque que acerta sem nenhum erro aumenta a Precisão; qualquer erro a zera. Quanto maior a Precisão, maior sua chance de acerto crítico (até +25% com a barra cheia). A Precisão zera a cada batalha.',
+      kind: 'meter',
+    },
   },
   {
     id: 'cleric',
@@ -76,6 +97,17 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
       makeSkill({ id: 'cleric_light', name: 'Luz Purificadora', description: 'Uma cura poderosa que remove aflições.', kind: 'heal', target: 'self', unlockLevel: 15, baseCooldown: 16, baseCost: 22, basePower: 3.0 }),
       makeUltimate({ id: 'cleric_ultimate', name: 'Renascimento Divino', description: 'Energia divina restaura quase toda a sua vitalidade.', kind: 'heal', target: 'self', unlockLevel: 20, baseCooldown: 30, baseCost: 40, basePower: 5.0 }),
     ],
+    classMechanic: {
+      id: 'faith',
+      name: 'Fé',
+      description:
+        'Lançar curas e bênçãos enche bastante a Fé; bloquear ataques também ajuda (um bloqueio perfeito rende mais). Com a barra cheia, invoque o Milagre da Fé. A Fé zera a cada batalha.',
+      kind: 'meter',
+      ability: {
+        name: 'Milagre da Fé',
+        description: 'Com a Fé cheia: restaura metade da sua vida máxima e remove todas as suas aflições (sangramento, queimadura, lentidão). Consome toda a Fé.',
+      },
+    },
   },
   {
     id: 'paladin',
@@ -127,6 +159,17 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
       makeSkill({ id: 'necro_bone_armor', name: 'Armadura Óssea', description: 'Invoca ossos para se proteger.', kind: 'buff', target: 'self', unlockLevel: 15, baseCooldown: 16, baseCost: 16, basePower: 1.5, buffStat: 'defense' }),
       makeUltimate({ id: 'necro_ultimate', name: 'Exército dos Mortos', description: 'Invoca legiões sombrias contra todos os inimigos.', kind: 'magical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 27, baseCost: 44, basePower: 2.5 }),
     ],
+    classMechanic: {
+      id: 'souls',
+      name: 'Almas',
+      description:
+        'Cada inimigo derrotado rende muitas Almas, e cada ataque que acerta arranca um pequeno fragmento. Com a barra cheia, libere o Dreno das Almas. As Almas zeram a cada batalha.',
+      kind: 'meter',
+      ability: {
+        name: 'Dreno das Almas',
+        description: 'Com as Almas cheias: dano mágico que nunca erra em todos os inimigos em combate, e você recupera parte do dano causado. Consome todas as Almas.',
+      },
+    },
   },
   {
     id: 'monk',
@@ -144,6 +187,13 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
       makeSkill({ id: 'monk_thousand_strikes', name: 'Sequência de Mil Golpes', description: 'Uma rajada de golpes contra um único alvo.', kind: 'physical', target: 'enemy', unlockLevel: 15, baseCooldown: 10, baseCost: 18, basePower: 2.3 }),
       makeUltimate({ id: 'monk_ultimate', name: 'Fúria do Dragão Interior', description: 'Libera todo o seu chi em uma explosão marcial.', kind: 'physical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 24, baseCost: 38, basePower: 2.7 }),
     ],
+    classMechanic: {
+      id: 'flow',
+      name: 'Fluxo',
+      description:
+        'Encadear golpes eleva seu Fluxo: a cada 2 acertos seguidos, um nível (máximo 3). No Fluxo Nível 3, cada golpe vira um Finalizador com +10% de dano extra, além do bônus de combo. Levar um golpe sem se defender, ou passar 3s sem acertar, quebra o Fluxo.',
+      kind: 'combo',
+    },
   },
 ];
 

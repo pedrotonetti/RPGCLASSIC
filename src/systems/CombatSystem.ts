@@ -1,9 +1,31 @@
 import { ENEMY_BALANCE } from '../config/balance';
 import { generateLoot } from '../data/equipment';
 import { MATERIAL_DEFINITIONS, MATERIAL_DROP_CHANCE } from '../data/materials';
-import type { EquipmentInstance, SkillDefinition, StatusEffectType, Stats } from '../config/types';
+import type { EquipmentInstance, SkillDefinition, SkillTarget, StatusEffectType, StatusInflict, Stats } from '../config/types';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
+import {
+  CLASS_METER_MAX,
+  FAITH_PER_BLOCK,
+  FAITH_PER_CAST,
+  FAITH_PER_PERFECT_BLOCK,
+  FURY_PER_BLOCK,
+  FURY_PER_DAMAGE_TAKEN,
+  FURY_PER_HIT,
+  FURY_PER_PERFECT_BLOCK,
+  MIRACLE_HEAL_POWER,
+  PRECISION_PER_HIT,
+  SAVAGE_STRIKE_POWER,
+  SOUL_DRAIN_LIFESTEAL,
+  SOUL_DRAIN_POWER,
+  SOULS_PER_HIT,
+  SOULS_PER_KILL,
+  classAbilityTarget,
+  comboLabel,
+  flowFinisherBonus,
+  flowLevelForCombo,
+  precisionCritBonus,
+} from './classMechanics';
 import { computeSkillLevelStats } from './skillMath';
 import { applyStatusEffect, tickStatusEffects } from './statusEffects';
 
@@ -52,9 +74,10 @@ const STATUS_LABEL: Record<StatusEffectType, string> = {
   slow: 'lentidão',
 };
 
+/** `'meter'`: a class ability (`useClassAbility`) tried before its class meter is full. */
 export type UseSkillResult =
   | { ok: true; events: CombatEvent[] }
-  | { ok: false; reason: 'cooldown' | 'mana' | 'dead' | 'unknown' };
+  | { ok: false; reason: 'cooldown' | 'mana' | 'dead' | 'unknown' | 'meter' };
 
 interface ActiveBuff {
   stat: keyof Stats;
@@ -68,19 +91,28 @@ interface AttackRoll {
   missed: boolean;
 }
 
-/**
- * `minFraction` is the smallest share of the hit's raw power (atkStat *
- * power) defense may leave standing — 0 (the default, used for the player's
- * own attacks) keeps the plain subtract-defense formula; enemy attacks pass
- * `ENEMY_BALANCE.minDamageFraction` (see config/balance.ts) so armor can
- * blunt a monster's hit but never erase it.
- */
-function resolveAttack(atk: Stats, def: Stats, power: number, kind: 'physical' | 'magical', minFraction = 0): AttackRoll {
+interface AttackOptions {
+  /**
+   * The smallest share of the hit's raw power (atkStat * power) defense may
+   * leave standing — 0 (the default, used for the player's own attacks)
+   * keeps the plain subtract-defense formula; enemy attacks pass
+   * `ENEMY_BALANCE.minDamageFraction` (see config/balance.ts) so armor can
+   * blunt a monster's hit but never erase it.
+   */
+  minFraction?: number;
+  /** Added on top of the normal (capped) crit chance — the archer's Precisão (see classMechanics.ts). */
+  bonusCritChance?: number;
+  /** Skips the miss roll entirely — for class abilities paid for with a whole meter (see classMechanics.ts). */
+  noMiss?: boolean;
+}
+
+function resolveAttack(atk: Stats, def: Stats, power: number, kind: 'physical' | 'magical', opts: AttackOptions = {}): AttackRoll {
+  const { minFraction = 0, bonusCritChance = 0, noMiss = false } = opts;
   const missChance = Math.min(0.25, Math.max(0.02, 0.05 + (def.luck - atk.luck) * 0.01));
-  if (Math.random() < missChance) return { damage: 0, crit: false, missed: true };
+  if (!noMiss && Math.random() < missChance) return { damage: 0, crit: false, missed: true };
   const atkStat = kind === 'physical' ? atk.attack : atk.magicAttack;
   const defStat = kind === 'physical' ? def.defense : def.magicDefense;
-  const critChance = Math.min(0.5, Math.max(0.05, 0.05 + atk.luck * 0.015));
+  const critChance = Math.min(0.5, Math.max(0.05, 0.05 + atk.luck * 0.015)) + bonusCritChance;
   const isCrit = Math.random() < critChance;
   const variance = 0.9 + Math.random() * 0.2;
   const rawPower = atkStat * power;
@@ -141,9 +173,11 @@ const BLOCK_DAMAGE_REDUCTION = 0.65;
 export const BLOCK_COOLDOWN = 1.6;
 const PERFECT_BLOCK_STUN = 0.8;
 const TELEGRAPH_DURATION = 0.45;
-const COMBO_WINDOW = 3.0;
-const COMBO_DAMAGE_PER_HIT = 0.05;
-const COMBO_MAX_STACKS = 6;
+// Exported only so classMechanics.test.ts can pin the monk's Fluxo levels
+// (which re-read this same counter) against them.
+export const COMBO_WINDOW = 3.0;
+export const COMBO_DAMAGE_PER_HIT = 0.05;
+export const COMBO_MAX_STACKS = 6;
 
 // A tighter, riskier alternative to blocking: full damage negation, but a
 // much shorter active window and no "safe" partial-mitigation fallback.
@@ -175,13 +209,51 @@ export class CombatEngine {
   private staggerStacks = new Map<Enemy, number>();
   private pendingAttacks = new Map<Enemy, { resolveAt: number; skill: SkillDefinition | null }>();
 
+  /**
+   * The player's class-mechanic resource (Fúria/Precisão/Fé/Almas — see
+   * classMechanics.ts), 0..CLASS_METER_MAX. Battle-scoped exactly like
+   * `comboCount`: born empty with this engine (one per fight) and discarded
+   * with it — never persisted. Stays 0 for a class without a meter mechanic.
+   */
+  private classMeter = 0;
+  /** `player.classDef.classMechanic?.id`, resolved once — every class-mechanic hook below dispatches on it. */
+  private readonly mechanicId: string | undefined;
+
   constructor(
     public player: Player,
     public enemies: Enemy[],
-  ) {}
+  ) {
+    this.mechanicId = player.classDef.classMechanic?.id;
+  }
 
   get comboHits(): number {
-    return this.comboCount;
+    // `comboCount` itself only resets lazily, on the next landed hit — without
+    // this, the HUD's combo badge (and the monk's Fluxo level, which is read
+    // off this same counter) kept showing a chain that had already lapsed.
+    return this.clock - this.lastComboHitAt > COMBO_WINDOW ? 0 : this.comboCount;
+  }
+
+  /** Current class-meter value, 0..CLASS_METER_MAX. */
+  get classMeterValue(): number {
+    return this.classMeter;
+  }
+
+  classMeterFraction(): number {
+    return this.classMeter / CLASS_METER_MAX;
+  }
+
+  isClassMeterFull(): boolean {
+    return this.classMeter >= CLASS_METER_MAX;
+  }
+
+  /** What this class's active ability targets, or null if its mechanic has none (the archer's passive Precisão, the monk's Fluxo, a class with no mechanic). */
+  classAbilityTarget(): SkillTarget | null {
+    return classAbilityTarget(this.mechanicId);
+  }
+
+  /** The monk's current Fluxo level (0..FLOW_MAX_LEVEL), derived from the shared combo counter — always 0 for every other class. */
+  get flowLevel(): number {
+    return this.mechanicId === 'flow' ? flowLevelForCombo(this.comboHits) : 0;
   }
 
   isBlocking(): boolean {
@@ -259,64 +331,206 @@ export class CombatEngine {
         targetHpAfter: this.player.currentHp,
         skillKind: 'heal',
       });
+      this.onSupportCast();
     } else if (skill.kind === 'buff') {
       const stat = skill.buffStat ?? 'attack';
       const mult = 1 + levelStats.power * 0.18;
       const duration = BUFF_BASE_DURATION + level * BUFF_DURATION_PER_LEVEL;
       this.buffs.push({ stat, mult, expiresAt: this.clock + duration });
       events.push({ kind: 'buff', text: `Você usou ${skill.name}!`, actorIsPlayer: true, targetIsPlayer: true, skillKind: 'buff' });
+      this.onSupportCast();
     } else {
       const kind = skill.kind === 'magical' ? 'magical' : 'physical';
       const targets =
         skill.target === 'allEnemies' ? this.aliveEnemies() : [this.enemies[targetIndex ?? 0]].filter(Boolean);
+      // Read off the meter as it stood BEFORE this action — the shot that
+      // extends the streak is sharpened by the streak so far, not by itself.
+      const bonusCritChance = this.mechanicId === 'precision' ? precisionCritBonus(this.classMeter) : 0;
 
+      let landed = 0;
+      let missed = 0;
       for (const enemy of targets) {
         if (!enemy.isAlive()) continue;
         const index = this.enemies.indexOf(enemy);
-        const roll = resolveAttack(atkStats, enemy.stats, levelStats.power, kind);
+        const roll = resolveAttack(atkStats, enemy.stats, levelStats.power, kind, { bonusCritChance });
         if (roll.missed) {
           events.push({ kind: 'miss', text: `Você errou ${enemy.name}.`, actorIsPlayer: true, targetIndex: index });
+          missed += 1;
           continue;
         }
-
-        if (this.clock - this.lastComboHitAt > COMBO_WINDOW) this.comboCount = 0;
-        this.comboCount = Math.min(COMBO_MAX_STACKS, this.comboCount + 1);
-        this.lastComboHitAt = this.clock;
-        const comboMult = 1 + this.comboCount * COMBO_DAMAGE_PER_HIT;
-
-        const dealt = enemy.takeDamage(roll.damage * comboMult);
-        const comboText = this.comboCount > 1 ? ` (Combo x${this.comboCount})` : '';
-        events.push({
-          kind: 'damage',
-          text: `Você usou ${skill.name} em ${enemy.name}${roll.crit ? ' (Crítico!)' : ''}${comboText}`,
-          actorIsPlayer: true,
-          targetIndex: index,
-          amount: dealt,
-          crit: roll.crit,
-          targetHpAfter: enemy.currentHp,
-          skillKind: kind,
-        });
-        if (!enemy.isAlive()) {
-          events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
-          this.staggerStacks.delete(enemy);
-        } else {
-          this.registerHitForStagger(enemy, index, events);
-          if (skill.inflicts && Math.random() < skill.inflicts.chance) {
-            applyStatusEffect(enemy, skill.inflicts.type, dealt);
-            events.push({
-              kind: 'statusApplied',
-              text: `${enemy.name} sofre ${STATUS_LABEL[skill.inflicts.type]}!`,
-              actorIsPlayer: true,
-              targetIndex: index,
-              statusType: skill.inflicts.type,
-            });
-          }
-        }
+        landed += 1;
+        this.landPlayerHit(enemy, roll, skill.name, kind, events, { inflicts: skill.inflicts, feedsMeter: true });
       }
+      this.onPlayerAttackResolved(landed, missed);
     }
 
     this.checkVictory(events);
     return { ok: true, events };
+  }
+
+  /**
+   * One landed player hit: advances the shared combo, scales the roll by it
+   * (plus the monk's Fluxo finisher bonus), deals the damage, and emits the
+   * damage / defeated / stagger / status events. Shared by `useSkill` and
+   * `useClassAbility` so both read identically to the HUD. `feedsMeter` is
+   * false for class abilities — a spend never refills its own meter. Returns
+   * the damage actually dealt.
+   */
+  private landPlayerHit(
+    enemy: Enemy,
+    roll: AttackRoll,
+    actionName: string,
+    kind: 'physical' | 'magical',
+    events: CombatEvent[],
+    opts: { inflicts?: StatusInflict; feedsMeter: boolean },
+  ): number {
+    const index = this.enemies.indexOf(enemy);
+    if (this.clock - this.lastComboHitAt > COMBO_WINDOW) this.comboCount = 0;
+    this.comboCount = Math.min(COMBO_MAX_STACKS, this.comboCount + 1);
+    this.lastComboHitAt = this.clock;
+    const comboMult = 1 + this.comboCount * COMBO_DAMAGE_PER_HIT + flowFinisherBonus(this.mechanicId, this.comboCount);
+
+    const dealt = enemy.takeDamage(roll.damage * comboMult);
+    const label = comboLabel(this.mechanicId, this.comboCount);
+    const comboText = label ? ` (${label})` : '';
+    events.push({
+      kind: 'damage',
+      text: `Você usou ${actionName} em ${enemy.name}${roll.crit ? ' (Crítico!)' : ''}${comboText}`,
+      actorIsPlayer: true,
+      targetIndex: index,
+      amount: dealt,
+      crit: roll.crit,
+      targetHpAfter: enemy.currentHp,
+      skillKind: kind,
+    });
+    if (!enemy.isAlive()) {
+      events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
+      this.staggerStacks.delete(enemy);
+      if (opts.feedsMeter) this.onEnemyDefeated();
+    } else {
+      this.registerHitForStagger(enemy, index, events);
+      if (opts.inflicts && Math.random() < opts.inflicts.chance) {
+        applyStatusEffect(enemy, opts.inflicts.type, dealt);
+        events.push({
+          kind: 'statusApplied',
+          text: `${enemy.name} sofre ${STATUS_LABEL[opts.inflicts.type]}!`,
+          actorIsPlayer: true,
+          targetIndex: index,
+          statusType: opts.inflicts.type,
+        });
+      }
+    }
+    return dealt;
+  }
+
+  /**
+   * Fires this class's active ability (Golpe Selvagem / Milagre da Fé /
+   * Dreno das Almas — see classMechanics.ts): only with a FULL class meter,
+   * which it then empties. No MP cost and no cooldown of its own — refilling
+   * the meter is the cooldown. `targetIndex` picks the target the same way
+   * `useSkill` does, for the single-target one. The meter is only spent once
+   * the ability is known to have something to act on.
+   */
+  useClassAbility(targetIndex?: number): UseSkillResult {
+    if (this.outcome !== 'ongoing') return { ok: false, reason: 'dead' };
+    const ability = this.player.classDef.classMechanic?.ability;
+    if (!ability || !this.classAbilityTarget()) return { ok: false, reason: 'unknown' };
+    if (!this.isClassMeterFull()) return { ok: false, reason: 'meter' };
+
+    const events: CombatEvent[] = [];
+    const atkStats = this.effectiveStats();
+
+    if (this.mechanicId === 'fury') {
+      const enemy = this.enemies[targetIndex ?? 0];
+      if (!enemy || !enemy.isAlive()) return { ok: false, reason: 'unknown' };
+      this.classMeter = 0;
+      const roll = resolveAttack(atkStats, enemy.stats, SAVAGE_STRIKE_POWER, 'physical', { noMiss: true });
+      this.landPlayerHit(enemy, roll, ability.name, 'physical', events, { feedsMeter: false });
+    } else if (this.mechanicId === 'faith') {
+      this.classMeter = 0;
+      // Every status effect in this build (bleed/burn/slow) is an affliction,
+      // so the cleanse is simply "clear them all".
+      const cleansed = this.player.statusEffects.length > 0;
+      this.player.statusEffects = [];
+      const healed = this.player.heal(resolveHeal(atkStats, MIRACLE_HEAL_POWER));
+      events.push({
+        kind: 'heal',
+        text: `Você invocou ${ability.name}!${cleansed ? ' Suas aflições foram purificadas.' : ''}`,
+        actorIsPlayer: true,
+        targetIsPlayer: true,
+        amount: healed,
+        targetHpAfter: this.player.currentHp,
+        skillKind: 'heal',
+      });
+    } else if (this.mechanicId === 'souls') {
+      const targets = this.aliveEnemies();
+      if (targets.length === 0) return { ok: false, reason: 'unknown' };
+      this.classMeter = 0;
+      // Lifesteal counts only the HP actually drained — `takeDamage` reports
+      // the full hit even past 0 HP, and overkilling a nearly-dead enemy
+      // shouldn't heal as if it had drained a fresh one.
+      let totalDrained = 0;
+      for (const enemy of targets) {
+        const hpBefore = enemy.currentHp;
+        const roll = resolveAttack(atkStats, enemy.stats, SOUL_DRAIN_POWER, 'magical', { noMiss: true });
+        const dealt = this.landPlayerHit(enemy, roll, ability.name, 'magical', events, { feedsMeter: false });
+        totalDrained += Math.min(dealt, hpBefore);
+      }
+      const healed = this.player.heal(totalDrained * SOUL_DRAIN_LIFESTEAL);
+      events.push({
+        kind: 'heal',
+        text: 'As almas drenadas restauram sua vida.',
+        actorIsPlayer: true,
+        targetIsPlayer: true,
+        amount: healed,
+        targetHpAfter: this.player.currentHp,
+        skillKind: 'heal',
+      });
+    } else {
+      return { ok: false, reason: 'unknown' };
+    }
+
+    this.checkVictory(events);
+    return { ok: true, events };
+  }
+
+  // --- class-mechanic meter hooks (tuning: classMechanics.ts) ------------
+
+  private gainClassMeter(amount: number): void {
+    this.classMeter = Math.min(CLASS_METER_MAX, this.classMeter + amount);
+  }
+
+  /** After a player attack skill resolves against all its targets: Fúria/Almas gain once if anything connected; Precisão gains on a clean action and empties on any miss. */
+  private onPlayerAttackResolved(landed: number, missed: number): void {
+    if (this.mechanicId === 'precision') {
+      if (missed > 0) this.classMeter = 0;
+      else if (landed > 0) this.gainClassMeter(PRECISION_PER_HIT);
+    } else if (landed > 0) {
+      if (this.mechanicId === 'fury') this.gainClassMeter(FURY_PER_HIT);
+      else if (this.mechanicId === 'souls') this.gainClassMeter(SOULS_PER_HIT);
+    }
+  }
+
+  /** After a heal or buff skill is cast. */
+  private onSupportCast(): void {
+    if (this.mechanicId === 'faith') this.gainClassMeter(FAITH_PER_CAST);
+  }
+
+  /** On every `defeated` event from the player's own attacks or DoTs (never from a class ability). */
+  private onEnemyDefeated(): void {
+    if (this.mechanicId === 'souls') this.gainClassMeter(SOULS_PER_KILL);
+  }
+
+  /** After an enemy hit that didn't miss lands on the player — `mitigation` undefined means it was taken in full. */
+  private onEnemyHitResolved(mitigation: CombatEvent['mitigation']): void {
+    if (this.mechanicId === 'fury') {
+      if (mitigation === 'perfectBlock') this.gainClassMeter(FURY_PER_PERFECT_BLOCK);
+      else if (mitigation === 'block') this.gainClassMeter(FURY_PER_BLOCK);
+      else if (mitigation === undefined) this.gainClassMeter(FURY_PER_DAMAGE_TAKEN);
+    } else if (this.mechanicId === 'faith') {
+      if (mitigation === 'perfectBlock') this.gainClassMeter(FAITH_PER_PERFECT_BLOCK);
+      else if (mitigation === 'block') this.gainClassMeter(FAITH_PER_BLOCK);
+    }
   }
 
   attemptFlee(): UseSkillResult {
@@ -453,6 +667,7 @@ export class CombatEngine {
       if (!enemy.isAlive()) {
         events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
         this.staggerStacks.delete(enemy);
+        this.onEnemyDefeated();
       }
     }
     if (this.outcome === 'ongoing') this.checkVictory(events);
@@ -506,7 +721,7 @@ export class CombatEngine {
     const activeSkill = skill ?? BASIC_ENEMY_ATTACK;
     const levelStats = computeSkillLevelStats(activeSkill, 1);
     const kind = activeSkill.kind === 'magical' ? 'magical' : 'physical';
-    const roll = resolveAttack(enemy.stats, this.effectiveStats(), levelStats.power, kind, ENEMY_BALANCE.minDamageFraction);
+    const roll = resolveAttack(enemy.stats, this.effectiveStats(), levelStats.power, kind, { minFraction: ENEMY_BALANCE.minDamageFraction });
     roll.damage = Math.max(1, Math.round(roll.damage * ENEMY_BALANCE.damageMult));
     const actorIndex = this.enemies.indexOf(enemy);
 
@@ -537,6 +752,7 @@ export class CombatEngine {
       dealt = this.player.takeDamage(roll.damage);
       this.comboCount = 0;
     }
+    this.onEnemyHitResolved(mitigation);
 
     events.push({
       kind: 'damage',

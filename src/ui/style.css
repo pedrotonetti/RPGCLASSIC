@@ -297,6 +297,11 @@ body {
   color: #8ec9e0;
   font-size: 16px;
 }
+.char-details .mechanic {
+  color: var(--accent);
+  font-size: 15px;
+  margin-top: 6px;
+}
 .char-select .nav-row {
   width: 100%;
   display: flex;
@@ -1433,6 +1438,121 @@ body {
   text-shadow: 2px 2px 0 #000;
   pointer-events: none;
 }
+/* The monk reads the same combo counter as named Fluxo levels (see
+   classMechanics.ts) — its own color, and a glow at the finisher level. */
+.combo-badge.flow {
+  color: #ff9d3a;
+}
+.combo-badge.flow.finisher {
+  color: #fff2c4;
+  text-shadow: 2px 2px 0 #000, 0 0 12px #ff9d3a;
+}
+
+/* --- Class mechanic (Fúria / Precisão / Fé / Almas / Fluxo) ------------
+   One color per mechanic, shared by its panel and its ability button. */
+.mech-fury {
+  --meter-color: #ff5a2a;
+}
+.mech-precision {
+  --meter-color: #7ee07e;
+}
+.mech-faith {
+  --meter-color: #ffd86b;
+}
+.mech-souls {
+  --meter-color: #6bff8e;
+}
+.mech-flow {
+  --meter-color: #ff9d3a;
+}
+/* Mounted INSIDE the hotbar (see OverworldCombat.classMeterEl) and pinned
+   just above it, so it follows however many rows the hotbar wraps to. Fills
+   UP left-to-right as the resource grows — the boss banner's width-based
+   convention, the opposite of the hotbar's draining cooldown overlays. */
+.hotbar > .class-meter {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 220px;
+  pointer-events: auto;
+  cursor: help;
+}
+.class-meter-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+  text-shadow: 2px 2px 0 #000;
+}
+.class-meter-name {
+  font-size: 15px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: var(--meter-color, var(--accent));
+}
+.class-meter-value {
+  font-size: 13px;
+  color: var(--text);
+}
+.class-meter-bg {
+  position: relative;
+  height: 10px;
+  background: #1a1423;
+  border: 2px solid var(--panel-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.class-meter-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--meter-color, var(--accent));
+  transition: width 0.2s ease-out;
+}
+.class-meter.full .class-meter-bg {
+  border-color: var(--meter-color, var(--accent));
+  box-shadow: 0 0 8px var(--meter-color, var(--accent));
+}
+.class-meter.full .class-meter-value {
+  color: var(--meter-color, var(--accent));
+}
+/* Fluxo is three discrete levels, not a continuous resource — segment it. */
+.class-meter.kind-combo .class-meter-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent calc(33.333% - 1px),
+    #000 calc(33.333% - 1px),
+    #000 calc(33.333% + 1px),
+    transparent calc(33.333% + 1px),
+    transparent calc(66.667% - 1px),
+    #000 calc(66.667% - 1px),
+    #000 calc(66.667% + 1px),
+    transparent calc(66.667% + 1px)
+  );
+}
+.hotbar-slot.class-ability {
+  border-color: var(--meter-color, var(--accent));
+  opacity: 0.5;
+}
+.hotbar-slot.class-ability .hotbar-cost {
+  color: var(--meter-color, var(--accent));
+}
+.hotbar-slot.class-ability.ready {
+  opacity: 1;
+  animation: class-ability-pulse 0.9s ease-in-out infinite alternate;
+}
+@keyframes class-ability-pulse {
+  from {
+    box-shadow: 0 0 3px var(--meter-color, var(--accent));
+  }
+  to {
+    box-shadow: 0 0 14px var(--meter-color, var(--accent)), inset 0 0 8px var(--meter-color, var(--accent));
+  }
+}
 
 .hotbar {
   position: absolute;
@@ -1587,6 +1707,16 @@ body {
     bottom: calc(140px + var(--safe-b));
     gap: 6px;
   }
+  .hotbar > .class-meter {
+    width: 170px;
+    bottom: calc(100% + 6px);
+  }
+  .class-meter-name {
+    font-size: 13px;
+  }
+  .class-meter-value {
+    font-size: 11px;
+  }
   .item-hotbar {
     bottom: calc(140px + var(--safe-b));
   }
@@ -1655,6 +1785,19 @@ body {
   .hotbar {
     bottom: calc(92px + var(--safe-b));
     gap: 5px;
+  }
+  .hotbar > .class-meter {
+    width: 160px;
+    bottom: calc(100% + 4px);
+  }
+  .class-meter-name {
+    font-size: 12px;
+  }
+  .class-meter-value {
+    font-size: 10px;
+  }
+  .class-meter-bg {
+    height: 7px;
   }
   .hotbar-slot {
     width: 46px;

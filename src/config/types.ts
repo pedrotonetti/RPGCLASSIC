@@ -65,6 +65,36 @@ export interface SkillLevelStats {
   cooldown: number;
 }
 
+/**
+ * The shape a class's own unique combat identity takes (see
+ * `systems/classMechanics.ts` for every tuning number, and `CombatEngine` for
+ * where each one hooks in):
+ *
+ *  - `meter`: a battle-scoped 0-100 resource that fills from class-specific
+ *    events (landing hits, blocking, healing, kills...) and resets every
+ *    fight, like the combo counter does. Some meters are spent on an active
+ *    ability (`ClassMechanicDefinition.ability`); others are purely passive.
+ *  - `combo`: no resource of its own — re-reads the engine's shared combo
+ *    counter through a class-specific lens (named levels, a finisher bonus).
+ */
+export type ClassMechanicKind = 'meter' | 'combo';
+
+export interface ClassMechanicDefinition {
+  /** Which engine behavior backs this mechanic — `CombatEngine` dispatches on it (e.g. 'fury', 'precision'). */
+  id: string;
+  /** Player-facing name shown on the HUD (e.g. 'Fúria'). */
+  name: string;
+  /** Player-facing explanation — shown as the HUD element's tooltip/aria-label and on the class select screen. */
+  description: string;
+  kind: ClassMechanicKind;
+  /**
+   * The active ability a full meter unlocks, if this mechanic has one (its
+   * own hotbar button + key while in combat). Absent for passive meters
+   * (e.g. the archer's Precisão) and for `combo` mechanics.
+   */
+  ability?: { name: string; description: string };
+}
+
 export interface CharacterClassDefinition {
   id: string;
   name: string;
@@ -79,6 +109,8 @@ export interface CharacterClassDefinition {
   /** Basic attack is always available and free; the rest are the tree. */
   basicAttack: SkillDefinition;
   skills: SkillDefinition[];
+  /** This class's one unique combat identity beyond stats/skills. Optional: a class without one simply shows no class HUD element. */
+  classMechanic?: ClassMechanicDefinition;
 }
 
 export type ItemRarity = 'verde' | 'azul' | 'amarelo' | 'vermelho' | 'laranja';
