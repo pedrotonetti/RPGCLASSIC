@@ -78,6 +78,16 @@ export interface NpcDefinition {
    * class's exact loadout instead of guessing an analog).
    */
   classAnalogId: string;
+  /**
+   * The first "NPC schedule" this game has — see systems/GameClock.ts's
+   * `isNight`. When true, `OverworldScreen` hides this NPC's model/label and
+   * excludes them from interaction entirely once night falls, exactly like a
+   * shop closing for the night — not just a different dialogue line (that's
+   * `repDialogue`'s job), a genuine "they aren't here right now". Reappears
+   * automatically once day breaks again; nothing about the NPC or their
+   * shop's stock changes otherwise.
+   */
+  nightHidden?: boolean;
 }
 
 function npcAppearance(overrides: Partial<CharacterAppearance>): CharacterAppearance {
@@ -239,6 +249,9 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Se encontrar minérios raros por aí, me avise — sempre há algo novo para forjar.',
     ],
     vendor: { kind: 'ferreiro', equipmentTemplateIds: FORGED_TEMPLATE_IDS, craftMaterialId: 'mat_iron_ore' },
+    // A forge is daylight labor — the first NPC to actually use
+    // NpcDefinition.nightHidden (see systems/GameClock.ts).
+    nightHidden: true,
   },
   {
     id: 'bram',

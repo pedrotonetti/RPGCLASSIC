@@ -621,6 +621,7 @@ export class OverworldScreen implements Screen {
     this.animateWater();
     this.updateWildlife(dt);
     this.updateNpcActors(dt);
+    this.updateNpcSchedules();
     this.updateCamera(dt);
     this.updateNpcLabels();
     this.updateDungeonPortals();
@@ -1295,8 +1296,34 @@ export class OverworldScreen implements Screen {
     }
   }
 
+  /**
+   * The first real "NPC schedule" — see NpcDefinition.nightHidden's own doc
+   * comment. Just a visibility toggle on the model already sitting in the
+   * scene (the exact same `.visible` pattern already used for a
+   * still-loading NPC's placeholder and for pooled monster respawns
+   * elsewhere in this file) — no add/remove/dispose, so crossing the day/
+   * night threshold mid-session is as cheap as any other frame.
+   * updateNpcLabels/updateInteraction below both already respect
+   * `model.visible`, so hiding it here is the single source of truth for
+   * "this NPC isn't here right now".
+   */
+  private updateNpcSchedules(): void {
+    const night = isNight(this.player.gameClock);
+    for (const slot of this.npcSlots) {
+      if (slot.def.nightHidden) slot.model.visible = !night;
+    }
+  }
+
   private updateNpcLabels(): void {
     for (const slot of this.npcSlots) {
+      // Only a nightHidden NPC's own invisibility means "not here right
+      // now" — any other NPC's model can be momentarily invisible for an
+      // unrelated reason (still on the load placeholder, see buildNpcs) that
+      // was never gated by this check before and shouldn't start being now.
+      if (slot.def.nightHidden && !slot.model.visible) {
+        slot.labelEl.hidden = true;
+        continue;
+      }
       this.scratchLabelAnchor.copy(slot.model.position);
       this.scratchLabelAnchor.y += 1.55;
       const p = this.scratchLabelAnchor.project(this.camera);
@@ -1317,6 +1344,7 @@ export class OverworldScreen implements Screen {
     let found: NpcSlot | null = null;
     let foundDist = INTERACT_RANGE;
     for (const s of this.npcSlots) {
+      if (s.def.nightHidden && !s.model.visible) continue; // closed for the night — see updateNpcSchedules
       const d = s.model.position.distanceTo(this.avatar.position);
       if (d <= foundDist) {
         found = s;
