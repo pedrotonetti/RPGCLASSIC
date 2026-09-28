@@ -68,11 +68,14 @@ export class Game {
    * frame, on top of bloom + MSAA — a PC-tier cost that reads as "the game
    * is heavy" specifically on the weaker GPUs phones/tablets carry. Desktop
    * (mouse/trackpad) keeps the original full-quality settings unchanged.
+   * Auto-detected by default; `lowPowerOverride` (see systems/GameSettings.ts,
+   * set from the settings screen) forces it either way regardless of device.
    */
-  readonly lowPowerTier = isTouchDevice();
+  readonly lowPowerTier: boolean;
 
-  constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
+  constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, lowPowerOverride: boolean | null = null) {
     this.uiRoot = uiRoot;
+    this.lowPowerTier = lowPowerOverride ?? isTouchDevice();
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !this.lowPowerTier });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.lowPowerTier ? 1.5 : 2));
     this.renderer.shadowMap.enabled = true;

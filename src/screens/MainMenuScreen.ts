@@ -9,12 +9,6 @@ import { deleteSlotSave, listSaveSlots, loadSlotSave, setActiveSlot, type SaveSl
 import { el, goToLazy } from '../ui/dom';
 import { IntroScreen } from './IntroScreen';
 
-const MUSIC_PREF_KEY = 'rpgclassic:musicOn';
-
-function musicPreferredOn(): boolean {
-  return localStorage.getItem(MUSIC_PREF_KEY) !== 'off';
-}
-
 /** Classic cheat-code key sequence — arrow keys then b, a. Nothing else on this screen listens for arrow keys, so it's safe to consume here without colliding with any real control. */
 const KONAMI_SEQUENCE = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
 /** Rapid clicks on the logo, within this window, celebrate instead of doing nothing — see onLogoClick. */
@@ -32,7 +26,7 @@ export class MainMenuScreen implements Screen {
   private corruptionVelocities: Float32Array = new Float32Array();
   private rim!: THREE.DirectionalLight;
   private time = 0;
-  private musicBtn!: HTMLElement;
+  private settingsBtn!: HTMLElement;
 
   // "Something watches from the fog" — a rare, brief glimpse of a pair of
   // glowing eyes far behind the distant silhouette, never guaranteed on any
@@ -108,7 +102,11 @@ export class MainMenuScreen implements Screen {
       'color:#f2c14e; font-family: serif; font-size: 14px; font-style: italic;',
     );
 
-    if (musicPreferredOn()) audio.startTheme();
+    // Volume itself is already applied (main.ts calls audio.setMusicVolume
+    // from the same persisted settings before this screen ever mounts) —
+    // this only decides whether to bother starting the theme's oscillators
+    // at all when it would just play at silent 0% anyway.
+    if (audio.getMusicVolume() > 0) audio.startTheme();
   }
 
   unmount(): void {
@@ -383,15 +381,11 @@ export class MainMenuScreen implements Screen {
     this.secretToastTimer = 4.5;
   }
 
-  private toggleMusic(): void {
-    if (audio.isThemePlaying()) {
-      audio.stopTheme();
-      localStorage.setItem(MUSIC_PREF_KEY, 'off');
-    } else {
-      audio.startTheme();
-      localStorage.setItem(MUSIC_PREF_KEY, 'on');
-    }
-    this.musicBtn.textContent = audio.isThemePlaying() ? '♪' : '✕';
+  private openSettings(): void {
+    goToLazy(this.game, async () => {
+      const { SettingsScreen } = await import('./SettingsScreen');
+      return new SettingsScreen(this.game, () => this.game.goTo(new MainMenuScreen(this.game)));
+    });
   }
 
   private startNewGame(slot: number): void {
@@ -447,10 +441,10 @@ export class MainMenuScreen implements Screen {
       slots.map((entry, slot) => this.buildSlotCard(slot, entry)),
     );
 
-    this.musicBtn = el('div', {
-      className: 'btn music-toggle',
-      text: musicPreferredOn() ? '♪' : '✕',
-      onClick: () => this.toggleMusic(),
+    this.settingsBtn = el('div', {
+      className: 'btn settings-toggle',
+      text: '⚙',
+      onClick: () => this.openSettings(),
     });
 
     this.secretToastEl = el('div', { className: 'menu-secret-toast' });
@@ -459,7 +453,7 @@ export class MainMenuScreen implements Screen {
       'div',
       { className: 'main-menu screen' },
       [
-        this.musicBtn,
+        this.settingsBtn,
         el('div', { className: 'top-bar' }, [
           // Not a real button — no visible affordance hints at this, on
           // purpose (see onLogoClick/LOGO_CLICK_THRESHOLD); a title-screen

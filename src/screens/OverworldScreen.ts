@@ -2969,6 +2969,24 @@ export class OverworldScreen implements Screen {
     // An in-place overlay (see openWorldMap), not a separate screen like the
     // buttons above — no zone rebuild on the way back.
     const worldMapBtn = el('div', { className: 'btn', text: 'Mapa Mundi', onClick: () => this.openWorldMap() });
+    const settingsBtn = el('div', {
+      className: 'btn',
+      text: 'Configurações',
+      onClick: () => {
+        saveGame(this.player);
+        goToLazy(this.game, async () => {
+          const { SettingsScreen } = await import('./SettingsScreen');
+          // this.avatarData is already loaded (see the constructor's own
+          // comment) — no need to re-fetch it, unlike the other buttons
+          // above that go through a fresh screen construction.
+          return new SettingsScreen(
+            this.game,
+            () => this.game.goTo(new OverworldScreen(this.game, this.player, this.avatarData)),
+            this.player,
+          );
+        });
+      },
+    });
     const exitBtn = el('div', {
       className: 'btn',
       text: 'Salvar e Sair ao Menu',
@@ -2985,7 +3003,7 @@ export class OverworldScreen implements Screen {
 
     this.pauseOverlay = el('div', { className: 'panel pause-overlay' }, [
       el('h2', { text: 'Pausado' }),
-      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn, questLogBtn, worldMapBtn]),
+      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn, questLogBtn, worldMapBtn, settingsBtn]),
       el('div', { className: 'pause-divider' }),
       this.mountSectionEl,
       el('div', { className: 'pause-divider' }),

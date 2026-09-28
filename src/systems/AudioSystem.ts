@@ -11,9 +11,20 @@
 
 type OscType = OscillatorType;
 
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
+
 class AudioSystem {
   private ctx: AudioContext | null = null;
+  /** Final, fixed overall level — never user-adjustable directly; musicGain/sfxGain (below) are the two independently user-adjustable buses that feed into it, so their sliders scale relative to this same baseline loudness the game always had. */
   private master: GainNode | null = null;
+  /** Everything scheduleThemeNote/startTheme's drone plays through — see setMusicVolume. */
+  private musicGain: GainNode | null = null;
+  /** Every one-shot cue below (combat/UI/overworld) plays through this by default — see setSfxVolume. */
+  private sfxGain: GainNode | null = null;
+  private musicVolume = 1;
+  private sfxVolume = 1;
   private noiseBuffer: AudioBuffer | null = null;
   private muted = false;
   private lastUiClickAt = 0;
@@ -29,6 +40,26 @@ class AudioSystem {
     return this.muted;
   }
 
+  /** 0..1 — see systems/GameSettings.ts, the persisted source of truth this mirrors at startup and on every settings-screen change. */
+  setMusicVolume(v: number): void {
+    this.musicVolume = clamp01(v);
+    if (this.musicGain) this.musicGain.gain.value = this.musicVolume;
+  }
+
+  getMusicVolume(): number {
+    return this.musicVolume;
+  }
+
+  /** 0..1 — see systems/GameSettings.ts. */
+  setSfxVolume(v: number): void {
+    this.sfxVolume = clamp01(v);
+    if (this.sfxGain) this.sfxGain.gain.value = this.sfxVolume;
+  }
+
+  getSfxVolume(): number {
+    return this.sfxVolume;
+  }
+
   private context(): AudioContext | null {
     if (this.muted) return null;
     if (typeof window === 'undefined') return null;
@@ -39,6 +70,12 @@ class AudioSystem {
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.32;
       this.master.connect(this.ctx.destination);
+      this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.value = this.musicVolume;
+      this.musicGain.connect(this.master);
+      this.sfxGain = this.ctx.createGain();
+      this.sfxGain.gain.value = this.sfxVolume;
+      this.sfxGain.connect(this.master);
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
     return this.ctx;
@@ -57,7 +94,7 @@ class AudioSystem {
     return this.noiseBuffer;
   }
 
-  /** A single tone, optionally sweeping from one frequency to another. */
+  /** A single tone, optionally sweeping from one frequency to another. `destination` defaults to sfxGain — only scheduleThemeNote (music) ever overrides it to musicGain. */
   private tone(opts: {
     freq: number;
     toFreq?: number;
@@ -66,9 +103,11 @@ class AudioSystem {
     gain?: number;
     delay?: number;
     attack?: number;
+    destination?: GainNode;
   }): void {
     const ctx = this.context();
-    if (!ctx || !this.master) return;
+    const dest = opts.destination ?? this.sfxGain;
+    if (!ctx || !dest) return;
     const { freq, toFreq, duration, type = 'sine', gain = 0.25, delay = 0, attack = 0.005 } = opts;
     const start = ctx.currentTime + delay;
 
@@ -82,16 +121,16 @@ class AudioSystem {
     env.gain.linearRampToValueAtTime(gain, start + attack);
     env.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
-    osc.connect(env).connect(this.master);
+    osc.connect(env).connect(dest);
     osc.start(start);
     osc.stop(start + duration + 0.02);
   }
 
-  /** A filtered burst of noise — good for percussive hits/impacts/whooshes. */
+  /** A filtered burst of noise — good for percussive hits/impacts/whooshes. Always sfxGain — no music cue currently uses it. */
   private noiseBurst(opts: { duration: number; gain?: number; filterFreq?: number; filterType?: BiquadFilterType; delay?: number }): void {
     const ctx = this.context();
     const buffer = this.noise();
-    if (!ctx || !buffer || !this.master) return;
+    if (!ctx || !buffer || !this.sfxGain) return;
     const { duration, gain = 0.3, filterFreq = 1200, filterType = 'lowpass', delay = 0 } = opts;
     const start = ctx.currentTime + delay;
 
@@ -105,7 +144,7 @@ class AudioSystem {
     env.gain.setValueAtTime(gain, start);
     env.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
-    src.connect(filter).connect(env).connect(this.master);
+    src.connect(filter).connect(env).connect(this.sfxGain);
     src.start(start);
     src.stop(start + duration + 0.02);
   }
@@ -249,7 +288,8 @@ class AudioSystem {
   startTheme(): void {
     if (this.themePlaying) return;
     const ctx = this.context();
-    if (!ctx || !this.master) return;
+    const musicDest = this.musicGain;
+    if (!ctx || !musicDest) return;
     this.themePlaying = true;
 
     const drone: Array<{ freq: number; gain: number; lfoRate: number }> = [
@@ -272,7 +312,7 @@ class AudioSystem {
       lfoDepth.gain.value = voice.gain * 0.4;
       lfo.connect(lfoDepth).connect(gain.gain);
 
-      osc.connect(gain).connect(this.master);
+      osc.connect(gain).connect(musicDest);
       osc.start();
       lfo.start();
       this.themeVoices.push({ osc, gain }, { osc: lfo, gain: lfoDepth });
@@ -285,7 +325,7 @@ class AudioSystem {
     if (!this.themePlaying) return;
     const scale = [293.66, 349.23, 392.0, 440.0, 523.25, 587.33]; // D E F A C D (dorian-flavored), one octave up from the drone
     const freq = scale[Math.floor(Math.random() * scale.length)];
-    this.tone({ freq, duration: 2.2, type: 'sine', gain: 0.05, attack: 0.7 });
+    this.tone({ freq, duration: 2.2, type: 'sine', gain: 0.05, attack: 0.7, destination: this.musicGain ?? undefined });
     const nextInMs = 2400 + Math.random() * 2800;
     this.themeTimer = setTimeout(() => this.scheduleThemeNote(), nextInMs);
   }

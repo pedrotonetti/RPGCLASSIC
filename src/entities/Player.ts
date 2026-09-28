@@ -310,6 +310,24 @@ export class Player implements StatusEffectHolder {
     return levelsGained;
   }
 
+  /**
+   * Directly sets the level for testing — the secret dev panel's own tool
+   * (see screens/DevPanel.ts), not something normal play ever calls. Clamped
+   * to a sane range (this game has no formal level cap) so a stray typo
+   * can't leave the character on level 0 or negative, which would break
+   * `stats`' own computeStatsAtLevel. Resets xp (an arbitrary jump makes
+   * "progress toward next level" meaningless) and heals to the new max, the
+   * same reward gainXp already gives on a real level-up — it does NOT touch
+   * skillPoints: unlike gainXp's gradual climb, jumping levels for a test
+   * isn't meant to also hand out points as if every level had been earned.
+   */
+  debugSetLevel(level: number): void {
+    this.level = Math.max(1, Math.min(100, Math.round(level)));
+    this.xp = 0;
+    this.currentHp = this.stats.maxHp;
+    this.currentMp = this.stats.maxMp;
+  }
+
   addItem(itemId: string, qty = 1): void {
     this.inventory[itemId] = (this.inventory[itemId] ?? 0) + qty;
   }
