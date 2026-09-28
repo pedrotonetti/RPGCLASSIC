@@ -1103,7 +1103,8 @@ export class OverworldScreen implements Screen {
 
   /**
    * Converts a click/tap on the minimap canvas into world tile coordinates —
-   * the exact inverse of renderMinimapBackground's world-to-pixel scale —
+   * the exact inverse of updateMinimap's world-to-pixel scale (including its
+   * 180° rotation — see that method's own doc comment on why it's there) —
    * and kicks off a pathfind there. Reads the canvas's own displayed (CSS)
    * size via getBoundingClientRect rather than its fixed internal
    * MINIMAP_SIZE resolution, so this still maps correctly once the phone
@@ -1128,8 +1129,9 @@ export class OverworldScreen implements Screen {
     const fracX = (ev.clientX - rect.left) / rect.width;
     const fracY = (ev.clientY - rect.top) / rect.height;
     if (fracX < 0 || fracX > 1 || fracY < 0 || fracY > 1) return;
-    const worldX = fracX * this.minimapBg.width * TILE_SIZE;
-    const worldZ = fracY * this.minimapBg.height * TILE_SIZE;
+    // 1 - frac, not frac — see updateMinimap's 180° rotation.
+    const worldX = (1 - fracX) * this.minimapBg.width * TILE_SIZE;
+    const worldZ = (1 - fracY) * this.minimapBg.height * TILE_SIZE;
     this.startAutoWalkTo({ x: Math.floor(worldX / TILE_SIZE), y: Math.floor(worldZ / TILE_SIZE) });
   }
 
@@ -2735,6 +2737,24 @@ export class OverworldScreen implements Screen {
     const ctx = this.minimapCanvas.getContext('2d')!;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, size, size);
+
+    // The camera's own fixed framing (CAMERA_YAW=0 — see computeInputAxis's
+    // doc comment) has "forward" (W) increase world Z and "right" (D)
+    // DECREASE world X. A minimap drawn straight from world coordinates (no
+    // rotation) put those backwards on screen: walking forward moved the
+    // dot DOWN the map, and walking right moved it LEFT — technically
+    // consistent with raw world space, but inverted from what the player
+    // sees happening in the 3D view right above it. A single 180° rotation
+    // around the canvas center (translate to the far corner, then rotate)
+    // is exactly a "flip both axes" — it fixes both at once without
+    // touching renderMinimapBackground's own tile-color loop or any single
+    // marker's position math below. Restored before the caption strip so
+    // that text stays upright and anchored at the visual bottom, not
+    // rotated with everything above it. handleMinimapClick's own inverse
+    // mapping was updated to match — see its own doc comment.
+    ctx.save();
+    ctx.translate(size, size);
+    ctx.rotate(Math.PI);
     ctx.drawImage(this.minimapBg, 0, 0, size, size);
 
     const toMinimap = (worldX: number, worldZ: number): { x: number; y: number } => ({
@@ -2795,6 +2815,7 @@ export class OverworldScreen implements Screen {
     ctx.lineWidth = 1;
     ctx.strokeStyle = '#1a1423';
     ctx.stroke();
+    ctx.restore();
 
     // Current settlement/plaza name, as a caption strip along the bottom —
     // drawn directly on this same canvas (rather than a separate DOM label)
