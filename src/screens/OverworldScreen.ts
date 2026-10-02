@@ -10,7 +10,7 @@ import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
 import { dialogueLinesFor, getNpcById, NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
-import { arriveWorldPosition, effectiveMonsterCount, getZoneById, MAIN_CITY_ID, subAreaNameAt, type ZoneDefinition, type ZoneExit } from '../data/zones';
+import { arriveWorldPosition, BALUARTE_AMANHECER_ID, effectiveMonsterCount, getZoneById, MAIN_CITY_ID, subAreaNameAt, type ZoneDefinition, type ZoneExit } from '../data/zones';
 import { dungeonsInHostZone, getDungeonById, getDungeonByZoneId, type DungeonDefinition } from '../data/dungeons';
 import { rarityTier, rarityToHex } from '../config/rarity';
 import type { EquipmentSlot, ItemRarity } from '../config/types';
@@ -222,6 +222,37 @@ const FOX_MOVE_SPEED = 0.6; // world units per second
  * change can't silently bury it in a tree.
  */
 const LAGOA_TROLL_TILE = { x: 58, y: 22 };
+
+/**
+ * q6_dragon's own "defeat young_dragon" objective had no live monster to
+ * ever point at: `young_dragon` is deliberately excluded from every zone's
+ * random scatter (see data/zones.ts's own comment on Baluarte do Amanhecer —
+ * it's the story's one-of-a-kind corrupted guardian, not filler) but nothing
+ * ever placed a hand-picked instance of it anywhere either, so the quest's
+ * arrow/minimap marker (updateQuestIndicator) always came up empty and the
+ * quest itself could never actually complete. Baluarte do Amanhecer — the
+ * toughest regular field in the game, a frontier fort nobody has kept up for
+ * generations — is exactly the zone that comment already earmarks for it.
+ * Tile picked (and grass-checked, same as FOX_SPAWN_TILES/LAGOA_TROLL_TILE)
+ * well clear of the fort's own buildings and spawn point, so it reads as a
+ * ruin tucked into the tree line rather than something in the player's face
+ * on arrival.
+ */
+const BALUARTE_DRAGON_TILE = { x: 44, y: 21 };
+
+/**
+ * "Siga para: X" cross-zone hint for a `defeat` objective, mirroring the one
+ * `questIndicatorZoneHint` already gives `talkTo` — but a monster has no
+ * single fixed home the way an NPC does (most wander whatever zone's random
+ * scatter placed them in), so this only covers targets that DO have exactly
+ * one home: today, `young_dragon` (see BALUARTE_DRAGON_TILE above). Add an
+ * entry here for any future one-of-a-kind fixed encounter (spawnFixedMonster)
+ * that a quest asks the player to defeat, so it never repeats this same
+ * "quest exists, nothing points to it" gap.
+ */
+const DEFEAT_TARGET_HOME_ZONE: Record<string, string> = {
+  young_dragon: BALUARTE_AMANHECER_ID,
+};
 
 /**
  * Frees GPU-side geometry/material/texture buffers for every Mesh under
@@ -550,6 +581,9 @@ export class OverworldScreen implements Screen {
       });
       if (this.player.zoneId === MAIN_CITY_ID && tiles[LAGOA_TROLL_TILE.y]?.[LAGOA_TROLL_TILE.x] === TileType.Grass) {
         this.combat.spawnFixedMonster('troll', LAGOA_TROLL_TILE);
+      }
+      if (this.player.zoneId === BALUARTE_AMANHECER_ID && tiles[BALUARTE_DRAGON_TILE.y]?.[BALUARTE_DRAGON_TILE.x] === TileType.Grass) {
+        this.combat.spawnFixedMonster('young_dragon', BALUARTE_DRAGON_TILE);
       }
     }
 
@@ -2458,12 +2492,27 @@ export class OverworldScreen implements Screen {
     return this.combat.nearestAliveMonsterPosition({ x: this.avatar.position.x, z: this.avatar.position.z }, obj.targetId);
   }
 
-  /** "Go to this zone" text for a `talkTo` objective whose NPC lives outside the player's current zone — the one case questIndicatorTarget can't offer a world position for. */
+  /**
+   * "Go to this zone" text for an objective questIndicatorTarget can't offer
+   * a world position for: a `talkTo` NPC standing in a different zone, or a
+   * `defeat` target with a known fixed home (DEFEAT_TARGET_HOME_ZONE) that
+   * just isn't alive in the player's CURRENT zone right now (either they're
+   * elsewhere entirely, or they're in the right zone but haven't found the
+   * hand-placed spot yet).
+   */
   private questIndicatorZoneHint(quest: QuestDefinition | null): string | null {
-    if (!quest || quest.objective.kind !== 'talkTo') return null;
-    const npc = getNpcById(quest.objective.targetId!);
-    if (npc.zoneId === this.player.zoneId) return null;
-    return `Siga para: ${getZoneById(npc.zoneId).name}`;
+    if (!quest) return null;
+    if (quest.objective.kind === 'talkTo') {
+      const npc = getNpcById(quest.objective.targetId!);
+      if (npc.zoneId === this.player.zoneId) return null;
+      return `Siga para: ${getZoneById(npc.zoneId).name}`;
+    }
+    if (quest.objective.kind === 'defeat') {
+      const homeZoneId = DEFEAT_TARGET_HOME_ZONE[quest.objective.targetId!];
+      if (!homeZoneId || homeZoneId === this.player.zoneId) return null;
+      return `Siga para: ${getZoneById(homeZoneId).name}`;
+    }
+    return null;
   }
 
   /**

@@ -546,6 +546,12 @@ export class OverworldCombat {
     m.state = 'idle';
     m.waitTimer = 1 + Math.random() * 3;
     m.respawnAt = -1;
+    // The HP bar's width is only ever set by setMonsterHp, which so far had
+    // only ever run from the damage-event handler — so the near-empty width
+    // left over from the moment this same monster died stuck around through
+    // the respawn (a freshly full Enemy behind a bar that still reads
+    // "almost dead") until the player's first hit forced a fresh call.
+    this.setMonsterHp(m, m.enemy.stats.maxHp);
   }
 
   private updateLabels(camera: THREE.Camera, playerPos: THREE.Vector3): void {

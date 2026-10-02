@@ -24,6 +24,8 @@ export function tileCenter(tx: number, ty: number): { x: number; y: number } {
 }
 
 export const MAIN_CITY_ID = 'main_city';
+/** The toughest regular open-world field in the game — see data/zones.ts. */
+export const BALUARTE_AMANHECER_ID = 'baluarte_amanhecer';
 /** The early-tier dungeon this suite drives end-to-end — see data/dungeons.ts. */
 export const ROOT_HOLLOW_ZONE_ID = 'dungeon_root_hollow';
 /** Root Hollow's fixed layout (3 encounters), computed the same way `MapGenerator.dungeonLayout`/`data/dungeons.ts` do — see playwright.config.ts's design notes on why the dungeon's FIXED encounters (not a random open-world monster) back the combat golden path. Recomputed by hand here (not imported) so a test failure here can't be masked by also breaking the import; if `data/dungeons.ts` ever changes Root Hollow's encounter count this will need updating, same as any other hand-derived fixture. */
