@@ -10,7 +10,17 @@ import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
 import { dialogueLinesFor, getNpcById, NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
-import { arriveWorldPosition, BALUARTE_AMANHECER_ID, effectiveMonsterCount, getZoneById, MAIN_CITY_ID, subAreaNameAt, type ZoneDefinition, type ZoneExit } from '../data/zones';
+import {
+  arriveWorldPosition,
+  BALUARTE_AMANHECER_ID,
+  effectiveMonsterCount,
+  getZoneById,
+  MAIN_CITY_ID,
+  monsterFreeAreas,
+  subAreaNameAt,
+  type ZoneDefinition,
+  type ZoneExit,
+} from '../data/zones';
 import { dungeonsInHostZone, getDungeonById, getDungeonByZoneId, type DungeonDefinition } from '../data/dungeons';
 import { rarityTier, rarityToHex } from '../config/rarity';
 import type { EquipmentSlot, ItemRarity } from '../config/types';
@@ -22,6 +32,8 @@ import { animateDungeonPortal, buildDungeonPortalMesh } from '../render/dungeonP
 import { animateChestGlow, buildTreasureChestMesh, setChestOpened, type TreasureChestMesh } from '../render/treasureChest';
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
 import { loadNpcAvatar } from '../render/npcAvatar';
+import { WildlifeManager } from '../render/wildlife';
+import { pickWildlifeLayout } from '../systems/wildlifePlacement';
 import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { animateWaterMaterial, buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
 import { OverworldCombat } from '../systems/OverworldCombat';
@@ -171,46 +183,6 @@ interface ChestSlot {
   opened: boolean;
 }
 
-interface WildlifeSlot {
-  model: THREE.Group;
-  actor: GltfActor;
-  home: THREE.Vector3;
-  from: THREE.Vector3;
-  to: THREE.Vector3;
-  moveT: number;
-  moveDuration: number;
-  waitTimer: number;
-  /** Per-instance speed jitter so a handful of the same asset don't all move in lockstep. */
-  speedScale: number;
-}
-
-// Grass tiles well clear of the village/road/pond, verified against the map
-// at spawn time so a future map change can't silently place one in water.
-const FOX_SPAWN_TILES: Array<{ x: number; y: number }> = [
-  { x: 14, y: 10 },
-  { x: 21, y: 6 },
-  { x: 11, y: 17 },
-  { x: 31, y: 9 },
-  { x: 19, y: 19 },
-];
-/**
- * fox.glb (the Khronos sample Fox) is authored in centimetre-scale units:
- * its bind pose stands ~79 units tall at the ear tips and ~155 long
- * nose-to-tail (the mesh's own POSITION accessor bounds). The old
- * hand-picked FOX_SCALE of 0.42 assumed a roughly unit-sized model, which
- * actually rendered every fox ~33 world units tall — ~18x the ~1.8-unit
- * player/NPC avatars — so a fox wandering at the edge of Praça do Mercado
- * loomed over the whole plaza with just its legs/paws visible from the
- * gameplay camera. Scale is derived from the native height instead, so
- * each fox stands a believable ~0.55 units (knee/hip height next to an
- * avatar) before spawnFoxAt's own ±15% size jitter.
- */
-const FOX_NATIVE_HEIGHT = 79;
-const FOX_TARGET_HEIGHT = 0.55;
-const FOX_SCALE = FOX_TARGET_HEIGHT / FOX_NATIVE_HEIGHT;
-const FOX_WANDER_RADIUS = 1.6;
-const FOX_MOVE_SPEED = 0.6; // world units per second
-
 /**
  * A single hand-placed "must be sought out" encounter (see
  * OverworldCombat.spawnFixedMonster) — a troll standing distinctively at the
@@ -218,7 +190,7 @@ const FOX_MOVE_SPEED = 0.6; // world units per second
  * ellipse and every plaza/gate/street, rather than blending into
  * spawnMonsters' anonymous scatter. Ties into the "Contrato: O Troll da
  * Lagoa" bounty (data/quests.ts) — Bram's dialogue points here directly.
- * Grass-checked at spawn time exactly like FOX_SPAWN_TILES, so a future map
+ * Grass-checked at spawn time, so a future map
  * change can't silently bury it in a tree.
  */
 const LAGOA_TROLL_TILE = { x: 58, y: 22 };
@@ -233,7 +205,7 @@ const LAGOA_TROLL_TILE = { x: 58, y: 22 };
  * quest itself could never actually complete. Baluarte do Amanhecer — the
  * toughest regular field in the game, a frontier fort nobody has kept up for
  * generations — is exactly the zone that comment already earmarks for it.
- * Tile picked (and grass-checked, same as FOX_SPAWN_TILES/LAGOA_TROLL_TILE)
+ * Tile picked (and grass-checked, same as LAGOA_TROLL_TILE)
  * well clear of the fort's own buildings and spawn point, so it reads as a
  * ruin tucked into the tree line rather than something in the player's face
  * on arrival.
@@ -347,7 +319,8 @@ export class OverworldScreen implements Screen {
   private lastAppliedWorldMood = -1;
   private lastAppliedDayNight = -1;
   private npcSlots: NpcSlot[] = [];
-  private wildlife: WildlifeSlot[] = [];
+  /** Ambient, non-attackable creatures and flower patches — see render/wildlife.ts. Null inside a dungeon. */
+  private wildlife: WildlifeManager | null = null;
   private combat!: OverworldCombat;
   private zoneDef!: ZoneDefinition;
   private zoneRespawnTile = { x: 5, y: 5 };
@@ -548,7 +521,19 @@ export class OverworldScreen implements Screen {
       this.player.mapY = safe.z;
     }
 
-    this.spawnWildlife();
+    if (!this.activeDungeon) {
+      this.wildlife = new WildlifeManager(this.scene, (x, z) => this.canOccupy(x, z, 0.2, false));
+      this.wildlife.spawn(
+        pickWildlifeLayout(tiles, {
+          start: playerStart,
+          // Off building footprints (tiles under a building are still
+          // nominally grass — see canOccupy) and out of Pedravale's town
+          // districts, so herds and flower beds read as the countryside.
+          avoid: [...monsterFreeAreas(this.zoneDef.id), ...buildings.map((b) => ({ x0: b.x - 1, y0: b.y - 1, x1: b.x + b.w, y1: b.y + b.h }))],
+          lowPower: this.game.lowPowerTier,
+        }),
+      );
+    }
     this.buildDungeonPortals();
     this.buildChests();
     this.positionCameraImmediate();
@@ -578,6 +563,8 @@ export class OverworldScreen implements Screen {
         enemyIds: this.zoneDef.monsterIds,
         minDistFromStart: this.zoneDef.monsterIds ? 3 : undefined,
         minSpacing: this.zoneDef.monsterIds ? 2 : undefined,
+        packWeights: this.zoneDef.packWeights,
+        avoid: monsterFreeAreas(this.zoneDef.id),
       });
       if (this.player.zoneId === MAIN_CITY_ID && tiles[LAGOA_TROLL_TILE.y]?.[LAGOA_TROLL_TILE.x] === TileType.Grass) {
         this.combat.spawnFixedMonster('troll', LAGOA_TROLL_TILE);
@@ -622,6 +609,7 @@ export class OverworldScreen implements Screen {
     // long session on a weaker/mobile GPU. NPCs/wildlife/the player avatar
     // are deliberately left alone — see disposeGroup's own doc comment.
     disposeGroup(this.terrainGroup);
+    this.wildlife?.dispose();
     for (const p of this.dungeonPortals) disposeGroup(p.group);
     for (const c of this.chestSlots) disposeGroup(c.mesh.group);
   }
@@ -653,7 +641,7 @@ export class OverworldScreen implements Screen {
     this.animator.update(dt);
     this.animateMount(dt);
     this.animateWater();
-    this.updateWildlife(dt);
+    this.wildlife?.update(dt, this.avatar.position, isNight(this.player.gameClock));
     this.updateNpcActors(dt);
     this.updateNpcSchedules();
     this.updateCamera(dt);
@@ -955,7 +943,7 @@ export class OverworldScreen implements Screen {
     // its toggle sound twice.
   }
 
-  /** Fire-and-forget cache warm-up so the first time the player actually mounts, `loadSkinnedInstance`'s own promise cache (see `render/gltfModel.ts`) already has both creature files parsed instead of stalling the swap on a network fetch — same idea as `spawnFoxAt`'s prefetch, just without anything to add to the scene yet. */
+  /** Fire-and-forget cache warm-up so the first time the player actually mounts, `loadSkinnedInstance`'s own promise cache (see `render/gltfModel.ts`) already has both creature files parsed instead of stalling the swap on a network fetch — same idea as the ambient foxes' own load (render/wildlife.ts), just without anything to add to the scene yet. */
   private prefetchMountModels(): void {
     for (const file of allMountModelFiles()) {
       loadSkinnedInstance(file).catch((err) => console.error(`Falha ao pré-carregar montaria "${file}"`, err));
@@ -1258,74 +1246,7 @@ export class OverworldScreen implements Screen {
     }
   }
 
-  // --- ambient wildlife (real glTF asset, see public/models/CREDITS.md) --
-
-  private spawnWildlife(): void {
-    for (const tile of FOX_SPAWN_TILES) {
-      if (this.tiles[tile.y]?.[tile.x] !== TileType.Grass) continue;
-      this.spawnFoxAt(tile.x, tile.y);
-    }
-  }
-
-  private async spawnFoxAt(tx: number, ty: number): Promise<void> {
-    let model;
-    try {
-      model = await loadSkinnedInstance('fox.glb');
-    } catch (err) {
-      console.error('Falha ao carregar fox.glb', err);
-      return;
-    }
-    const actor = new GltfActor(model);
-    const sizeJitter = 0.85 + Math.random() * 0.3;
-    model.scene.scale.setScalar(FOX_SCALE * sizeJitter);
-    const home = tileCenterWorld(tx, ty);
-    model.scene.position.copy(home);
-    model.scene.rotation.y = Math.random() * Math.PI * 2;
-    this.scene.add(model.scene);
-    actor.play('Survey');
-
-    this.wildlife.push({
-      model: model.scene,
-      actor,
-      home,
-      from: home.clone(),
-      to: home.clone(),
-      moveT: 1,
-      moveDuration: 1,
-      waitTimer: 1 + Math.random() * 3,
-      speedScale: 0.75 + Math.random() * 0.5,
-    });
-  }
-
-  private updateWildlife(dt: number): void {
-    for (const fox of this.wildlife) {
-      fox.actor.update(dt);
-
-      if (fox.moveT < 1) {
-        fox.moveT = Math.min(1, fox.moveT + dt / fox.moveDuration);
-        fox.model.position.lerpVectors(fox.from, fox.to, fox.moveT);
-        if (fox.moveT >= 1) {
-          fox.actor.play('Survey');
-          fox.waitTimer = 1.5 + Math.random() * 3.5;
-        }
-        continue;
-      }
-
-      fox.waitTimer -= dt;
-      if (fox.waitTimer <= 0) {
-        const angle = Math.random() * Math.PI * 2;
-        const dist = 0.6 + Math.random() * FOX_WANDER_RADIUS;
-        fox.from.copy(fox.model.position);
-        fox.to.set(fox.home.x + Math.cos(angle) * dist, fox.home.y, fox.home.z + Math.sin(angle) * dist);
-        fox.moveDuration = fox.from.distanceTo(fox.to) / (FOX_MOVE_SPEED * fox.speedScale);
-        fox.moveT = 0;
-        fox.model.rotation.y = Math.atan2(fox.to.x - fox.from.x, fox.to.z - fox.from.z);
-        fox.actor.play('Walk');
-      }
-    }
-  }
-
-  /** Drives each loaded NPC's Idle clip — cheap even at the ~15-per-zone high end, same per-instance AnimationMixer.update the ambient foxes use (see updateWildlife). Skips NPCs whose avatar hasn't finished loading yet (still on the placeholder, no actor). */
+  /** Drives each loaded NPC's Idle clip — cheap even at the ~15-per-zone high end, same per-instance AnimationMixer.update the ambient foxes use (see render/wildlife.ts). Skips NPCs whose avatar hasn't finished loading yet (still on the placeholder, no actor). */
   private updateNpcActors(dt: number): void {
     for (const slot of this.npcSlots) {
       slot.actor?.update(dt);

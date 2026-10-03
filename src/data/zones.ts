@@ -32,7 +32,15 @@ export interface ZoneDefinition {
   accentColor: number;
   /** Enemy ids this zone's monsters are drawn from. Omit to use the level-weighted main city pool. */
   monsterIds?: string[];
+  /** How many spawn points (bands) this zone scatters — each one fields 1+ monsters, see `packWeights`. */
   monsterCount: number;
+  /**
+   * Relative odds of each spawn point fielding a band of 1, 2, 3... monsters
+   * (index 0 = solo, up to 5). Omit for DEFAULT_PACK_WEIGHTS. A starting
+   * village keeps big bands rare — config/balance.ts measured even a pack of
+   * three as genuinely dangerous for a same-level character.
+   */
+  packWeights?: number[];
   /**
    * Character level this zone is meant for — shown on the world map (see
    * ui/worldMapLayout.ts) as a soft guide, never an enforced gate, exactly
@@ -73,6 +81,33 @@ export function effectiveMonsterCount(zone: ZoneDefinition, zoneState: string | 
 
 const MAIN_CITY_ACCENT = 0x4c8a3f; // the field's usual grass green — no special tint for the shared hub
 
+/** Band-size odds (solo, pair, trio) for any zone that doesn't set its own `packWeights`. */
+export const DEFAULT_PACK_WEIGHTS = [0.3, 0.3, 0.2, 0.12, 0.08];
+/** A class's first village: still 1-5, but big bands are rare this early. */
+const STARTER_PACK_WEIGHTS = [0.5, 0.3, 0.12, 0.05, 0.03];
+
+type TileRectBounds = { x0: number; y0: number; x1: number; y1: number };
+
+/**
+ * Tile rects a zone's random monster scatter must stay out of. Pedravale's
+ * three named districts (plus a few tiles of margin, so a band wandering
+ * around its spawn point doesn't drift onto the square either) are town, not
+ * field — the Verdegal starts past them. Every other zone returns none.
+ */
+export function monsterFreeAreas(zoneId: string): TileRectBounds[] {
+  if (zoneId !== MAIN_CITY_ID) return [];
+  const districts = [MAIN_CITY_OLD_TOWN_BOUNDS, MAIN_CITY_DOWNTOWN_BOUNDS, MAIN_CITY_CRAFTS_BOUNDS];
+  const margin = 4;
+  return [
+    {
+      x0: Math.max(0, Math.min(...districts.map((d) => d.x0)) - margin),
+      y0: Math.max(0, Math.min(...districts.map((d) => d.y0)) - margin),
+      x1: Math.max(...districts.map((d) => d.x1)) + margin,
+      y1: Math.max(...districts.map((d) => d.y1)) + margin,
+    },
+  ];
+}
+
 // Roughly doubled from the original 18x14 / 24x18 so every class's territory
 // gets a real village/town footprint instead of a cramped walled pen — see
 // MapGenerator.ts's own doubled MAP_WIDTH/MAP_HEIGHT for the main city.
@@ -107,6 +142,7 @@ function buildClassVillageZones(): Record<string, ZoneDefinition> {
       accentColor: theme.accentColor,
       monsterIds: theme.startMonsters,
       monsterCount: 30,
+      packWeights: STARTER_PACK_WEIGHTS,
       generate: () =>
         generateVillageMap({ ...startSize, seed: startSeed, hasNorthGate: false, hasSouthGate: true, treeCount: 480, development: 'sparse' }),
       exits: [
@@ -189,6 +225,8 @@ export interface RegionalSettlement {
   accentColor: number;
   monsterIds: string[];
   monsterCount: number;
+  /** See ZoneDefinition.packWeights. */
+  packWeights?: number[];
   /** See ZoneDefinition.resolvedState. */
   resolvedState?: string;
 }
@@ -230,6 +268,8 @@ export const REGIONAL_SETTLEMENTS: RegionalSettlement[] = [
     accentColor: 0xc98bb0,
     monsterIds: ['fire_elemental', 'troll', 'stone_golem'],
     monsterCount: 60,
+    // The densest, toughest field: bands are the norm here, solos the exception.
+    packWeights: [0.15, 0.25, 0.25, 0.2, 0.15],
     // Set by baluarte_r3_cisterna's onCompleteEffect (data/quests.ts) — the
     // bastion's own three-quest chain ends on holding the cistern against
     // the drought-colossi, so its threat visibly recedes once that's done.
@@ -257,6 +297,7 @@ function buildRegionalSettlementZones(): Record<string, ZoneDefinition> {
       accentColor: s.accentColor,
       monsterIds: s.monsterIds,
       monsterCount: s.monsterCount,
+      packWeights: s.packWeights,
       recommendedLevel: s.recommendedLevel,
       resolvedState: s.resolvedState,
       generate: () =>

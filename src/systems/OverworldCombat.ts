@@ -7,6 +7,7 @@ import type { Game } from '../engine/Game';
 import { Enemy } from '../entities/Enemy';
 import type { Player } from '../entities/Player';
 import { getItemById, ITEM_DEFINITIONS } from '../data/items';
+import { DEFAULT_PACK_WEIGHTS } from '../data/zones';
 import { buildEnemyModel } from '../render/characterModel';
 import type { CharacterAnimatorLike, ActionName } from '../render/animation';
 import { HELD_MESHES, DEFAULT_CLASS } from '../render/playerAvatar';
@@ -18,6 +19,7 @@ import { archetypeProfileFor, chaseSpeedMultiplierFor } from './enemyArchetypes'
 import { computeSkillLevelStats } from './skillMath';
 import { activeStatusTypes } from './statusEffects';
 import { pickEncounterEnemyIds } from './EncounterSystem';
+import { pickSpawnPoints, rollPackSize, type TileRect } from './monsterSpawning';
 import { notifyEnemyDefeated, notifyLevelChanged } from './QuestSystem';
 import { saveGame } from './SaveSystem';
 import { el } from '../ui/dom';
@@ -123,7 +125,28 @@ const CHASE_BASE_SPEED = 1.1;
 const CHASE_SPEED_PER_STAT = 0.06;
 const WANDER_RADIUS = 1.8;
 const WANDER_SPEED = 0.55;
-const RESPAWN_DELAY = 40; // seconds
+const RESPAWN_DELAY = 22; // seconds
+/**
+ * A respawn due while the player stands this close (world units) to the
+ * spawn point waits RESPAWN_RETRY_DELAY more seconds instead — with bands
+ * now respawning together, popping a whole pack back in right on top of
+ * someone still looting the spot would be an ambush nobody could see coming.
+ */
+const RESPAWN_PLAYER_CLEARANCE = 7;
+const RESPAWN_RETRY_DELAY = 4;
+/**
+ * Where each member of a band stands around its shared spawn point (world
+ * units). Kept inside ±0.8 so the whole band stays on its anchor tile (half
+ * a tile is 1 world unit) — an anchor is picked as grass, its neighbours
+ * aren't guaranteed to be.
+ */
+const PACK_OFFSETS: Array<{ dx: number; dz: number }> = [
+  { dx: 0, dz: 0 },
+  { dx: 0.7, dz: 0.25 },
+  { dx: -0.6, dz: 0.4 },
+  { dx: 0.15, dz: -0.7 },
+  { dx: -0.55, dz: -0.5 },
+];
 const LABEL_VISIBLE_DISTANCE = 13; // world units — roughly where the scene fog starts hiding things anyway
 /** Fires the class ability (Golpe Selvagem / Milagre da Fé / Dreno das Almas) — "R" for "recurso". Unbound anywhere else during combat (OverworldScreen only reads E/M/Escape/WASD/arrows). */
 const CLASS_ABILITY_KEY = 'r';
@@ -201,16 +224,29 @@ export class OverworldCombat {
   }
 
   /**
-   * Places a handful of monsters on grass tiles scattered across the map,
-   * well clear of the player's start. `enemyIds`, when given, restricts
-   * monsters to that pool (a village's own weak/mid field) instead of the
-   * main city's level-weighted pool; `minDistFromStart`/`minSpacing` should
-   * shrink for small village maps so spawns aren't crowded out entirely.
+   * Scatters spawn points on grass tiles across the map, well clear of the
+   * player's start, and fields a small band of the same enemy at each one
+   * (size rolled from `packWeights` — see data/zones.ts's
+   * ZoneDefinition.packWeights). A band's members wander around the same
+   * spot, so walking into one pulls the whole band into a single
+   * multi-enemy fight (beginEngagement already supports several engaged at
+   * once). `enemyIds`, when given, restricts monsters to that pool (a
+   * village's own weak/mid field) instead of the main city's level-weighted
+   * pool; `minDistFromStart`/`minSpacing` should shrink for small village
+   * maps so spawns aren't crowded out entirely; `avoid` keeps spawn points
+   * out of a zone's town districts (see data/zones.ts's monsterFreeAreas).
    */
   spawnMonsters(
     tiles: TileType[][],
     startTile: { x: number; y: number },
-    opts: { count?: number; enemyIds?: string[]; minDistFromStart?: number; minSpacing?: number } = {},
+    opts: {
+      count?: number;
+      enemyIds?: string[];
+      minDistFromStart?: number;
+      minSpacing?: number;
+      packWeights?: number[];
+      avoid?: TileRect[];
+    } = {},
   ): void {
     this.ensureBaseHud();
 
@@ -220,10 +256,16 @@ export class OverworldCombat {
       opts.count ?? MONSTER_COUNT,
       opts.minDistFromStart ?? MIN_SPAWN_DIST_FROM_START,
       opts.minSpacing ?? MIN_SPAWN_SPACING,
+      opts.avoid ?? [],
     );
+    const weights = opts.packWeights ?? DEFAULT_PACK_WEIGHTS;
     for (const p of points) {
       const id = opts.enemyIds ? opts.enemyIds[Math.floor(Math.random() * opts.enemyIds.length)] : pickEncounterEnemyIds(this.player.level)[0];
-      this.monsters.push(this.buildMonster(id, p.x, p.y));
+      const size = Math.min(rollPackSize(weights), PACK_OFFSETS.length);
+      for (let i = 0; i < size; i++) {
+        const off = PACK_OFFSETS[i];
+        this.monsters.push(this.buildMonster(id, p.x + off.dx / TILE_SIZE, p.y + off.dz / TILE_SIZE));
+      }
     }
   }
 
@@ -468,7 +510,13 @@ export class OverworldCombat {
 
   private updateMonster(m: WorldMonster, dt: number, playerPos: THREE.Vector3): void {
     if (m.state === 'dead') {
-      if (m.respawnAt >= 0 && this.clock >= m.respawnAt) this.respawnMonster(m);
+      if (m.respawnAt >= 0 && this.clock >= m.respawnAt) {
+        if (Math.hypot(playerPos.x - m.spawnX, playerPos.z - m.spawnZ) < RESPAWN_PLAYER_CLEARANCE) {
+          m.respawnAt = this.clock + RESPAWN_RETRY_DELAY;
+        } else {
+          this.respawnMonster(m);
+        }
+      }
       return;
     }
     if (m.flashTime > 0) {
@@ -1294,32 +1342,4 @@ export class OverworldCombat {
       slot.el.classList.toggle('depleted', count <= 0);
     }
   }
-}
-
-/** Picks well-spaced grass tiles for monster spawn points, clear of the player's starting area. */
-function pickSpawnPoints(
-  tiles: TileType[][],
-  startTile: { x: number; y: number },
-  count: number,
-  minDistFromStart: number,
-  minSpacing: number,
-): Array<{ x: number; y: number }> {
-  const candidates: Array<{ x: number; y: number }> = [];
-  for (let y = 0; y < tiles.length; y++) {
-    for (let x = 0; x < tiles[0].length; x++) {
-      if (tiles[y][x] !== TileType.Grass) continue;
-      if (Math.hypot(x - startTile.x, y - startTile.y) < minDistFromStart) continue;
-      candidates.push({ x, y });
-    }
-  }
-  for (let i = candidates.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
-  }
-  const picked: Array<{ x: number; y: number }> = [];
-  for (const c of candidates) {
-    if (picked.length >= count) break;
-    if (picked.every((p) => Math.hypot(p.x - c.x, p.y - c.y) >= minSpacing)) picked.push(c);
-  }
-  return picked;
 }
