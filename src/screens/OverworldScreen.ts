@@ -22,7 +22,7 @@ import {
   type ZoneExit,
 } from '../data/zones';
 import { dungeonsInHostZone, getDungeonById, getDungeonByZoneId, type DungeonDefinition } from '../data/dungeons';
-import { rarityTier, rarityToHex } from '../config/rarity';
+import { RARITY_LABEL, rarityTier, rarityToHex } from '../config/rarity';
 import type { EquipmentSlot, ItemRarity } from '../config/types';
 import { Player, type Act3Ending } from '../entities/Player';
 import type { CharacterAnimatorLike } from '../render/animation';
@@ -38,6 +38,7 @@ import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { animateWaterMaterial, buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
 import { recordItemCrafted, recordPlayerDefeated } from '../systems/AchievementSystem';
 import { OverworldCombat } from '../systems/OverworldCombat';
+import { OverworldEvents, type EventInteractable } from './OverworldEvents';
 import { buildWalkabilityGrid, findNearestWalkable, pathfindToClick } from '../systems/Pathfinding';
 import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
 import { DUNGEON_TIER_CAP, dungeonTierStatMultiplier, selectableDungeonTiers } from '../systems/DungeonTierSystem';
@@ -324,6 +325,8 @@ export class OverworldScreen implements Screen {
   /** Ambient, non-attackable creatures and flower patches — see render/wildlife.ts. Null inside a dungeon. */
   private wildlife: WildlifeManager | null = null;
   private combat!: OverworldCombat;
+  private worldEvents!: OverworldEvents;
+  private nearbyEventSpot: EventInteractable | null = null;
   private zoneDef!: ZoneDefinition;
   private zoneRespawnTile = { x: 5, y: 5 };
   private time = 0;
@@ -578,6 +581,7 @@ export class OverworldScreen implements Screen {
     }
 
     this.buildHud();
+    this.buildWorldEvents();
     this.buildJoystick();
     this.buildDialogueOverlay();
     this.buildShopOverlay();
@@ -614,6 +618,7 @@ export class OverworldScreen implements Screen {
     // are deliberately left alone — see disposeGroup's own doc comment.
     disposeGroup(this.terrainGroup);
     this.wildlife?.dispose();
+    this.worldEvents.dispose();
     for (const p of this.dungeonPortals) disposeGroup(p.group);
     for (const c of this.chestSlots) disposeGroup(c.mesh.group);
   }
@@ -628,6 +633,7 @@ export class OverworldScreen implements Screen {
 
     if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial && !this.minimapExpanded && !this.worldMapOpen) {
       advanceGameClock(this.player.gameClock, dt);
+      this.worldEvents.tick(dt);
       this.updateMovement(dt);
       this.updateInteraction();
       this.combat.update(dt, this.avatar.position, this.camera);
@@ -652,6 +658,7 @@ export class OverworldScreen implements Screen {
     this.updateNpcLabels();
     this.updateDungeonPortals();
     this.updateChests();
+    this.worldEvents.update(dt);
     this.updateMinimap();
     this.updateQuestIndicator();
     this.refreshHud();
@@ -767,6 +774,7 @@ export class OverworldScreen implements Screen {
     if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
     else if (this.nearbyDungeon) this.interactWithDungeonPortal(this.nearbyDungeon);
     else if (this.nearbyChest) this.openChest(this.nearbyChest);
+    else if (this.nearbyEventSpot) this.nearbyEventSpot.activate();
   }
 
   private cycleMount(): void {
@@ -1211,8 +1219,9 @@ export class OverworldScreen implements Screen {
    * pop-in for a background NPC is fine; this isn't the player's own avatar,
    * which has to be fully loaded before its screen ever mounts.
    */
-  private buildNpcs(): void {
-    for (const def of NPC_DEFINITIONS.filter((n) => n.zoneId === this.player.zoneId)) {
+  private buildNpcs(defs: NpcDefinition[] = NPC_DEFINITIONS.filter((n) => n.zoneId === this.player.zoneId)): NpcSlot[] {
+    const built: NpcSlot[] = [];
+    for (const def of defs) {
       const placeholder = new THREE.Group();
       placeholder.visible = false;
       tileCenterWorld(def.mapX, def.mapY, placeholder.position);
@@ -1235,9 +1244,11 @@ export class OverworldScreen implements Screen {
       this.game.uiRoot.append(labelEl);
       const slot: NpcSlot = { def, model: placeholder, labelEl, actor: null };
       this.npcSlots.push(slot);
+      built.push(slot);
 
       loadNpcAvatar(def)
         .then((avatar) => {
+          if (!this.npcSlots.includes(slot)) return; // removed (a temporary NPC) before its model finished loading
           avatar.scene.position.copy(placeholder.position);
           avatar.scene.rotation.y = Math.PI;
           this.scene.add(avatar.scene);
@@ -1250,6 +1261,7 @@ export class OverworldScreen implements Screen {
           console.error(`Falha ao carregar avatar do NPC "${def.id}"`, err);
         });
     }
+    return built;
   }
 
   /** Drives each loaded NPC's Idle clip — cheap even at the ~15-per-zone high end, same per-instance AnimationMixer.update the ambient foxes use (see render/wildlife.ts). Skips NPCs whose avatar hasn't finished loading yet (still on the placeholder, no actor). */
@@ -1322,6 +1334,7 @@ export class OverworldScreen implements Screen {
 
     const foundChest = this.chestSlots.find((c) => !c.opened && c.mesh.group.position.distanceTo(this.avatar.position) <= INTERACT_RANGE);
     this.nearbyChest = foundChest?.def ?? null;
+    this.nearbyEventSpot = this.worldEvents.interactableNear(this.avatar.position, INTERACT_RANGE);
 
     const touch = isTouchDevice();
     if (this.nearbyNpc) {
@@ -1335,6 +1348,9 @@ export class OverworldScreen implements Screen {
     } else if (this.nearbyChest) {
       this.promptEl.hidden = false;
       this.promptEl.textContent = touch ? `Toque para abrir ${this.nearbyChest.name}` : `[E] Abrir ${this.nearbyChest.name}`;
+    } else if (this.nearbyEventSpot) {
+      this.promptEl.hidden = false;
+      this.promptEl.textContent = touch ? this.nearbyEventSpot.touchPrompt : this.nearbyEventSpot.keyPrompt;
     } else {
       this.promptEl.hidden = true;
     }
@@ -1796,18 +1812,18 @@ export class OverworldScreen implements Screen {
     }
     for (const templateId of vendor.equipmentTemplateIds ?? []) {
       const template = getEquipmentTemplate(templateId);
-      const price = 60 + this.player.level * 8;
+      const price = Math.round((60 + this.player.level * 8) * (vendor.priceMultiplier ?? 1));
       const craftGold = Math.round(price * 0.5);
       const craftQty = 3;
       buyRows.push(
         this.shopRow(
           template.name,
-          template.description,
+          vendor.stockRarity ? `${RARITY_LABEL[vendor.stockRarity]} · ${template.description}` : template.description,
           price,
           () => {
             if (this.player.gold < price || this.player.bagFull) return;
             this.player.gold -= price;
-            this.player.addLoot(createStarterItem(templateId, 'verde', Math.max(1, this.player.level)));
+            this.player.addLoot(createStarterItem(templateId, vendor.stockRarity ?? 'verde', Math.max(1, this.player.level)));
             saveGame(this.player);
             this.renderShop();
           },
@@ -1928,7 +1944,7 @@ export class OverworldScreen implements Screen {
         onClick: canAfford ? onBuy : undefined,
       }),
     ];
-    if (craft) {
+    if (craft && !this.shopNpc?.vendor?.noCrafting) {
       const material = getMaterialById(craft.materialId);
       const owned = this.player.inventory[craft.materialId] ?? 0;
       const canCraft = owned >= craft.materialQty && this.player.gold >= craft.goldCost && !bagBlocked;
@@ -2365,6 +2381,38 @@ export class OverworldScreen implements Screen {
     );
   }
 
+  /** Hands the dynamic-event director (see OverworldEvents) the few things it needs from this screen. Built after buildHud so its banner/arrow sit above the world but under every overlay. */
+  private buildWorldEvents(): void {
+    let walkGrid: ReturnType<typeof buildWalkabilityGrid> | null = null;
+    this.worldEvents = new OverworldEvents({
+      game: this.game,
+      player: this.player,
+      scene: this.scene,
+      camera: this.camera,
+      combat: this.combat,
+      zone: this.zoneDef,
+      tiles: this.tiles,
+      cameraYaw: CAMERA_YAW,
+      avatarPosition: () => this.avatar.position,
+      isBlockedTile: (x, y) => {
+        walkGrid ??= this.currentWalkabilityGrid();
+        return walkGrid.cells[y * walkGrid.width + x] === 0;
+      },
+      addNpc: (def) => {
+        const slots = this.buildNpcs([def]);
+        return () => {
+          for (const slot of slots) {
+            this.scene.remove(slot.model);
+            slot.labelEl.remove();
+            if (this.nearbyNpc === slot.def) this.nearbyNpc = null;
+          }
+          this.npcSlots = this.npcSlots.filter((s) => !slots.includes(s));
+        };
+      },
+    });
+    this.worldEvents.mount();
+  }
+
   /**
    * Cycles to the next CAMERA_RIG_PRESETS entry — the eye button's own click
    * handler. A single explicit step per tap, never automatic: updateCamera
@@ -2781,6 +2829,8 @@ export class OverworldScreen implements Screen {
       ctx.closePath();
       ctx.fill();
     }
+
+    this.worldEvents.drawMinimapMarker(ctx, toMinimap);
 
     // The player, on top of everything — a small outlined dot so it stays
     // visible against both light (path) and dark (tree) terrain colors.

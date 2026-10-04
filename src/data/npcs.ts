@@ -1,4 +1,5 @@
 import type { CharacterAppearance } from '../config/customization';
+import type { ItemRarity } from '../config/types';
 import { MAIN_CITY_SHOPS, MAIN_CITY_SPOTS, villageClearingBounds, type Signage } from '../systems/MapGenerator';
 import { CLASS_ZONE_THEMES } from './classZones';
 import { getDungeonById } from './dungeons';
@@ -17,6 +18,12 @@ export interface VendorInfo {
   gemIds?: string[];
   /** Material this vendor's crafting recipes consume, alongside gold — see materials dropped by monsters. */
   craftMaterialId: string;
+  /** Rarity of the equipment rolled on purchase; omit for 'verde'. Only the itinerant merchant (data/worldEvents.ts) sets it. */
+  stockRarity?: ItemRarity;
+  /** Multiplies every equipment price; omit for 1. */
+  priceMultiplier?: number;
+  /** Hides the crafting buttons — a passing merchant has no workshop. */
+  noCrafting?: boolean;
 }
 
 /**

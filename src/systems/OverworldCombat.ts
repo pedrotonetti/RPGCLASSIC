@@ -51,8 +51,10 @@ interface WorldMonster {
   respawnAt: number;
   labelEl: HTMLElement;
   hpFillEl: HTMLElement;
-  /** Set only for a dungeon's own fixed monster pods (see spawnDungeonEncounters) — never respawns once dead, matching an instance run being one-and-done per visit. */
+  /** Set for a dungeon's own fixed monster pods (see spawnDungeonEncounters) and for a world event's invasion band (see spawnEventBand) — never respawns once dead, matching an instance run being one-and-done per visit. */
   noRespawn?: boolean;
+  /** Set only for a world event's band (systems/EventSystem.ts) — lets the event count, point at and despawn its monsters as a unit. */
+  eventGroupId?: string;
   /** Index into this dungeon run's `encounters` array — every monster sharing one index belongs to the same fixed pod. */
   dungeonEncounterIndex?: number;
   /** The one boss monster of a dungeon run, if any. */
@@ -328,6 +330,33 @@ export class OverworldCombat {
   spawnFixedMonster(enemyId: string, atTile: { x: number; y: number }): void {
     this.ensureBaseHud();
     this.monsters.push(this.buildMonster(enemyId, atTile.x, atTile.y));
+  }
+
+  /** A temporary band for a world event (an invasion): same monsters/AI as spawnMonsters' bands, fanned around `atTile`, but they never respawn and can be counted/despawned by `groupId`. */
+  spawnEventBand(groupId: string, enemyIds: string[], atTile: { x: number; y: number }): void {
+    this.ensureBaseHud();
+    enemyIds.forEach((enemyId, i) => {
+      const off = PACK_OFFSETS[i % PACK_OFFSETS.length];
+      const m = this.buildMonster(enemyId, atTile.x + off.dx / TILE_SIZE, atTile.y + off.dz / TILE_SIZE);
+      m.noRespawn = true;
+      m.eventGroupId = groupId;
+      this.monsters.push(m);
+    });
+  }
+
+  /** World-space (x,z) of every still-alive monster of an event band — empty once the band is beaten (or was never spawned). */
+  eventBandPositions(groupId: string): Array<{ x: number; z: number }> {
+    return this.monsters.filter((m) => m.eventGroupId === groupId && m.state !== 'dead').map((m) => ({ x: m.model.position.x, z: m.model.position.z }));
+  }
+
+  /** Removes an event band's monsters (dead or alive) from the world. A monster mid-fight is left alone — the caller only despawns while out of combat. */
+  despawnEventBand(groupId: string): void {
+    this.monsters = this.monsters.filter((m) => {
+      if (m.eventGroupId !== groupId || m.state === 'engaged') return true;
+      this.scene.remove(m.model);
+      m.labelEl.remove();
+      return false;
+    });
   }
 
   private ensureBaseHud(): void {

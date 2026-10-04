@@ -653,6 +653,72 @@ body {
   50% { opacity: 1; }
 }
 
+/* Dynamic world events (systems/EventSystem.ts, driven by screens/OverworldEvents.ts):
+   a persistent banner under the quest hint, a transient start/end toast, and an
+   orange pointer reusing the quest arrow's shape. */
+.quest-arrow.event-arrow {
+  background: #ff7a45;
+}
+.quest-arrow.event-arrow.on-target {
+  background: none;
+  border-color: #ff7a45;
+  filter: drop-shadow(0 0 5px rgba(255, 122, 69, 0.7));
+}
+.world-event-banner {
+  position: absolute;
+  top: calc(206px + var(--safe-t));
+  left: calc(8px + var(--safe-l));
+  max-width: 320px;
+  padding: 5px 10px;
+  background: rgba(26, 20, 35, 0.78);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  pointer-events: none;
+}
+.world-event-banner[data-kind='invasao'] { border-left-color: #ff6b3d; }
+.world-event-banner[data-kind='mercador'] { border-left-color: #f2c14e; }
+.world-event-banner[data-kind='arvore_corrompida'] { border-left-color: #b45cff; }
+.world-event-banner[data-kind='nevoa'] { border-left-color: #9fb4c4; }
+.wev-title {
+  font-size: 17px;
+  color: var(--accent);
+}
+.wev-detail {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.world-event-toast {
+  position: absolute;
+  top: calc(84px + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(440px, 90vw);
+  padding: 8px 16px;
+  font-size: 19px;
+  text-align: center;
+  color: var(--text);
+  background: rgba(26, 20, 35, 0.9);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  text-shadow: 1px 1px 0 #000;
+  pointer-events: none;
+}
+@media (max-width: 560px) {
+  .world-event-banner {
+    top: calc(216px + var(--safe-t));
+    max-width: 56vw;
+    padding: 3px 7px;
+  }
+  .wev-title { font-size: 14px; }
+  .wev-detail { font-size: 12px; }
+  .world-event-toast { font-size: 16px; }
+}
+@media (max-height: 480px) and (orientation: landscape) {
+  .world-event-banner { top: calc(150px + var(--safe-t)); }
+  .world-event-toast { top: calc(60px + var(--safe-t)); }
+}
+
 .interact-prompt {
   position: absolute;
   bottom: 30%;

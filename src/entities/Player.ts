@@ -8,6 +8,7 @@ import { computeSkillLevelStats, skillPointsForLevel, ultimateLevelForCharacter 
 import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder } from '../systems/statusEffects';
 import { cloneAchievementState, createInitialAchievementState, normalizeAchievementState, recordItemAcquired, type AchievementState } from '../systems/AchievementSystem';
 import { cloneCodexState, createInitialCodexState, normalizeCodexState, type CodexState } from '../systems/CodexSystem';
+import { restoreEventState, serializeEventState, type WorldEventSave, type WorldEventState } from '../systems/EventSystem';
 import { createInitialGameClock, type GameClockState } from '../systems/GameClock';
 import { createInitialWorldState, type WorldState } from '../systems/WorldStateSystem';
 import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, startZoneForClass } from '../data/zones';
@@ -67,6 +68,8 @@ export interface PlayerSaveData {
    * — defaulted the same way `hasSeenTutorial`/`dungeonTiers` were.
    */
   worldState: WorldState;
+  /** The active dynamic event and per-event cooldowns (see systems/EventSystem.ts). Absent on any save from before this field existed — restoreEventState defaults it to "nothing happening". */
+  worldEvents: WorldEventSave;
   /** Ids of `data/chests.ts` ChestDefinitions already looted — a chest in this list stays depleted (no second reward) on every later mount/reload. Absent on any save from before this field existed — defaulted the same way `hasSeenTutorial`/`dungeonTiers` were. */
   openedChestIds: string[];
   /** The in-game clock (see systems/GameClock.ts) — hour-of-day for ambient lighting and (later) NPC schedules. Absent on any save from before this field existed — defaulted the same way worldState was. */
@@ -113,6 +116,8 @@ export class Player implements StatusEffectHolder {
   hasSeenTutorial: boolean;
   dungeonTiers: Record<string, number>;
   worldState: WorldState;
+  /** See PlayerSaveData.worldEvents' own doc comment. */
+  worldEvents: WorldEventState;
   /** Ids of `data/chests.ts` ChestDefinitions already looted — a chest in this list stays depleted (no second reward) on every later mount/reload. Absent on any save from before this field existed — defaulted the same way `hasSeenTutorial`/`dungeonTiers` were. */
   openedChestIds: string[];
   /** See PlayerSaveData.gameClock's own doc comment. */
@@ -163,6 +168,7 @@ export class Player implements StatusEffectHolder {
     this.hasSeenTutorial = data?.hasSeenTutorial ?? false;
     this.dungeonTiers = data?.dungeonTiers ?? {};
     this.worldState = data?.worldState ?? createInitialWorldState();
+    this.worldEvents = restoreEventState(data?.worldEvents);
     this.gameClock = data?.gameClock ?? createInitialGameClock();
     this.openedChestIds = data?.openedChestIds ?? [];
     this.achievements = data?.achievements ? normalizeAchievementState(data.achievements) : createInitialAchievementState();
@@ -427,6 +433,7 @@ export class Player implements StatusEffectHolder {
         completedEvents: { ...this.worldState.completedEvents },
         zoneStates: { ...this.worldState.zoneStates },
       },
+      worldEvents: serializeEventState(this.worldEvents),
       openedChestIds: [...this.openedChestIds],
       gameClock: { ...this.gameClock },
       achievements: cloneAchievementState(this.achievements),
