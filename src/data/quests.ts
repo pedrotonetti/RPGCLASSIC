@@ -1,5 +1,6 @@
 import type { ItemRarity } from '../config/types';
-import type { ChoiceEffect } from '../systems/ChoiceSystem';
+import type { ChoiceEffect, QuestChoice } from '../systems/ChoiceSystem';
+import { BRANCHING_QUESTS, BRANCHING_QUEST_STARTERS } from './branchingQuests';
 import { CLASS_ZONE_THEMES } from './classZones';
 import { BALUARTE_AMANHECER_ID } from './zones';
 
@@ -32,6 +33,8 @@ export interface QuestDefinition {
    * (clearing corruption, earning a village's trust), not every fetch quest.
    */
   onCompleteEffect?: ChoiceEffect;
+  /** Branching decision (data/branchingQuests.ts): the talkTo objective opens a choice panel instead of completing, see QuestSystem.resolveQuestChoice. */
+  choices?: QuestChoice[];
 }
 
 /**
@@ -1099,6 +1102,7 @@ export const SIDE_QUEST_STARTERS: Array<{ questId: string; prerequisiteQuestId: 
   // The regional settlements — see each chain's own comment in SIDE_QUESTS.
   { questId: 'vau_r1_teias', prerequisiteQuestId: 'q1_awaken' },
   { questId: 'baluarte_r1_muralha', prerequisiteQuestId: 'act3_q2_confront' },
+  ...BRANCHING_QUEST_STARTERS,
 ];
 
 const ALL_QUESTS: QuestDefinition[] = [
@@ -1108,6 +1112,7 @@ const ALL_QUESTS: QuestDefinition[] = [
   ...AMARA_REVEAL_QUESTS,
   ...ACT3_QUESTS,
   ...SIDE_QUESTS,
+  ...BRANCHING_QUESTS,
 ];
 
 export function getQuestById(id: string): QuestDefinition | undefined {

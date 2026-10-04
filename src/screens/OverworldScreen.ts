@@ -5,6 +5,7 @@ import { TILE_SIZE } from '../config/gameConfig';
 import { isWalkable, TileType } from '../config/tiles';
 import { createStarterItem, generateLoot, getEquipmentTemplate, itemDisplayName } from '../data/equipment';
 import { chestsInZone, type ChestDefinition } from '../data/chests';
+import { LORE_FRAGMENTS, type LoreFragmentDefinition } from '../data/loreFragments';
 import { getGemById } from '../data/gems';
 import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
@@ -50,10 +51,12 @@ import {
   ensureQuestStarted,
   notifyTalkedTo,
   offerSideQuest,
+  pendingQuestChoice,
   questTrackerText,
+  resolveQuestChoice,
 } from '../systems/QuestSystem';
 import { advanceGameClock, dayNightFactor, formatTimeOfDay, isNight } from '../systems/GameClock';
-import { getZoneState, worldMoodFactor } from '../systems/WorldStateSystem';
+import { adjustWorldState, getZoneState, worldMoodFactor } from '../systems/WorldStateSystem';
 import type { QuestDefinition } from '../data/quests';
 import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
@@ -61,6 +64,8 @@ import { el, goToLazy } from '../ui/dom';
 import { isTouchDevice } from '../ui/device';
 import { buildAchievementToast, type AchievementToastHandle } from '../ui/achievementToast';
 import { buildGlobeIconSvg, buildWorldMapOverlay, type WorldMapOverlayHandle } from '../ui/worldMap';
+import { LoreFragmentLayer, loreFragmentSpeaker } from './LoreFragmentLayer';
+import { QuestChoiceOverlay } from './QuestChoiceOverlay';
 
 const SLOT_LABELS: Record<EquipmentSlot, string> = { arma: 'Arma', armadura: 'Armadura', acessorio: 'Acessório' };
 
@@ -335,6 +340,9 @@ export class OverworldScreen implements Screen {
   private nearbyDungeon: DungeonDefinition | null = null;
   private chestSlots: ChestSlot[] = [];
   private nearbyChest: ChestDefinition | null = null;
+  private loreLayer: LoreFragmentLayer | null = null;
+  private nearbyLore: LoreFragmentDefinition | null = null;
+  private questChoiceOverlay!: QuestChoiceOverlay;
   /** Set only when the CURRENT zone is a dungeon instance (see mount()) — null in any open-world zone, including one that hosts other dungeons' portals. */
   private activeDungeon: DungeonDefinition | null = null;
   private dungeonRunState: DungeonRunState | null = null;
@@ -542,6 +550,7 @@ export class OverworldScreen implements Screen {
     }
     this.buildDungeonPortals();
     this.buildChests();
+    this.loreLayer = new LoreFragmentLayer(this.scene, this.game.uiRoot, this.player.zoneId, this.currentWalkabilityGrid(), this.player.discoveredLoreIds);
     this.positionCameraImmediate();
 
     this.combat = new OverworldCombat(this.game, this.player, this.scene, this.animator, () => this.handleDefeat(), this.playerModel);
@@ -571,6 +580,7 @@ export class OverworldScreen implements Screen {
         minSpacing: this.zoneDef.monsterIds ? 2 : undefined,
         packWeights: this.zoneDef.packWeights,
         avoid: monsterFreeAreas(this.zoneDef.id),
+        allowRare: true,
       });
       if (this.player.zoneId === MAIN_CITY_ID && tiles[LAGOA_TROLL_TILE.y]?.[LAGOA_TROLL_TILE.x] === TileType.Grass) {
         this.combat.spawnFixedMonster('troll', LAGOA_TROLL_TILE);
@@ -588,6 +598,7 @@ export class OverworldScreen implements Screen {
     this.buildPauseOverlay();
     this.achievementToast = buildAchievementToast(this.game, this.player);
     this.buildAct3Overlays();
+    this.questChoiceOverlay = new QuestChoiceOverlay(this.game.uiRoot);
     this.buildMinimap();
     if (this.activeDungeon) {
       this.buildDungeonHud();
@@ -621,6 +632,7 @@ export class OverworldScreen implements Screen {
     this.worldEvents.dispose();
     for (const p of this.dungeonPortals) disposeGroup(p.group);
     for (const c of this.chestSlots) disposeGroup(c.mesh.group);
+    this.loreLayer?.dispose();
   }
 
   onResize(width: number, height: number): void {
@@ -631,7 +643,7 @@ export class OverworldScreen implements Screen {
   update(dt: number): void {
     this.time += dt;
 
-    if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial && !this.minimapExpanded && !this.worldMapOpen) {
+    if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial && !this.minimapExpanded && !this.worldMapOpen && !this.questChoiceOverlay.isOpen) {
       advanceGameClock(this.player.gameClock, dt);
       this.worldEvents.tick(dt);
       this.updateMovement(dt);
@@ -659,6 +671,7 @@ export class OverworldScreen implements Screen {
     this.updateDungeonPortals();
     this.updateChests();
     this.worldEvents.update(dt);
+    this.loreLayer?.update(this.time, this.avatar.position, this.camera, isNight(this.player.gameClock), INTERACT_RANGE * 2.5);
     this.updateMinimap();
     this.updateQuestIndicator();
     this.refreshHud();
@@ -751,6 +764,8 @@ export class OverworldScreen implements Screen {
       return;
     }
 
+    if (this.questChoiceOverlay.isOpen) return;
+
     if (e.key === 'Escape') {
       this.togglePause();
       return;
@@ -770,11 +785,12 @@ export class OverworldScreen implements Screen {
 
   /** Shared by the [E] key and the on-screen interact-prompt tap — the only two ways to talk to an NPC or enter a dungeon, on keyboard and touch respectively. */
   private tryInteract(): void {
-    if (this.shopNpc || this.dialogueNpc || this.paused || this.showingTutorial) return;
+    if (this.shopNpc || this.dialogueNpc || this.paused || this.showingTutorial || this.questChoiceOverlay.isOpen) return;
     if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
     else if (this.nearbyDungeon) this.interactWithDungeonPortal(this.nearbyDungeon);
     else if (this.nearbyChest) this.openChest(this.nearbyChest);
     else if (this.nearbyEventSpot) this.nearbyEventSpot.activate();
+    else if (this.nearbyLore) this.examineLoreFragment(this.nearbyLore);
   }
 
   private cycleMount(): void {
@@ -1335,6 +1351,7 @@ export class OverworldScreen implements Screen {
     const foundChest = this.chestSlots.find((c) => !c.opened && c.mesh.group.position.distanceTo(this.avatar.position) <= INTERACT_RANGE);
     this.nearbyChest = foundChest?.def ?? null;
     this.nearbyEventSpot = this.worldEvents.interactableNear(this.avatar.position, INTERACT_RANGE);
+    this.nearbyLore = this.loreLayer?.nearest(this.avatar.position, INTERACT_RANGE, isNight(this.player.gameClock)) ?? null;
 
     const touch = isTouchDevice();
     if (this.nearbyNpc) {
@@ -1351,6 +1368,9 @@ export class OverworldScreen implements Screen {
     } else if (this.nearbyEventSpot) {
       this.promptEl.hidden = false;
       this.promptEl.textContent = touch ? this.nearbyEventSpot.touchPrompt : this.nearbyEventSpot.keyPrompt;
+    } else if (this.nearbyLore) {
+      this.promptEl.hidden = false;
+      this.promptEl.textContent = touch ? `Toque para examinar ${this.nearbyLore.title}` : `[E] Examinar ${this.nearbyLore.title}`;
     } else {
       this.promptEl.hidden = true;
     }
@@ -1375,7 +1395,7 @@ export class OverworldScreen implements Screen {
     // quest-conditioned NPC shows for this conversation reflect the state
     // the player walked up with, not whatever quest they're handed
     // immediately after.
-    this.dialogueLines = dialogueLinesFor(npc, [this.player.activeQuestId, this.player.sideQuestId], this.player.completedQuestIds, this.player.worldState.factionReputation);
+    this.dialogueLines = dialogueLinesFor(npc, [this.player.activeQuestId, this.player.sideQuestId], this.player.completedQuestIds, this.player.worldState.factionReputation, this.player.worldState.flags);
     this.dialogueOverlay.hidden = false;
     this.promptEl.hidden = true;
     this.renderDialogueLine();
@@ -1423,6 +1443,45 @@ export class OverworldScreen implements Screen {
     if (npc?.id === 'ilva' && this.player.completedQuestIds.includes('act3_q2_confront') && !this.player.act3Ending) {
       this.openAct3Choice();
     }
+    if (npc) this.offerQuestChoice(npc.id);
+  }
+
+  // --- branching quests (QuestDefinition.choices) ------------------------
+
+  /** After a conversation ends, opens the decision panel if that NPC holds a pending branching quest. */
+  private offerQuestChoice(npcId: string): void {
+    const quest = pendingQuestChoice(this.player, npcId);
+    if (!quest) return;
+    this.promptEl.hidden = true;
+    this.questChoiceOverlay.show(quest, (choice) => {
+      const message = resolveQuestChoice(this.player, quest.id, choice.id);
+      this.questChoiceOverlay.hide();
+      if (!message) return;
+      saveGame(this.player);
+      audio.questComplete();
+      this.combat.showBanner(message, 4800);
+      this.refreshQuestTracker();
+    });
+  }
+
+  // --- lore fragments (Fragmentos de Memória) ------------------------------
+
+  /** First visit records the fragment and adds 1 hope; it is then read through the dialogue overlay. */
+  private examineLoreFragment(def: LoreFragmentDefinition): void {
+    if (!this.player.discoveredLoreIds.includes(def.id)) {
+      this.player.discoveredLoreIds.push(def.id);
+      adjustWorldState(this.player.worldState, { hope: 1 });
+      this.loreLayer?.markDiscovered(def.id);
+      saveGame(this.player);
+      this.combat.showBanner(`Fragmento de Memória descoberto (${this.player.discoveredLoreIds.length}/${LORE_FRAGMENTS.length}).`, 3200);
+    }
+    this.dialogueNpc = loreFragmentSpeaker(def);
+    this.dialogueLineIndex = 0;
+    this.dialogueLines = def.lines;
+    this.dialogueOverlay.hidden = false;
+    this.promptEl.hidden = true;
+    this.renderDialogueLine();
+    audio.npcTalk();
   }
 
   // --- Ato 3: the branching choice (O Corte / A Cura Tentada / O Abraço) -

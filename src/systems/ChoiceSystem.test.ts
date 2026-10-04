@@ -75,3 +75,27 @@ describe('applyChoiceEffect', () => {
     expect(getFactionReputation(player.worldState, 'pedravale')).toBe(5);
   });
 });
+
+describe('applyChoiceEffect — costs and multi-faction moves', () => {
+  it('treats a negative grantGold as a payment, never leaving the player below zero', () => {
+    const player = freshPlayer();
+    player.gold = 100;
+    applyChoiceEffect(player, { grantGold: -60 });
+    expect(player.gold).toBe(40);
+    applyChoiceEffect(player, { grantGold: -500 });
+    expect(player.gold).toBe(0);
+  });
+
+  it('applies several faction deltas at once, on top of the single factionDelta', () => {
+    const player = freshPlayer();
+    applyChoiceEffect(player, {
+      factionDelta: { factionId: 'pedravale', amount: 4 },
+      factionDeltas: [
+        { factionId: 'pedravale', amount: 6 },
+        { factionId: 'ancoradouro_vau', amount: -9 },
+      ],
+    });
+    expect(getFactionReputation(player.worldState, 'pedravale')).toBe(10);
+    expect(getFactionReputation(player.worldState, 'ancoradouro_vau')).toBe(-9);
+  });
+});

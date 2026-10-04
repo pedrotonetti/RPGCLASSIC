@@ -60,6 +60,12 @@ export interface NpcRepDialogue {
   lines: string[];
 }
 
+/** Dialogue remembering a past decision (ChoiceEffect.setFlag). First match wins; beats 'completed' and rep lines, never an active quest briefing. */
+export interface NpcFlagDialogue {
+  flag: string;
+  lines: string[];
+}
+
 export interface NpcDefinition {
   id: string;
   name: string;
@@ -73,6 +79,7 @@ export interface NpcDefinition {
   questDialogue?: NpcQuestDialogue[];
   /** Optional faction-reputation-conditioned dialogue overrides — see NpcRepDialogue. */
   repDialogue?: NpcRepDialogue[];
+  flagDialogue?: NpcFlagDialogue[];
   appearance: CharacterAppearance;
   vendor?: VendorInfo;
   /**
@@ -507,6 +514,45 @@ NPC_DEFINITIONS.push(
       'Fugimos do Forte de Ferro com o que coube nas costas. As trilhas atrás de nós não estão seguras como antes.',
       'Se Pedravale não aguentar esse tanto de gente com fome e sem teto... o Comandante teme que a cidade vire um problema antes de virar um lar.',
     ],
+    questDialogue: [
+      {
+        questId: 'doroteia_r2_despensa',
+        lines: [
+          'Os sacos voltaram — e você voltou inteiro, o que importa mais. Mas olhe bem: isso não alimenta o comboio inteiro e ainda deixa sobra pra Pedravale.',
+          'Alguém vai ficar com fome, Escolhido Verde. Só me resta saber quem você deixa que seja — e o que está disposto a pagar por isso.',
+        ],
+      },
+      {
+        questId: 'doroteia_r1_saqueadores',
+        lines: [
+          'Foi de madrugada. Quando acordei, a despensa do comboio era um buraco com cheiro de poeira. Rastro de bota levando pro mato.',
+          'Bandoleiro não leva grão por maldade — leva por fome, igual a gente. Mas fome não me impede de querer o que é nosso de volta.',
+        ],
+      },
+    ],
+    flagDialogue: [
+      {
+        flag: 'comboio_abandonado',
+        lines: [
+          '(Doroteia mexe uma panela vazia sem tirar os olhos dela.) Você vendeu o nosso pão. Eu sei, o Fiscal Renato comentou, sem malícia nenhuma.',
+          'As crianças do comboio dormem de barriga vazia e Pedravale já nos olha como peso. Espero que o preço tenha valido, Escolhido Verde.',
+        ],
+      },
+      {
+        flag: 'raiz_proibida_usada',
+        lines: [
+          '(Doroteia segura uma tigela de caldo grosso, de cheiro estranho — terra revirada, não tempero.) Todo mundo comeu. Ninguém perguntou de onde veio.',
+          'É isso que me assusta. Passei a vida inteira aprendendo que o que se come sem perguntar sempre cobra depois.',
+        ],
+      },
+      {
+        flag: 'comboio_acolhido',
+        lines: [
+          '(Doroteia sorri pela primeira vez desde o Forte de Ferro.) Pedravale dividiu o pão. As crianças do comboio já sabem o nome de todas as ruas.',
+          'Quando alguém me pergunta se ainda existe gente boa nesse mundo, eu respondo que ela aprendeu a dividir. Obrigada por ter sido a primeira.',
+        ],
+      },
+    ],
   },
   {
     id: 'correio_bento',
@@ -589,6 +635,15 @@ NPC_DEFINITIONS.push(
       'Você sente, não sente? As Raízes do nosso ipezal não sussurram mais — gritam.',
       'Rezei aqui a vida inteira e nunca ouvi isso. Só um curador de verdade sente a diferença entre dor e aviso.',
       'Ajude-me a entender o que elas tentam dizer, antes que gritem tão alto que ninguém mais durma em Pedravale.',
+    ],
+    flagDialogue: [
+      {
+        flag: 'raiz_proibida_usada',
+        lines: [
+          '(Sable não responde de imediato; está com a mão pousada na casca do ipezal, como quem toma o pulso de um doente.) O ipezal está mais quieto desde ontem. Alguém colheu o que não era dele.',
+          'Não vou perguntar quem. As Raízes já me contaram — baixinho, sem raiva, que é o pior jeito de contar. Elas só pedem que não se torne hábito.',
+        ],
+      },
     ],
   },
   {
@@ -1642,6 +1697,14 @@ NPC_DEFINITIONS.push(
     ],
     questDialogue: [
       {
+        questId: 'vau_r4_pedagio',
+        lines: [
+          'O fio d\'água virou riacho. Riacho de verdade, com som e tudo. (Ele passa a mão pelo bigode, sem jeito.) E agora todo mundo quer ser dono dele.',
+          'Tem gente de Pedravale com mapa e ordem escrita pra abrir canal. Tem gente daqui com as duas mãos no balde. E tem eu, que cobro pedágio de um rio há quarenta anos e nunca soube de quem era a água.',
+          'Decida você. Eu só segurei a vara do barco a vida inteira — não sei segurar uma coisa dessas.',
+        ],
+      },
+      {
         questId: 'vau_r2_benzedura',
         when: 'completed',
         lines: [
@@ -1661,6 +1724,29 @@ NPC_DEFINITIONS.push(
         lines: [
           'As tecelãs vieram junto com a seca. Tecem raiz ressequida de uma margem à outra, bem em cima do último fio d\'água que sobrou.',
           'Rasgue essas teias e derrube as bichas. Se o fio ainda correr, talvez o Vau não morra de vez.',
+        ],
+      },
+    ],
+    flagDialogue: [
+      {
+        flag: 'vau_reservado',
+        lines: [
+          'A água é do Vau. Disse isso alto na praça e ninguém contestou — nem os de Pedravale, que saíram sem bater a porta.',
+          '(Ele olha o riacho.) Pela primeira vez em quarenta anos eu cobraria pedágio com gosto. Não cobro. Hoje o rio atravessa quem quiser de graça.',
+        ],
+      },
+      {
+        flag: 'vau_canalizado',
+        lines: [
+          'O canal já leva água pra Pedravale. Os carroceiros me pagam a travessia em moedas novas, cunhadas na cidade. (Ele vira uma moeda na mão, sem fé.)',
+          'O povo daqui não fala comigo desde a abertura do canal. Não falam com você também, se quer saber. Rio que vira cano deixa de ser rio.',
+        ],
+      },
+      {
+        flag: 'vau_pedagio_da_agua',
+        lines: [
+          'Cobrei dos dois lados do canal, como você mandou. (A voz dele soa seca como o leito de antes.) Nunca fiquei tão rico e tão sozinho no mesmo mês.',
+          'Dizem no Vau que o pedágio da água é meu nome. Diz o povo de Pedravale que é o seu. Eu só queria saber de quem é, de verdade.',
         ],
       },
     ],
@@ -1709,6 +1795,29 @@ NPC_DEFINITIONS.push(
         ],
       },
     ],
+    flagDialogue: [
+      {
+        flag: 'vau_reservado',
+        lines: [
+          'A água ficou no Vau, e a raiz sentiu. Pela manhã o poço subiu um palmo sozinho, sem balde nenhum.',
+          'Não te digo que é por sua causa, filho(a). Te digo que o poço subiu no dia seguinte, e cada um tira a conclusão que aguenta.',
+        ],
+      },
+      {
+        flag: 'vau_canalizado',
+        lines: [
+          '(Ela espalha arruda seca na borda do poço sem levantar a cabeça.) Abriram o canal, é? A raiz do Vau chorou a noite inteira. Rezei até a voz acabar e ela não parou.',
+          'Água que sai correndo pra longe leva junto um pedaço da memória de quem bebia dela. Rio tem lembrança, filho(a). Canal só tem destino.',
+        ],
+      },
+      {
+        flag: 'vau_pedagio_da_agua',
+        lines: [
+          'Pedágio de água. (Ela cospe de lado, sem raiva — só cansaço.) Benzi muita gente nesta vida, mas nunca soube benzer a ganância. Ela não pede perdão: pede mais.',
+          'A Sede não precisa da raiz pra crescer, não. Ela cresce aqui mesmo, no bolso, onde a gente não vê.',
+        ],
+      },
+    ],
   },
   {
     id: 'zefa_lavadeira',
@@ -1735,6 +1844,20 @@ NPC_DEFINITIONS.push(
       'Dizem que em Pedravale tem um Escolhido Verde que ouve os mortos. Se for você... pergunte a eles por que o rio foi embora.',
     ],
     questDialogue: [
+      {
+        questId: 'vau_r4_pedagio',
+        lines: [
+          'A água engrossou e já tem gente de dois lados fazendo conta em cima dela. (Zefa torce o lençol com mais força do que o lençol precisa.)',
+          'Fale com o Joaquim. Ele cobra do rio desde menino — se alguém sabe pesar o que a água vale, é ele. Só não sabe de quem ela é. Isso quem decide é você.',
+        ],
+      },
+      {
+        questId: 'vau_r3_ossos_do_leito',
+        lines: [
+          'Não é conversa de lavadeira: os ossos andam. De noite, no leito, em fila, como quem conhece o caminho. Eu vi da margem, com o balde na mão.',
+          'Enquanto eles estiverem ali, ninguém desce pra bater roupa e o fio d\'água não vai ter chance de crescer. Desça lá e dê fim nisso, por favor.',
+        ],
+      },
       {
         questId: 'vau_r1_teias',
         when: 'completed',
@@ -1933,19 +2056,22 @@ export function getNpcById(id: string): NpcDefinition {
  * `factionReputation` defaults to `{}` (every faction reads as neutral/0,
  * matching `WorldStateSystem`'s own absent-key convention) — pass
  * `player.worldState.factionReputation` once the player's standing should be
- * allowed to shift a line.
+ * allowed to shift a line. `flags` (`player.worldState.flags`) drives `npc.flagDialogue`.
  */
 export function dialogueLinesFor(
   npc: NpcDefinition,
   activeQuestIds: Array<string | null>,
   completedQuestIds: string[],
   factionReputation: Record<string, number> = {},
+  flags: Record<string, boolean> = {},
 ): string[] {
+  const flagged = (npc.flagDialogue ?? []).find((entry) => flags[entry.flag] === true)?.lines;
   for (const entry of npc.questDialogue ?? []) {
     const when = entry.when ?? 'active';
     if (when === 'active' && activeQuestIds.includes(entry.questId)) return entry.lines;
-    if (when === 'completed' && completedQuestIds.includes(entry.questId)) return entry.lines;
+    if (when === 'completed' && completedQuestIds.includes(entry.questId)) return flagged ?? entry.lines;
   }
+  if (flagged) return flagged;
   for (const entry of npc.repDialogue ?? []) {
     const rep = factionReputation[entry.factionId] ?? 0;
     if (entry.min !== undefined && rep < entry.min) continue;

@@ -1,5 +1,5 @@
 import { checkAchievements, recordNpcTalkedTo } from './AchievementSystem';
-import { applyChoiceEffect } from './ChoiceSystem';
+import { applyChoiceEffect, type QuestChoice } from './ChoiceSystem';
 import { createStarterItem } from '../data/equipment';
 import { getNpcById } from '../data/npcs';
 import {
@@ -11,6 +11,7 @@ import {
   type QuestDefinition,
 } from '../data/quests';
 import type { Player } from '../entities/Player';
+import { setFlag } from './WorldStateSystem';
 
 /** Activates the very first quest the first time a fresh character enters the world — that class's own village prelude, not the shared main-city story. */
 export function ensureQuestStarted(player: Player): void {
@@ -189,9 +190,36 @@ export function notifyTalkedTo(player: Player, npcId: string): string | null {
     const quest = currentQuest(player, slot);
     if (!quest || quest.objective.kind !== 'talkTo') continue;
     if (quest.objective.targetId !== npcId) continue;
+    // A branching quest waits for the player's pick instead (see pendingQuestChoice).
+    if (quest.choices?.length) continue;
     messages.push(completeQuest(player, quest, slot));
   }
   return messages.length > 0 ? messages.join('\n') : null;
+}
+
+/** The active branching quest whose decision is waiting on a talk with this NPC, in either slot. */
+export function pendingQuestChoice(player: Player, npcId: string): QuestDefinition | null {
+  for (const slot of QUEST_SLOTS) {
+    const quest = currentQuest(player, slot);
+    if (!quest?.choices?.length || quest.objective.kind !== 'talkTo') continue;
+    if (quest.objective.targetId === npcId) return quest;
+  }
+  return null;
+}
+
+/** Completes a branching quest with the chosen option (rewards, then its effect, then a `<questId>.<choiceId>` flag); null and no changes if it isn't active or the option is unknown. */
+export function resolveQuestChoice(player: Player, questId: string, choiceId: string): string | null {
+  for (const slot of QUEST_SLOTS) {
+    const quest = currentQuest(player, slot);
+    if (!quest || quest.id !== questId || !quest.choices?.length) continue;
+    const choice: QuestChoice | undefined = quest.choices.find((c) => c.id === choiceId);
+    if (!choice) return null;
+    const message = completeQuest(player, quest, slot);
+    applyChoiceEffect(player, choice.effect);
+    setFlag(player.worldState, `${quest.id}.${choice.id}`);
+    return `${message}\nVocê escolheu: ${choice.label}.`;
+  }
+  return null;
 }
 
 /**

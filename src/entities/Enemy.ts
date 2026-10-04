@@ -23,6 +23,8 @@ export class Enemy implements StatusEffectHolder {
    * of it per tier.
    */
   private readonly tierMultiplier: number;
+  /** Title prepended to the name for a rare variant (systems/RareEncounterSystem.ts); empty otherwise. */
+  private readonly namePrefix: string;
   /**
    * This instance's full runtime stat sheet, resolved once at construction
    * (the source definitions are static data) instead of rebuilt on every
@@ -35,9 +37,10 @@ export class Enemy implements StatusEffectHolder {
   /** Which of `def.phases` (a scripted boss fight only — see `systems/BossPhaseSystem.ts`) is currently active. Always 0 (and never read) for an enemy with no `phases`. Advanced by `CombatEngine.tick`. */
   phaseIndex = 0;
 
-  constructor(definitionId: string, tierMultiplier = 1) {
+  constructor(definitionId: string, tierMultiplier = 1, namePrefix = '') {
     this.definitionId = definitionId;
     this.tierMultiplier = tierMultiplier;
+    this.namePrefix = namePrefix;
     this.resolvedDef = this.resolveDef();
     this.currentHp = this.stats.maxHp;
     this.currentMp = this.stats.maxMp;
@@ -61,7 +64,7 @@ export class Enemy implements StatusEffectHolder {
     // difficulty curve (config/balance.ts) applies to both lists alike,
     // before any repeat-dungeon tier multiplier below stacks on top of it.
     const base = applyEnemyBalance(getBossById(this.definitionId) ?? getEnemyById(this.definitionId));
-    if (this.tierMultiplier === 1) return base;
+    if (this.tierMultiplier === 1 && !this.namePrefix) return base;
     const mult = this.tierMultiplier;
     // A stat that's genuinely 0 (e.g. a melee-only enemy's magicAttack) stays
     // 0 — only a positive stat gets floored at 1 so scaling never rounds a
@@ -69,6 +72,7 @@ export class Enemy implements StatusEffectHolder {
     const scale = (v: number) => (v === 0 ? 0 : Math.max(1, Math.round(v * mult)));
     return {
       ...base,
+      name: this.namePrefix ? `${this.namePrefix} ${base.name}` : base.name,
       stats: {
         maxHp: scale(base.stats.maxHp),
         maxMp: scale(base.stats.maxMp),

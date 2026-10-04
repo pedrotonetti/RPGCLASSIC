@@ -101,3 +101,41 @@ describe('faction-reputation dialogue (Dona Ilma / Vigia Talma warm to Pedravale
     expect(dialogueLinesFor(ilma, [null, null], [], { alguma_outra_faccao: 100 })).toBe(ilma.dialogue);
   });
 });
+
+describe('story-flag dialogue (NpcFlagDialogue)', () => {
+  const base = getNpcById('tobias');
+  const npc = {
+    ...base,
+    dialogue: ['padrão'],
+    questDialogue: [
+      { questId: 'm_ativa', lines: ['briefing ativo'] },
+      { questId: 'm_feita', when: 'completed' as const, lines: ['linha persistente'] },
+    ],
+    repDialogue: [{ factionId: 'pedravale', min: 10, lines: ['linha de reputação'] }],
+    flagDialogue: [
+      { flag: 'primeira', lines: ['reação à primeira'] },
+      { flag: 'segunda', lines: ['reação à segunda'] },
+    ],
+  };
+
+  it('falls through to the default lines when no flag is set', () => {
+    expect(dialogueLinesFor(npc, [null, null], [], {}, {})).toEqual(['padrão']);
+    expect(dialogueLinesFor(npc, [null, null], [], {}, { primeira: false })).toEqual(['padrão']);
+  });
+
+  it('shows the first matching flag line, in array order', () => {
+    expect(dialogueLinesFor(npc, [null, null], [], {}, { segunda: true })).toEqual(['reação à segunda']);
+    expect(dialogueLinesFor(npc, [null, null], [], {}, { primeira: true, segunda: true })).toEqual(['reação à primeira']);
+  });
+
+  it('outranks a persistent "completed" line and reputation lines, but never an active quest briefing', () => {
+    const flags = { primeira: true };
+    expect(dialogueLinesFor(npc, [null, null], ['m_feita'], {}, flags)).toEqual(['reação à primeira']);
+    expect(dialogueLinesFor(npc, [null, null], [], { pedravale: 50 }, flags)).toEqual(['reação à primeira']);
+    expect(dialogueLinesFor(npc, ['m_ativa', null], [], {}, flags)).toEqual(['briefing ativo']);
+  });
+
+  it('leaves the "completed" line alone when no flag is set (existing behavior)', () => {
+    expect(dialogueLinesFor(npc, [null, null], ['m_feita'], {}, {})).toEqual(['linha persistente']);
+  });
+});

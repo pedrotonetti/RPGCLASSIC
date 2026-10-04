@@ -9,6 +9,7 @@ import type { Player } from '../entities/Player';
 import { getItemById, ITEM_DEFINITIONS } from '../data/items';
 import { DEFAULT_PACK_WEIGHTS } from '../data/zones';
 import { buildEnemyModel } from '../render/characterModel';
+import { applyRareLook } from '../render/rareVariant';
 import type { CharacterAnimatorLike, ActionName } from '../render/animation';
 import { HELD_MESHES, DEFAULT_CLASS } from '../render/playerAvatar';
 import { VfxManager, hitImpactColor } from '../render/vfx';
@@ -22,6 +23,17 @@ import { activeStatusTypes } from './statusEffects';
 import { pickEncounterEnemyIds } from './EncounterSystem';
 import { pickSpawnPoints, rollPackSize, type TileRect } from './monsterSpawning';
 import { notifyEnemyDefeated, notifyLevelChanged } from './QuestSystem';
+import {
+  RARE_MODEL_SCALE,
+  RARE_TIER_MULTIPLIER,
+  pityAfterFailedMountRoll,
+  pityAfterKill,
+  rareEncountersUnlocked,
+  rarePrefixFor,
+  rollRareLoot,
+  rollRareSpawn,
+} from './RareEncounterSystem';
+import { incrementCounter } from './WorldStateSystem';
 import { saveGame } from './SaveSystem';
 import { el } from '../ui/dom';
 
@@ -59,6 +71,10 @@ interface WorldMonster {
   dungeonEncounterIndex?: number;
   /** The one boss monster of a dungeon run, if any. */
   isDungeonBoss?: boolean;
+  /** Stronger "Ancestral"/"Fulgente" spawn (RareEncounterSystem); reverts to ordinary on respawn. */
+  variant?: 'rare';
+  nameEl: HTMLElement;
+  restoreLook?: () => void;
 }
 
 /** One fixed-position monster pod along a dungeon's corridor — see spawnDungeonEncounters. */
@@ -202,6 +218,8 @@ export class OverworldCombat {
   private dungeonHooks: DungeonCombatHooks | null = null;
 
   private pendingTargetPick: ((monster: WorldMonster) => void) | null = null;
+  private rareEnabled = false;
+  private pendingRareNotes: string[] = [];
 
   /** Status-effect overlays + shared hit/impact and per-class ultimate bursts — see `render/vfx.ts`. */
   private vfx: VfxManager;
@@ -251,6 +269,8 @@ export class OverworldCombat {
       minSpacing?: number;
       packWeights?: number[];
       avoid?: TileRect[];
+      /** Opt in to rare variants on mount and on respawns (RareEncounterSystem). */
+      allowRare?: boolean;
     } = {},
   ): void {
     this.ensureBaseHud();
@@ -272,6 +292,47 @@ export class OverworldCombat {
         this.monsters.push(this.buildMonster(id, p.x + off.dx / TILE_SIZE, p.y + off.dz / TILE_SIZE));
       }
     }
+    if (opts.allowRare) {
+      this.rareEnabled = true;
+      this.rollRareOnMount();
+    }
+  }
+
+  // Prefers a solo/pair so the elite doesn't drag a whole band in; a miss still feeds the pity counter.
+  private rollRareOnMount(): void {
+    if (!rareEncountersUnlocked(this.player.level)) return;
+    if (!rollRareSpawn(this.player.zoneId, this.player.rarePity, 'mount')) {
+      this.player.rarePity = pityAfterFailedMountRoll(this.player.rarePity);
+      return;
+    }
+    const alive = this.monsters.filter((m) => m.state !== 'dead');
+    const packmates = (m: WorldMonster) => alive.filter((o) => o !== m && Math.hypot(o.spawnX - m.spawnX, o.spawnZ - m.spawnZ) < 2.5).length;
+    const loose = alive.filter((m) => packmates(m) <= 1);
+    const pool = loose.length > 0 ? loose : alive;
+    if (pool.length === 0) return;
+    this.applyRareVariant(pool[Math.floor(Math.random() * pool.length)]);
+    this.showMessage('Algo ancestral desperta nesta região — procure o brilho dourado.', 4200);
+  }
+
+  private applyRareVariant(m: WorldMonster): void {
+    const id = m.enemy.definitionId;
+    m.variant = 'rare';
+    m.enemy = new Enemy(id, RARE_TIER_MULTIPLIER, rarePrefixFor(id));
+    m.baseScale *= RARE_MODEL_SCALE;
+    m.model.scale.setScalar(m.baseScale);
+    m.restoreLook = applyRareLook(m.model);
+    m.nameEl.textContent = m.enemy.name;
+    m.labelEl.classList.add('rare');
+    this.setMonsterHp(m, m.enemy.stats.maxHp);
+  }
+
+  private clearRareVariant(m: WorldMonster): void {
+    m.variant = undefined;
+    m.baseScale /= RARE_MODEL_SCALE;
+    m.model.scale.setScalar(m.baseScale);
+    m.restoreLook?.();
+    m.restoreLook = undefined;
+    m.labelEl.classList.remove('rare');
   }
 
   /**
@@ -327,9 +388,9 @@ export class OverworldCombat {
    * (idle/chase/engage/respawn); the only difference from a normal monster
    * is that its spawn point is chosen by hand instead of picked at random.
    */
-  spawnFixedMonster(enemyId: string, atTile: { x: number; y: number }): void {
+  spawnFixedMonster(enemyId: string, atTile: { x: number; y: number }, opts: { variant?: 'rare' } = {}): void {
     this.ensureBaseHud();
-    this.monsters.push(this.buildMonster(enemyId, atTile.x, atTile.y));
+    this.monsters.push(this.buildMonster(enemyId, atTile.x, atTile.y, opts));
   }
 
   /** A temporary band for a world event (an invasion): same monsters/AI as spawnMonsters' bands, fanned around `atTile`, but they never respawn and can be counted/despawned by `groupId`. */
@@ -419,7 +480,7 @@ export class OverworldCombat {
     }
   }
 
-  private buildMonster(enemyId: string, tx: number, ty: number, opts: { visualId?: string; scale?: number; tierMultiplier?: number } = {}): WorldMonster {
+  private buildMonster(enemyId: string, tx: number, ty: number, opts: { visualId?: string; scale?: number; tierMultiplier?: number; variant?: 'rare' } = {}): WorldMonster {
     const enemy = new Enemy(enemyId, opts.tierMultiplier ?? 1);
     const model = buildEnemyModel(opts.visualId ?? enemyId, enemy.color);
     const spawnX = tx * 2 + 1;
@@ -431,13 +492,14 @@ export class OverworldCombat {
     this.scene.add(model);
 
     const hpFillEl = el('div', { className: 'enemy-hpbar-fg' });
+    const nameEl = el('div', { className: 'ename', text: enemy.name });
     const labelEl = el(
       'div',
       {
         className: `enemy-label world ${enemy.def.isBoss ? 'boss' : ''}`,
         onClick: () => this.onMonsterPicked(monster),
       },
-      [el('div', { className: 'ename', text: enemy.name }), el('div', { className: 'enemy-hpbar-bg' }, [hpFillEl])],
+      [nameEl, el('div', { className: 'enemy-hpbar-bg' }, [hpFillEl])],
     );
     labelEl.hidden = true;
     this.game.uiRoot.append(labelEl);
@@ -455,7 +517,9 @@ export class OverworldCombat {
       respawnAt: -1,
       labelEl,
       hpFillEl,
+      nameEl,
     };
+    if (opts.variant === 'rare') this.applyRareVariant(monster);
     return monster;
   }
 
@@ -619,13 +683,20 @@ export class OverworldCombat {
   }
 
   private respawnMonster(m: WorldMonster): void {
+    if (m.variant === 'rare') this.clearRareVariant(m);
     m.enemy = new Enemy(m.enemy.definitionId);
+    m.nameEl.textContent = m.enemy.name;
     m.model.position.set(m.spawnX, m.enemy.definitionId === 'bat' ? 1.0 : 0, m.spawnZ);
     m.model.visible = true;
     m.labelEl.classList.remove('defeated');
     m.state = 'idle';
     m.waitTimer = 1 + Math.random() * 3;
     m.respawnAt = -1;
+    // One rare alive at a time, never mid-fight.
+    if (this.rareEnabled && rareEncountersUnlocked(this.player.level) && !this.engine && !this.monsters.some((o) => o.variant === 'rare' && o.state !== 'dead') && rollRareSpawn(this.player.zoneId, this.player.rarePity, 'respawn')) {
+      this.applyRareVariant(m);
+      this.showMessage('Algo ancestral desperta nesta região — procure o brilho dourado.', 4200);
+    }
     // The HP bar's width is only ever set by setMonsterHp, which so far had
     // only ever run from the damage-event handler — so the near-empty width
     // left over from the moment this same monster died stuck around through
@@ -695,6 +766,7 @@ export class OverworldCombat {
   }
 
   private endEngagement(outcome: 'victory' | 'defeat' | 'fled'): void {
+    const rareNotes = this.pendingRareNotes.splice(0);
     if (outcome === 'victory') {
       let lastMessage: string | null = null;
       for (const m of this.engagedMonsters) {
@@ -704,11 +776,14 @@ export class OverworldCombat {
       }
       const levelMsg = notifyLevelChanged(this.player);
       if (levelMsg) lastMessage = levelMsg;
-      if (lastMessage) this.showMessage(lastMessage, 2200);
+      if (rareNotes.length > 0) lastMessage = [lastMessage, ...rareNotes].filter(Boolean).join('\n');
+      if (lastMessage) this.showMessage(lastMessage, rareNotes.length > 0 ? 3600 : 2200);
       saveGame(this.player);
     } else if (outcome === 'defeat') {
       this.showMessage('Você foi levado de volta à vila para se recuperar...', 2200);
       this.onDefeat();
+    } else if (rareNotes.length > 0) {
+      this.showMessage(rareNotes.join('\n'), 3600);
     }
 
     this.pendingTargetPick = null;
@@ -1257,11 +1332,29 @@ export class OverworldCombat {
     }
   }
 
+  // Guaranteed extra drop; gold instead when the bag is full.
+  private grantRareReward(m: WorldMonster): void {
+    incrementCounter(this.player.worldState, 'rares_defeated');
+    const level = m.enemy.def.level;
+    const item = rollRareLoot(level, this.player.level, this.player.stats.luck);
+    if (this.player.addLoot(item)) {
+      this.pendingRareNotes.push(`${m.enemy.name} derrotado! Saque raro garantido.`);
+    } else {
+      const gold = 40 + level * 12;
+      this.player.gold += gold;
+      this.pendingRareNotes.push(`${m.enemy.name} derrotado! Mochila cheia: +${gold} ouro no lugar do saque.`);
+    }
+  }
+
   private killMonster(m: WorldMonster): void {
     m.state = 'dead';
     m.model.visible = false;
     m.labelEl.hidden = true;
     m.respawnAt = m.noRespawn ? -1 : this.clock + RESPAWN_DELAY;
+    if (!m.noRespawn && (m.variant === 'rare' || rareEncountersUnlocked(this.player.level))) {
+      this.player.rarePity = pityAfterKill(this.player.rarePity, m.variant === 'rare');
+      if (m.variant === 'rare') this.grantRareReward(m);
+    }
 
     if (m.dungeonEncounterIndex !== undefined && this.dungeonHooks) {
       const index = m.dungeonEncounterIndex;

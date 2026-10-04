@@ -21,6 +21,24 @@ describe('effectiveMonsterCount', () => {
   });
 });
 
+describe('worsenedState (the mirror of resolvedState)', () => {
+  const city = getZoneById('main_city');
+
+  it('adds 30% more monsters once the zone reaches its own worsenedState, and only then', () => {
+    expect(city.worsenedState).toBe('faminto');
+    expect(effectiveMonsterCount(city, 'faminto')).toBe(Math.round(city.monsterCount * 1.3));
+    expect(effectiveMonsterCount(city, 'faminto')).toBeGreaterThan(city.monsterCount);
+    expect(effectiveMonsterCount(city, null)).toBe(city.monsterCount);
+    expect(effectiveMonsterCount(city, 'reerguido')).toBe(city.monsterCount);
+  });
+
+  it('never reacts for a zone with no worsenedState of its own', () => {
+    const baluarte = getZoneById(BALUARTE_AMANHECER_ID);
+    expect(baluarte.worsenedState).toBeUndefined();
+    expect(effectiveMonsterCount(baluarte, 'faminto')).toBe(baluarte.monsterCount);
+  });
+});
+
 describe('baluarte_r3_cisterna wires its own zoneState into ChoiceEffect', () => {
   it('labels the Baluarte do Amanhecer zone "reerguido" on completion, alongside its existing world-state/event effects', () => {
     const quest = getQuestById('baluarte_r3_cisterna');

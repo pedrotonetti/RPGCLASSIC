@@ -65,6 +65,8 @@ export interface ZoneDefinition {
    * zone's monster density; a zone with no `resolvedState` never reacts.
    */
   resolvedState?: string;
+  /** Mirror of `resolvedState`: a zoneStates value that makes `effectiveMonsterCount` field 30% more monsters. */
+  worsenedState?: string;
 }
 
 /**
@@ -76,6 +78,7 @@ export interface ZoneDefinition {
  */
 export function effectiveMonsterCount(zone: ZoneDefinition, zoneState: string | null): number {
   if (zone.resolvedState && zoneState === zone.resolvedState) return Math.round(zone.monsterCount * 0.5);
+  if (zone.worsenedState && zoneState === zone.worsenedState) return Math.round(zone.monsterCount * 1.3);
   return zone.monsterCount;
 }
 
@@ -355,6 +358,8 @@ export const ZONE_DEFINITIONS: Record<string, ZoneDefinition> = {
     generate: () => generateOverworldMap(),
     exits: mainCityExits(),
     monsterCount: 65,
+    // Set by doroteia_r2_despensa's "vender_suprimentos" choice (data/branchingQuests.ts).
+    worsenedState: 'faminto',
   },
   ...CLASS_VILLAGE_ZONES,
   ...REGIONAL_SETTLEMENT_ZONES,

@@ -12,6 +12,7 @@ import { restoreEventState, serializeEventState, type WorldEventSave, type World
 import { resolveItemEffects, setStatBonus, type PassiveContext, type ResolvedItemEffects } from '../systems/ItemPassives';
 import { sanitizePity, type LootPityState } from '../systems/LootPity';
 import { createInitialGameClock, type GameClockState } from '../systems/GameClock';
+import { normalizePity } from '../systems/RareEncounterSystem';
 import { createInitialWorldState, type WorldState } from '../systems/WorldStateSystem';
 import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, startZoneForClass } from '../data/zones';
 import { computeStatsAtLevel } from './statMath';
@@ -82,6 +83,10 @@ export interface PlayerSaveData {
   achievements: AchievementState;
   /** O Códex (ver systems/CodexSystem.ts) — inimigos, NPCs, materiais e equipamentos já descobertos. Absent on any save from before this field existed — defaulted the same way worldState was. */
   codex: CodexState;
+  /** Rare-monster pity counter (systems/RareEncounterSystem.ts); absent on old saves. */
+  rarePity: number;
+  /** Ids of data/loreFragments.ts fragments already examined; absent on old saves. */
+  discoveredLoreIds: string[];
 }
 
 /** The three closures Ato 3 branches into — see LORE.md's "O final". */
@@ -131,6 +136,8 @@ export class Player implements StatusEffectHolder {
   achievements: AchievementState;
   /** See PlayerSaveData.codex's own doc comment. */
   codex: CodexState;
+  rarePity: number;
+  discoveredLoreIds: string[];
   /**
    * Session-only "enter the next dungeon at this tier" hand-off — set by
    * OverworldScreen.enterDungeon just before swapping to the dungeon's own
@@ -179,6 +186,8 @@ export class Player implements StatusEffectHolder {
     this.openedChestIds = data?.openedChestIds ?? [];
     this.achievements = data?.achievements ? normalizeAchievementState(data.achievements) : createInitialAchievementState();
     this.codex = data?.codex ? normalizeCodexState(data.codex) : createInitialCodexState();
+    this.rarePity = normalizePity(data?.rarePity);
+    this.discoveredLoreIds = data?.discoveredLoreIds ?? [];
     this.currentHp = data?.currentHp ?? this.stats.maxHp;
     this.currentMp = data?.currentMp ?? this.stats.maxMp;
   }
@@ -474,6 +483,8 @@ export class Player implements StatusEffectHolder {
       gameClock: { ...this.gameClock },
       achievements: cloneAchievementState(this.achievements),
       codex: cloneCodexState(this.codex),
+      rarePity: this.rarePity,
+      discoveredLoreIds: [...this.discoveredLoreIds],
     };
   }
 }
