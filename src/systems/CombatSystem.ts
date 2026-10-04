@@ -43,6 +43,8 @@ import {
   vowDamageReduction,
 } from './classMechanics';
 import { affinityLabel, affinityMultiplier, damageAffinity, type DamageAffinity } from './damageAffinity';
+import { collectTriggers, type ResolvedItemEffects } from './ItemPassives';
+import type { TriggerEvent } from '../data/uniques';
 import { archetypeActionIntervalMultiplier, archetypeDamageMultiplier, archetypeProfileFor, pickSkillForArchetype, telegraphTextFor } from './enemyArchetypes';
 import { phaseActionIntervalMultiplier, phaseDamageMultiplier, phaseIndexForHp } from './BossPhaseSystem';
 import { computeSkillLevelStats } from './skillMath';
@@ -130,10 +132,12 @@ interface AttackOptions {
   bonusCritChance?: number;
   /** Skips the miss roll entirely — for class abilities paid for with a whole meter (see classMechanics.ts). */
   noMiss?: boolean;
+  /** Added to the 1.6x crit multiplier (item affixes). */
+  critDamageBonus?: number;
 }
 
 function resolveAttack(atk: Stats, def: Stats, power: number, kind: 'physical' | 'magical', opts: AttackOptions = {}): AttackRoll {
-  const { minFraction = 0, bonusCritChance = 0, noMiss = false } = opts;
+  const { minFraction = 0, bonusCritChance = 0, noMiss = false, critDamageBonus = 0 } = opts;
   const missChance = Math.min(0.25, Math.max(0.02, 0.05 + (def.luck - atk.luck) * 0.01));
   if (!noMiss && Math.random() < missChance) return { damage: 0, crit: false, missed: true };
   const atkStat = kind === 'physical' ? atk.attack : atk.magicAttack;
@@ -143,13 +147,20 @@ function resolveAttack(atk: Stats, def: Stats, power: number, kind: 'physical' |
   const variance = 0.9 + Math.random() * 0.2;
   const rawPower = atkStat * power;
   const raw = Math.max(rawPower * minFraction, rawPower - defStat * 0.6);
-  const damage = Math.max(1, Math.round(raw * variance * (isCrit ? 1.6 : 1)));
+  const damage = Math.max(1, Math.round(raw * variance * (isCrit ? 1.6 + critDamageBonus : 1)));
   return { damage, crit: isCrit, missed: false };
 }
 
 function resolveHeal(atk: Stats, power: number): number {
   return Math.round((atk.magicAttack + atk.attack * 0.3) * power) + 5;
 }
+
+const ITEM_STATUS_PROCS: Array<{ type: StatusEffectType; modifier: 'bleedChance' | 'burnChance' | 'poisonChance' | 'slowChance' }> = [
+  { type: 'bleed', modifier: 'bleedChance' },
+  { type: 'burn', modifier: 'burnChance' },
+  { type: 'poison', modifier: 'poisonChance' },
+  { type: 'slow', modifier: 'slowChance' },
+];
 
 const FLEE_KEY = '__flee';
 const FLEE_COOLDOWN = 4;
@@ -330,7 +341,56 @@ export class CombatEngine {
     for (const buff of this.buffs) {
       stats[buff.stat] = Math.round(stats[buff.stat] * buff.mult);
     }
+    for (const [stat, delta] of Object.entries(this.itemEffects().statMult) as Array<[keyof Stats, number]>) {
+      if (stat === 'maxHp' || stat === 'maxMp') continue;
+      stats[stat] = Math.round(stats[stat] * Math.max(0.1, 1 + delta));
+    }
     return stats;
+  }
+
+  /** Item affixes, unique passives and set bonuses as they stand against the current fight state. */
+  private itemEffects(target?: Enemy): ResolvedItemEffects {
+    return this.player.itemEffects(this.passiveState(target));
+  }
+
+  private passiveState(target?: Enemy) {
+    return {
+      mechanicId: this.mechanicId,
+      meterFraction: this.classMeterFraction(),
+      comboHits: this.comboHits,
+      enemiesAlive: this.aliveEnemies().length,
+      targetHpFraction: target ? target.currentHp / target.stats.maxHp : undefined,
+    };
+  }
+
+  /** Called just before the event whose log line should stay on screen, since the last message shown wins. */
+  private fireItemTriggers(on: TriggerEvent, events: CombatEvent[]): void {
+    if (!this.player.isAlive()) return;
+    for (const trigger of collectTriggers(this.player.equipment, on, this.player.passiveContext(this.passiveState()))) {
+      const stats = this.player.stats;
+      const healed = trigger.healHpPct ? this.player.heal(stats.maxHp * trigger.healHpPct) : 0;
+      const restored = trigger.restoreMpPct ? this.player.restoreMp(stats.maxMp * trigger.restoreMpPct) : 0;
+      if (healed === 0 && restored === 0) continue;
+      events.push({
+        kind: 'heal',
+        text: `${trigger.label}!`,
+        actorIsPlayer: true,
+        targetIsPlayer: true,
+        amount: healed,
+        targetHpAfter: this.player.currentHp,
+        skillKind: 'heal',
+      });
+    }
+  }
+
+  private rollPlayerAttack(atk: Stats, enemy: Enemy, power: number, kind: 'physical' | 'magical', opts: AttackOptions = {}): { roll: AttackRoll; fx: ResolvedItemEffects } {
+    const fx = this.itemEffects(enemy);
+    const roll = resolveAttack(atk, enemy.stats, power, kind, {
+      ...opts,
+      bonusCritChance: (opts.bonusCritChance ?? 0) + fx.mods.critChance,
+      critDamageBonus: fx.mods.critDamage,
+    });
+    return { roll, fx };
   }
 
   private findSkill(skillId: string): SkillDefinition | null {
@@ -348,10 +408,11 @@ export class CombatEngine {
     const level = isBasic ? 1 : this.player.skillLevel(skillId);
     const levelStats = computeSkillLevelStats(skill, level);
     const overcharged = isOverchargeCast(this.mechanicId, this.classMeter, skill.kind, isBasic);
-    if (!overcharged && this.player.currentMp < levelStats.cost) return { ok: false, reason: 'mana' };
+    const cost = this.player.discountedSkillCost(levelStats.cost);
+    if (!overcharged && this.player.currentMp < cost) return { ok: false, reason: 'mana' };
 
     if (overcharged) this.classMeter = 0;
-    else this.player.spendMp(levelStats.cost);
+    else this.player.spendMp(cost);
     this.cooldowns[skillId] = levelStats.cooldown;
 
     const events: CombatEvent[] = [];
@@ -389,7 +450,7 @@ export class CombatEngine {
       for (const enemy of targets) {
         if (!enemy.isAlive()) continue;
         const index = this.enemies.indexOf(enemy);
-        const roll = resolveAttack(atkStats, enemy.stats, levelStats.power, kind, { bonusCritChance });
+        const { roll, fx } = this.rollPlayerAttack(atkStats, enemy, levelStats.power, kind, { bonusCritChance });
         if (roll.missed) {
           events.push({ kind: 'miss', text: `Você errou ${enemy.name}.`, actorIsPlayer: true, targetIndex: index });
           missed += 1;
@@ -398,7 +459,7 @@ export class CombatEngine {
         landed += 1;
         if (overcharged) roll.damage = Math.round(roll.damage * (1 + OVERCHARGE_DAMAGE_BONUS));
         const actionName = overcharged ? `${skill.name} (Sobrecarga!)` : skill.name;
-        this.landPlayerHit(enemy, roll, actionName, kind, events, { inflicts: skill.inflicts, feedsMeter: true, element: skill.element });
+        this.landPlayerHit(enemy, roll, actionName, kind, events, { inflicts: skill.inflicts, feedsMeter: true, element: skill.element, fx });
       }
       this.onPlayerAttackResolved(landed, missed);
       if (this.mechanicId === 'overcharge' && !overcharged) this.gainClassMeter(overchargeGain(isBasic));
@@ -422,7 +483,7 @@ export class CombatEngine {
     actionName: string,
     kind: 'physical' | 'magical',
     events: CombatEvent[],
-    opts: { inflicts?: StatusInflict; feedsMeter: boolean; element?: DamageElement },
+    opts: { inflicts?: StatusInflict; feedsMeter: boolean; element?: DamageElement; fx?: ResolvedItemEffects },
   ): number {
     const index = this.enemies.indexOf(enemy);
     if (this.clock - this.lastComboHitAt > COMBO_WINDOW) this.comboCount = 0;
@@ -432,12 +493,15 @@ export class CombatEngine {
     const comboMult =
       1 + this.comboCount * COMBO_DAMAGE_PER_HIT + flowFinisherBonus(this.mechanicId, this.comboCount) + markDamageBonus(this.mechanicId, marksBefore);
     const affinity = damageAffinity(enemy.def, kind, opts.element);
+    const fx = opts.fx ?? this.itemEffects(enemy);
 
-    const dealt = enemy.takeDamage(roll.damage * comboMult * affinityMultiplier(affinity));
+    const hpBefore = enemy.currentHp;
+    const dealt = enemy.takeDamage(roll.damage * comboMult * affinityMultiplier(affinity) * (1 + fx.mods.damageDealt));
     if (opts.feedsMeter && this.mechanicId === 'marks') this.marks.set(enemy, marksAfterHit(marksBefore, roll.crit));
     const label = comboLabel(this.mechanicId, this.comboCount);
     const comboText = label ? ` (${label})` : '';
     const affinityText = affinity ? ` (${affinityLabel(affinity)})` : '';
+    if (roll.crit) this.fireItemTriggers('crit', events);
     events.push({
       kind: 'damage',
       text: `Você usou ${actionName} em ${enemy.name}${roll.crit ? ' (Crítico!)' : ''}${comboText}${affinityText}`,
@@ -449,10 +513,12 @@ export class CombatEngine {
       skillKind: kind,
       affinity: affinity ?? undefined,
     });
+    // Silent on purpose: a heal event per hit would replay the potion sound every swing.
+    if (fx.mods.lifeSteal > 0) this.player.heal(Math.min(dealt, hpBefore) * fx.mods.lifeSteal);
     if (!enemy.isAlive()) {
+      this.onKill(events, opts.feedsMeter);
       events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
       this.staggerStacks.delete(enemy);
-      if (opts.feedsMeter) this.onEnemyDefeated();
     } else {
       this.registerHitForStagger(enemy, index, events);
 
@@ -463,19 +529,27 @@ export class CombatEngine {
       if (shatter) this.applySynergyBonusToEnemy(enemy, index, dealt, shatter, events, opts.feedsMeter);
 
       if (enemy.isAlive() && opts.inflicts && Math.random() < opts.inflicts.chance) {
-        const synergy = checkStatusSynergy(enemy, opts.inflicts.type);
-        applyStatusEffect(enemy, opts.inflicts.type, dealt);
-        events.push({
-          kind: 'statusApplied',
-          text: `${enemy.name} sofre ${STATUS_LABEL[opts.inflicts.type]}!`,
-          actorIsPlayer: true,
-          targetIndex: index,
-          statusType: opts.inflicts.type,
-        });
-        if (synergy) this.applySynergyBonusToEnemy(enemy, index, dealt, synergy, events, opts.feedsMeter);
+        this.inflictOnEnemy(enemy, index, opts.inflicts.type, dealt, events, opts.feedsMeter);
+      }
+      for (const { type, modifier } of ITEM_STATUS_PROCS) {
+        const chance = fx.mods[modifier];
+        if (chance > 0 && enemy.isAlive() && Math.random() < chance) this.inflictOnEnemy(enemy, index, type, dealt, events, opts.feedsMeter);
       }
     }
     return dealt;
+  }
+
+  private inflictOnEnemy(enemy: Enemy, index: number, type: StatusEffectType, triggeringDamage: number, events: CombatEvent[], feedsMeter: boolean): void {
+    const synergy = checkStatusSynergy(enemy, type);
+    applyStatusEffect(enemy, type, triggeringDamage);
+    events.push({ kind: 'statusApplied', text: `${enemy.name} sofre ${STATUS_LABEL[type]}!`, actorIsPlayer: true, targetIndex: index, statusType: type });
+    if (synergy) this.applySynergyBonusToEnemy(enemy, index, triggeringDamage, synergy, events, feedsMeter);
+  }
+
+  /** Every kill credited to the player: feeds the class meter (not for class abilities) and fires item kill triggers. */
+  private onKill(events: CombatEvent[], feedsMeter: boolean): void {
+    if (feedsMeter) this.onEnemyDefeated();
+    this.fireItemTriggers('kill', events);
   }
 
   /**
@@ -499,8 +573,8 @@ export class CombatEngine {
       const enemy = this.enemies[targetIndex ?? 0];
       if (!enemy || !enemy.isAlive()) return { ok: false, reason: 'unknown' };
       this.classMeter = 0;
-      const roll = resolveAttack(atkStats, enemy.stats, SAVAGE_STRIKE_POWER, 'physical', { noMiss: true });
-      this.landPlayerHit(enemy, roll, ability.name, 'physical', events, { feedsMeter: false });
+      const { roll, fx } = this.rollPlayerAttack(atkStats, enemy, SAVAGE_STRIKE_POWER, 'physical', { noMiss: true });
+      this.landPlayerHit(enemy, roll, ability.name, 'physical', events, { feedsMeter: false, fx });
     } else if (this.mechanicId === 'faith') {
       this.classMeter = 0;
       // Every status effect in this build (bleed/burn/slow) is an affliction,
@@ -527,8 +601,8 @@ export class CombatEngine {
       let totalDrained = 0;
       for (const enemy of targets) {
         const hpBefore = enemy.currentHp;
-        const roll = resolveAttack(atkStats, enemy.stats, SOUL_DRAIN_POWER, 'magical', { noMiss: true });
-        const dealt = this.landPlayerHit(enemy, roll, ability.name, 'magical', events, { feedsMeter: false });
+        const { roll, fx } = this.rollPlayerAttack(atkStats, enemy, SOUL_DRAIN_POWER, 'magical', { noMiss: true });
+        const dealt = this.landPlayerHit(enemy, roll, ability.name, 'magical', events, { feedsMeter: false, fx });
         totalDrained += Math.min(dealt, hpBefore);
       }
       const healed = this.player.heal(totalDrained * SOUL_DRAIN_LIFESTEAL);
@@ -578,7 +652,7 @@ export class CombatEngine {
   // --- class-mechanic meter hooks (tuning: classMechanics.ts) ------------
 
   private gainClassMeter(amount: number): void {
-    this.classMeter = Math.min(CLASS_METER_MAX, this.classMeter + amount);
+    this.classMeter = Math.min(CLASS_METER_MAX, this.classMeter + amount * (1 + this.itemEffects().mods.meterGain));
   }
 
   /** After a player attack skill resolves against all its targets: Fúria/Almas gain once if anything connected; Precisão gains on a clean action and empties on any miss. */
@@ -773,9 +847,9 @@ export class CombatEngine {
         statusType: result.ticked[0],
       });
       if (!enemy.isAlive()) {
+        this.onKill(events, true);
         events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
         this.staggerStacks.delete(enemy);
-        this.onEnemyDefeated();
       }
     }
     if (this.outcome === 'ongoing') this.checkVictory(events);
@@ -845,9 +919,9 @@ export class CombatEngine {
     const dealt = enemy.takeDamage(bonus);
     events.push({ kind: 'damage', text: `${result.label}!`, actorIsPlayer: true, targetIndex: index, amount: dealt, targetHpAfter: enemy.currentHp, skillKind: 'physical' });
     if (!enemy.isAlive()) {
+      this.onKill(events, feedsMeter);
       events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
       this.staggerStacks.delete(enemy);
-      if (feedsMeter) this.onEnemyDefeated();
     } else if (result.inflictsStun) {
       applyStatusEffect(enemy, 'stun', dealt);
     }
@@ -909,6 +983,9 @@ export class CombatEngine {
     if (archetypeMult !== 1) roll.damage = Math.max(1, Math.round(roll.damage * archetypeMult));
     const vowReduction = vowDamageReduction(this.mechanicId, this.classMeter);
     if (vowReduction > 0) roll.damage = Math.max(1, Math.round(roll.damage * (1 - vowReduction)));
+    const fx = this.itemEffects();
+    const takenMult = (1 + fx.mods.damageTaken) * (1 - fx.mods.damageReduction);
+    if (takenMult !== 1) roll.damage = Math.max(1, Math.round(roll.damage * takenMult));
     const actorIndex = this.enemies.indexOf(enemy);
 
     if (roll.missed) {
@@ -939,6 +1016,8 @@ export class CombatEngine {
       this.comboCount = 0;
     }
     this.onEnemyHitResolved(mitigation);
+    if (mitigation) this.fireItemTriggers(mitigation, events);
+    if (dealt > 0) this.fireItemTriggers('hitTaken', events);
 
     events.push({
       kind: 'damage',
@@ -952,6 +1031,16 @@ export class CombatEngine {
       mitigation,
       skillKind: kind,
     });
+
+    if (dealt > 0 && fx.mods.thorns > 0 && enemy.isAlive()) {
+      const reflected = enemy.takeDamage(Math.max(1, Math.round(dealt * fx.mods.thorns)));
+      events.push({ kind: 'damage', text: '', actorIsPlayer: true, targetIndex: actorIndex, amount: reflected, targetHpAfter: enemy.currentHp, skillKind: 'physical' });
+      if (!enemy.isAlive()) {
+        this.onKill(events, true);
+        events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: actorIndex });
+        this.staggerStacks.delete(enemy);
+      }
+    }
 
     if (dealt > 0) {
       // "Estilhaçamento" — checked BEFORE this hit's own inflict roll below,
@@ -983,13 +1072,14 @@ export class CombatEngine {
   private checkVictory(events: CombatEvent[]): void {
     if (this.enemies.length === 0 || this.aliveEnemies().length > 0) return;
     const xpGained = this.enemies.reduce((s, e) => s + e.def.xpReward, 0);
-    const goldGained = this.enemies.reduce((s, e) => s + e.def.goldReward, 0);
+    const fx = this.itemEffects();
+    const goldGained = Math.round(this.enemies.reduce((s, e) => s + e.def.goldReward, 0) * (1 + fx.mods.goldFind));
     const loot: EquipmentInstance[] = [];
     const materialsGained: Record<string, number> = {};
     for (let i = 0; i < this.enemies.length; i++) {
       const enemy = this.enemies[i];
       if (Math.random() < lootDropChance(enemy.def.level, enemy.def.isBoss)) {
-        const item = generateLoot(enemy.def.level, this.player.level, this.player.stats.luck);
+        const item = generateLoot(enemy.def.level, this.player.level, this.player.stats.luck + fx.mods.lootBias, { pity: this.player.lootPity });
         if (this.player.addLoot(item)) loot.push(item);
       }
       if (Math.random() < materialDropChance(enemy.def.level)) {

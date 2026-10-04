@@ -3,7 +3,7 @@ import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { TILE_SIZE } from '../config/gameConfig';
 import { isWalkable, TileType } from '../config/tiles';
-import { createStarterItem, generateLoot, getEquipmentTemplate } from '../data/equipment';
+import { createStarterItem, generateLoot, getEquipmentTemplate, itemDisplayName } from '../data/equipment';
 import { chestsInZone, type ChestDefinition } from '../data/chests';
 import { getGemById } from '../data/gems';
 import { getItemById } from '../data/items';
@@ -1625,7 +1625,7 @@ export class OverworldScreen implements Screen {
     setChestOpened(slot.mesh, true);
     this.player.openedChestIds.push(def.id);
     this.player.gold += def.goldReward;
-    this.player.addLoot(generateLoot(def.lootLevel, this.player.level));
+    this.player.addLoot(generateLoot(def.lootLevel, this.player.level, 0, { pity: this.player.lootPity }));
     this.nearbyChest = null;
     this.promptEl.hidden = true;
     saveGame(this.player);
@@ -1887,14 +1887,13 @@ export class OverworldScreen implements Screen {
 
     if (this.player.bag.length > 0) {
       const sellRows = this.player.bag.map((instance) => {
-        const template = getEquipmentTemplate(instance.templateId);
         const price = this.sellPrice(instance.rarity, instance.itemLevel);
         return el(
           'div',
           { className: 'shop-row' },
           [
             el('div', { className: 'shop-row-info' }, [
-              el('div', { className: 'item-name', text: `${template.name} (Nv.${instance.itemLevel})`, style: { color: rarityToHex(instance.rarity) } }),
+              el('div', { className: 'item-name', text: `${itemDisplayName(instance)} (Nv.${instance.itemLevel})`, style: { color: rarityToHex(instance.rarity) } }),
             ]),
             el('div', {
               className: 'btn small',

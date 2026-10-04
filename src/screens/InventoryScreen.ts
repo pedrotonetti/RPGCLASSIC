@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { EquipmentInstance, EquipmentSlot, ItemRarity } from '../config/types';
 import { RARITY_LABEL, RARITY_SCORE_MULTIPLIER, rarityToHex } from '../config/rarity';
-import { computeEquipmentBonus, getEquipmentTemplate } from '../data/equipment';
+import { computeEquipmentBonus, getEquipmentTemplate, itemDisplayName } from '../data/equipment';
 import { getGemById } from '../data/gems';
 import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
@@ -9,6 +9,7 @@ import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import { Player } from '../entities/Player';
 import { buildPlayerCharacter } from '../render/characterModel';
+import { describeItem } from '../systems/ItemPassives';
 import { computePowerScore } from '../systems/PowerScore';
 import { saveGame } from '../systems/SaveSystem';
 import { el, goToLazy } from '../ui/dom';
@@ -158,7 +159,7 @@ function applyRarityBorder(node: HTMLElement, rarity: ItemRarity): void {
 function itemIcon(templateId: string, rarity: ItemRarity): HTMLElement {
   const wrap = el('div', { className: 'item-icon' });
   applyRarityBorder(wrap, rarity);
-  wrap.append(buildItemIconSvg(templateId) as unknown as Node);
+  wrap.append(buildItemIconSvg(getEquipmentTemplate(templateId).iconTemplateId ?? templateId) as unknown as Node);
   return wrap;
 }
 
@@ -252,6 +253,35 @@ export class InventoryScreen implements Screen {
     return el('div', { className: 'item-stats', text: `${statText}  •  ${template.description}` });
   }
 
+  /** Affixes, the unique passive and set progress, tinted by the card's rarity color. `inBag` makes set progress read as "after equipping". */
+  private itemExtras(instance: EquipmentInstance, inBag: boolean): HTMLElement | null {
+    const info = describeItem(instance, this.player.equipment);
+    const rows: HTMLElement[] = info.affixLines.map((line) => el('div', { className: 'item-affix', text: `◆ ${line}` }));
+    if (info.passive) {
+      rows.push(
+        el('div', { className: 'item-passive' }, [
+          el('div', { className: 'item-passive-name', text: `★ ${info.passive.name}` }),
+          el('div', { className: 'item-passive-text', text: info.passive.description }),
+        ]),
+      );
+    }
+    if (info.set) {
+      const { set } = info;
+      rows.push(
+        el('div', { className: 'item-set' }, [
+          el('div', { className: 'item-set-name', text: `Conjunto ${set.name} (${set.owned}/${set.total}${inBag ? ' ao equipar' : ''})` }),
+          el(
+            'div',
+            { className: 'item-set-pieces' },
+            set.pieces.map((piece) => el('span', { className: piece.owned ? 'owned' : 'missing', text: `${piece.owned ? '✓' : '○'} ${piece.name}` })),
+          ),
+          ...set.bonuses.map((bonus) => el('div', { className: `item-set-bonus${bonus.active ? ' active' : ''}`, text: `(${bonus.pieces}) ${bonus.description}` })),
+        ]),
+      );
+    }
+    return rows.length > 0 ? el('div', { className: 'item-extras' }, rows) : null;
+  }
+
   /**
    * Tells the player, at a glance, whether a bag item is worth equipping
    * over whatever's already in that slot — the exact call the Power Score
@@ -288,14 +318,14 @@ export class InventoryScreen implements Screen {
         el('div', { className: 'item-name', text: '(vazio)' }),
       ]);
     }
-    const template = getEquipmentTemplate(instance.templateId);
     const card = el('div', { className: 'equip-slot' }, [
       itemIcon(instance.templateId, instance.rarity),
       el('div', { className: 'equip-slot-body' }, [
         el('div', { className: 'slot-label', text: SLOT_LABELS[slot] }),
-        el('div', { className: 'item-name', text: `${template.name} (Nv.${instance.itemLevel})`, style: { color: rarityToHex(instance.rarity) } }),
+        el('div', { className: 'item-name', text: `${itemDisplayName(instance)} (Nv.${instance.itemLevel})`, style: { color: rarityToHex(instance.rarity) } }),
         el('div', { className: 'item-rarity', text: RARITY_LABEL[instance.rarity] }),
         this.itemLine(instance),
+        this.itemExtras(instance, false),
         el('div', {
           className: 'btn small',
           text: 'Desequipar',
@@ -314,18 +344,18 @@ export class InventoryScreen implements Screen {
 
   /** One bag card in a slot's grid: icon, name/rarity/level, stat line, upgrade-or-not verdict, and an Equipar button. */
   private bagCard(instance: EquipmentInstance): HTMLElement {
-    const template = getEquipmentTemplate(instance.templateId);
     const card = el('div', { className: 'bag-card' }, [
       el('div', { className: 'bag-card-top' }, [
         itemIcon(instance.templateId, instance.rarity),
         el('div', { className: 'bag-card-info' }, [
           el('div', {
             className: 'item-name',
-            text: `${template.name} (Nv.${instance.itemLevel})`,
+            text: `${itemDisplayName(instance)} (Nv.${instance.itemLevel})`,
             style: { color: rarityToHex(instance.rarity) },
           }),
           el('div', { className: 'item-rarity', text: RARITY_LABEL[instance.rarity] }),
           this.itemLine(instance),
+          this.itemExtras(instance, true),
           this.comparisonBadge(instance),
         ]),
       ]),

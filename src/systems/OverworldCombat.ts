@@ -777,8 +777,9 @@ export class OverworldCombat {
       const isBasic = skill.id === classDef.basicAttack.id;
       const level = isBasic ? 1 : this.player.skillLevel(skill.id);
       const stats = computeSkillLevelStats(skill, level);
+      const cost = this.player.discountedSkillCost(stats.cost);
       const fillEl = el('div', { className: 'cd-fill' });
-      const costEl = el('div', { className: 'hotbar-cost', text: stats.cost > 0 ? `MP ${stats.cost}` : '' });
+      const costEl = el('div', { className: 'hotbar-cost', text: cost > 0 ? `MP ${cost}` : '' });
       const keyLabel = i === 0 ? 'Básico' : skill.isUltimate ? 'ULT' : `Nv.${level}`;
       const slotEl = el(
         'div',
@@ -786,7 +787,7 @@ export class OverworldCombat {
         [el('div', { className: 'hotbar-name', text: skill.name }), el('div', { className: 'hotbar-level', text: keyLabel }), costEl, fillEl],
       );
       slotEls.push(slotEl);
-      this.hotbar.push({ skill, totalCooldown: stats.cooldown, cost: stats.cost, el: slotEl, fillEl });
+      this.hotbar.push({ skill, totalCooldown: stats.cooldown, cost, el: slotEl, fillEl });
     });
 
     // Class ability (warrior/cleric/necromancer): appended AFTER dodge/block so

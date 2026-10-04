@@ -9,6 +9,8 @@ import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder
 import { cloneAchievementState, createInitialAchievementState, normalizeAchievementState, recordItemAcquired, type AchievementState } from '../systems/AchievementSystem';
 import { cloneCodexState, createInitialCodexState, normalizeCodexState, type CodexState } from '../systems/CodexSystem';
 import { restoreEventState, serializeEventState, type WorldEventSave, type WorldEventState } from '../systems/EventSystem';
+import { resolveItemEffects, setStatBonus, type PassiveContext, type ResolvedItemEffects } from '../systems/ItemPassives';
+import { sanitizePity, type LootPityState } from '../systems/LootPity';
 import { createInitialGameClock, type GameClockState } from '../systems/GameClock';
 import { createInitialWorldState, type WorldState } from '../systems/WorldStateSystem';
 import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, startZoneForClass } from '../data/zones';
@@ -30,6 +32,8 @@ export interface PlayerSaveData {
   appearance: CharacterAppearance;
   equipment: Partial<Record<EquipmentSlot, EquipmentInstance>>;
   bag: EquipmentInstance[];
+  /** Drops since the last Épico/Lendário, for the pity guarantee (see systems/LootPity.ts). Absent on older saves — defaulted like worldState. */
+  lootPity: LootPityState;
   skillLevels: Record<string, number>;
   skillPoints: number;
   completedQuestIds: string[];
@@ -104,6 +108,7 @@ export class Player implements StatusEffectHolder {
   appearance: CharacterAppearance;
   equipment: Partial<Record<EquipmentSlot, EquipmentInstance>>;
   bag: EquipmentInstance[];
+  lootPity: LootPityState;
   skillLevels: Record<string, number>;
   skillPoints: number;
   completedQuestIds: string[];
@@ -155,6 +160,7 @@ export class Player implements StatusEffectHolder {
     this.appearance = data?.appearance ?? defaultAppearance(classDef.color, classDef.accentColor);
     this.equipment = data?.equipment ?? {};
     this.bag = data?.bag ?? [];
+    this.lootPity = sanitizePity(data?.lootPity);
     this.skillLevels = data?.skillLevels ?? {};
     this.skillPoints = data?.skillPoints ?? 0;
     this.completedQuestIds = data?.completedQuestIds ?? [];
@@ -210,7 +216,34 @@ export class Player implements StatusEffectHolder {
         withGear[stat] += value;
       }
     }
+    for (const [stat, value] of Object.entries(setStatBonus(this.equipment)) as Array<[keyof Stats, number]>) {
+      withGear[stat] += value;
+    }
     return withGear;
+  }
+
+  /** `combat` supplies the fight-only context (combo, class meter, target); outside combat those conditions read as unmet. */
+  passiveContext(combat: Partial<PassiveContext> = {}): PassiveContext {
+    const stats = this.stats;
+    return {
+      hpFraction: this.currentHp / Math.max(1, stats.maxHp),
+      mpFraction: this.currentMp / Math.max(1, stats.maxMp),
+      meterFraction: 0,
+      comboHits: 0,
+      enemiesAlive: 0,
+      ...combat,
+    };
+  }
+
+  /** Affix modifiers, unique passives and set bonuses live right now. */
+  itemEffects(combat: Partial<PassiveContext> = {}): ResolvedItemEffects {
+    return resolveItemEffects(this.equipment, this.passiveContext(combat));
+  }
+
+  /** A skill's mana cost after equipment discounts. */
+  discountedSkillCost(baseCost: number): number {
+    const discount = this.itemEffects().mods.mpCost;
+    return discount > 0 ? Math.max(0, Math.round(baseCost * (1 - discount))) : baseCost;
   }
 
   /** <1 while `slow` is active — scales how fast this player's own cooldowns recover in `CombatEngine.tick` (their "attack speed" while afflicted). */
@@ -219,7 +252,9 @@ export class Player implements StatusEffectHolder {
   }
 
   get mpRegenPerSecond(): number {
-    return Math.max(1, this.stats.maxMp * 0.045);
+    const maxMp = this.stats.maxMp;
+    const { mods } = this.itemEffects();
+    return Math.max(1, maxMp * 0.045) + mods.mpRegen + maxMp * mods.mpRegenPct;
   }
 
   get hpRegenPerSecond(): number {
@@ -414,6 +449,7 @@ export class Player implements StatusEffectHolder {
       appearance: { ...this.appearance },
       equipment: { ...this.equipment },
       bag: [...this.bag],
+      lootPity: { ...this.lootPity },
       skillLevels: { ...this.skillLevels },
       skillPoints: this.skillPoints,
       completedQuestIds: [...this.completedQuestIds],

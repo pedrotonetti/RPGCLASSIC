@@ -1,6 +1,9 @@
 import { RARITY_ORDER, RARITY_STAT_MULTIPLIER } from '../config/rarity';
 import type { EquipmentInstance, EquipmentTemplate, ItemRarity, Stats } from '../config/types';
+import { pityFloor, recordDrop, type LootPityState } from '../systems/LootPity';
+import { AFFIX_COUNT_BY_RARITY, affixStatBonus, getAffixDefinition, rollAffixes } from './affixes';
 import { getGemById } from './gems';
+import { SET_PIECE_DROP_CHANCE, SET_TEMPLATES, UNIQUE_AFFIX_COUNT, UNIQUE_DROP_CHANCE, UNIQUE_TEMPLATES } from './uniques';
 
 export const EQUIPMENT_TEMPLATES: EquipmentTemplate[] = [
   // --- weapons ---------------------------------------------------------
@@ -26,13 +29,34 @@ export const EQUIPMENT_TEMPLATES: EquipmentTemplate[] = [
   { id: 'talisma_velocidade', name: 'Talismã de Velocidade', slot: 'acessorio', description: 'Deixa os passos mais leves.', statWeights: { speed: 4 } },
 ];
 
+const TEMPLATE_BY_ID = new Map<string, EquipmentTemplate>([...EQUIPMENT_TEMPLATES, ...UNIQUE_TEMPLATES, ...SET_TEMPLATES].map((t) => [t.id, t]));
+
 export function getEquipmentTemplate(id: string): EquipmentTemplate {
-  const found = EQUIPMENT_TEMPLATES.find((t) => t.id === id);
+  const found = TEMPLATE_BY_ID.get(id);
   if (!found) throw new Error(`Equipamento desconhecido: ${id}`);
   return found;
 }
 
-/** Flat stat bonuses an equipped instance grants, after rarity and item-level scaling, plus its socketed gem's bonus if any. */
+/** Name shown to the player: uniques and set pieces keep their own name, a regular item borrows the title of its lead affix ("Espada Curta de Brasa"). */
+export function itemDisplayName(instance: EquipmentInstance): string {
+  const template = getEquipmentTemplate(instance.templateId);
+  if (template.passiveId || template.setId) return template.name;
+  const lead = instance.affixes?.[0];
+  const title = lead ? getAffixDefinition(lead.id)?.title : undefined;
+  return title ? `${template.name} ${title}` : template.name;
+}
+
+function affixCountFor(template: EquipmentTemplate, rarity: ItemRarity): number {
+  if (template.passiveId) return UNIQUE_AFFIX_COUNT[rarity] ?? 0;
+  return AFFIX_COUNT_BY_RARITY[rarity];
+}
+
+function rollInstanceAffixes(template: EquipmentTemplate, rarity: ItemRarity, itemLevel: number, rng: () => number): Pick<EquipmentInstance, 'affixes'> {
+  const count = affixCountFor(template, rarity);
+  return count > 0 ? { affixes: rollAffixes(template.slot, itemLevel, count, rng) } : {};
+}
+
+/** Flat stat bonuses an equipped instance grants, after rarity and item-level scaling, plus its flat-stat affixes and socketed gem's bonus if any. */
 export function computeEquipmentBonus(instance: EquipmentInstance): Partial<Stats> {
   const template = getEquipmentTemplate(instance.templateId);
   const rarityMult = RARITY_STAT_MULTIPLIER[instance.rarity];
@@ -40,6 +64,9 @@ export function computeEquipmentBonus(instance: EquipmentInstance): Partial<Stat
   const bonus: Partial<Stats> = {};
   for (const [stat, weight] of Object.entries(template.statWeights) as Array<[keyof Stats, number]>) {
     bonus[stat] = Math.round(weight * rarityMult * levelMult * 10) / 10;
+  }
+  for (const [stat, value] of Object.entries(affixStatBonus(instance.affixes)) as Array<[keyof Stats, number]>) {
+    bonus[stat] = (bonus[stat] ?? 0) + value;
   }
   if (instance.socketedGemId) {
     const gem = getGemById(instance.socketedGemId);
@@ -50,21 +77,44 @@ export function computeEquipmentBonus(instance: EquipmentInstance): Partial<Stat
   return bonus;
 }
 
-function pickWeightedRarity(bias = 0): ItemRarity {
-  // Base weights strongly favor common drops; `bias` (player luck plus, for
-  // real drops, the defeated enemy's own tier — see generateLoot) nudges
-  // toward rarer tiers. The common weight itself (index 0, multiplied by
-  // bias*0) is never touched by this bias, so even a very high bias — a
-  // tough, high-level kill with a lucky character — still leaves common a
-  // live outcome; it just stops being the overwhelming favorite.
-  const weights = [50, 27, 14, 7, 2].map((w, i) => Math.max(1, w + bias * i));
+/** Base odds weights by rarity tier; `bias` adds `bias * tier` to each, never dropping below 1, so common stays a live outcome at any bias. */
+const BASE_RARITY_WEIGHTS = [50, 27, 14, 7, 2];
+
+/** Probability of each rarity for a given bias, with tiers below `floor` (a pity guarantee) removed — the single source both the roll and any odds readout use. */
+export function rarityOdds(bias = 0, floor: ItemRarity | null = null): Record<ItemRarity, number> {
+  const floorTier = floor ? RARITY_ORDER.indexOf(floor) : 0;
+  const weights = BASE_RARITY_WEIGHTS.map((w, i) => (i < floorTier ? 0 : Math.max(1, w + bias * i)));
   const total = weights.reduce((a, b) => a + b, 0);
-  let roll = Math.random() * total;
-  for (let i = 0; i < weights.length; i++) {
-    roll -= weights[i];
-    if (roll <= 0) return RARITY_ORDER[i];
+  const odds = {} as Record<ItemRarity, number>;
+  RARITY_ORDER.forEach((rarity, i) => {
+    odds[rarity] = weights[i] / total;
+  });
+  return odds;
+}
+
+function pickWeightedRarity(bias: number, rng: () => number, floor: ItemRarity | null): ItemRarity {
+  const odds = rarityOdds(bias, floor);
+  let roll = rng();
+  for (const rarity of RARITY_ORDER) {
+    roll -= odds[rarity];
+    if (roll < 0) return rarity;
   }
-  return RARITY_ORDER[0];
+  return RARITY_ORDER[RARITY_ORDER.length - 1];
+}
+
+function pickFrom<T>(list: T[], rng: () => number): T {
+  return list[Math.min(list.length - 1, Math.floor(rng() * list.length))];
+}
+
+/** Lendário/Mítico drops are usually a unique with its own passive; Raro-or-better ones are sometimes a set piece. */
+function pickTemplate(rarity: ItemRarity, rng: () => number): EquipmentTemplate {
+  const uniqueChance = UNIQUE_DROP_CHANCE[rarity] ?? 0;
+  if (uniqueChance > 0 && rng() < uniqueChance) {
+    const uniques = UNIQUE_TEMPLATES.filter((t) => t.fixedRarity === rarity);
+    if (uniques.length > 0) return pickFrom(uniques, rng);
+  }
+  if (RARITY_ORDER.indexOf(rarity) >= 1 && rng() < SET_PIECE_DROP_CHANCE) return pickFrom(SET_TEMPLATES, rng);
+  return pickFrom(EQUIPMENT_TEMPLATES, rng);
 }
 
 let lootCounter = 0;
@@ -93,16 +143,29 @@ const PLAYER_LEVEL_WEIGHT = 0.3;
  */
 const ENEMY_TIER_RARITY_BIAS_PER_LEVEL = 0.6;
 
-/** Rolls a random equipment drop for defeating the given enemy (by its own difficulty tier), with the player's own level and luck as secondary factors. */
-export function generateLoot(enemyLevel: number, characterLevel: number, luckBias = 0): EquipmentInstance {
-  const template = EQUIPMENT_TEMPLATES[Math.floor(Math.random() * EQUIPMENT_TEMPLATES.length)];
-  const rarityBias = luckBias + enemyLevel * ENEMY_TIER_RARITY_BIAS_PER_LEVEL;
-  const rarity = pickWeightedRarity(rarityBias);
-  const anchor = enemyLevel * ENEMY_LEVEL_WEIGHT + characterLevel * PLAYER_LEVEL_WEIGHT;
-  const itemLevel = Math.max(1, Math.round(anchor + (Math.random() * 2 - 1)));
-  return { uid: nextUid(), templateId: template.id, rarity, itemLevel };
+export interface LootOptions {
+  rng?: () => number;
+  /** The player's pity counters: read for a guaranteed rarity floor, then updated in place with this drop. */
+  pity?: LootPityState;
 }
 
-export function createStarterItem(templateId: string, rarity: ItemRarity = 'verde', itemLevel = 1): EquipmentInstance {
-  return { uid: nextUid(), templateId, rarity, itemLevel };
+/** Rarity bias a drop rolls with — the player's luck plus the defeated enemy's own tier. */
+export function lootRarityBias(enemyLevel: number, luckBias = 0): number {
+  return luckBias + enemyLevel * ENEMY_TIER_RARITY_BIAS_PER_LEVEL;
+}
+
+/** Rolls a random equipment drop for defeating the given enemy (by its own difficulty tier), with the player's own level and luck as secondary factors. */
+export function generateLoot(enemyLevel: number, characterLevel: number, luckBias = 0, opts: LootOptions = {}): EquipmentInstance {
+  const rng = opts.rng ?? Math.random;
+  const rarity = pickWeightedRarity(lootRarityBias(enemyLevel, luckBias), rng, opts.pity ? pityFloor(opts.pity) : null);
+  if (opts.pity) recordDrop(opts.pity, rarity);
+  const template = pickTemplate(rarity, rng);
+  const anchor = enemyLevel * ENEMY_LEVEL_WEIGHT + characterLevel * PLAYER_LEVEL_WEIGHT;
+  const itemLevel = Math.max(1, Math.round(anchor + (rng() * 2 - 1)));
+  return { uid: nextUid(), templateId: template.id, rarity, itemLevel, ...rollInstanceAffixes(template, rarity, itemLevel, rng) };
+}
+
+export function createStarterItem(templateId: string, rarity: ItemRarity = 'verde', itemLevel = 1, rng: () => number = Math.random): EquipmentInstance {
+  const affixes = rarity === 'verde' ? {} : rollInstanceAffixes(getEquipmentTemplate(templateId), rarity, itemLevel, rng);
+  return { uid: nextUid(), templateId, rarity, itemLevel, ...affixes };
 }

@@ -2231,6 +2231,51 @@ body {
   color: var(--text-dim);
 }
 
+/* Affixes, unique passive and set progress on an item card — tinted by the
+   card's own `--rarity-color` (see InventoryScreen.applyRarityBorder). */
+.item-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 6px;
+  font-size: 13px;
+}
+.item-affix {
+  color: var(--rarity-color, #8ec9e0);
+}
+.item-passive {
+  border-left: 2px solid var(--rarity-color, var(--accent));
+  padding-left: 6px;
+  margin: 3px 0;
+}
+.item-passive-name {
+  color: var(--rarity-color, var(--accent));
+}
+.item-passive-text {
+  color: var(--text);
+}
+.item-set {
+  margin-top: 3px;
+}
+.item-set-name {
+  color: #7fd6a8;
+}
+.item-set-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+.item-set-pieces .owned {
+  color: var(--heal);
+}
+.item-set-pieces .missing,
+.item-set-bonus {
+  color: var(--text-dim);
+}
+.item-set-bonus.active {
+  color: var(--heal);
+}
+
 /* Per-item-template icon swatch — a flat SVG silhouette (see
    InventoryScreen.ts's ITEM_ICON_SHAPES), tinted and framed by rarity via
    the shared `.rarity-border` rule below. */

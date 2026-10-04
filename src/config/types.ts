@@ -152,6 +152,20 @@ export interface EquipmentTemplate {
   description: string;
   /** Relative weight of each stat this item rolls bonuses on, at rarity 'verde' and item level 1. */
   statWeights: Partial<Record<keyof Stats, number>>;
+  /** Uniques only: the rarity this item always drops at. */
+  fixedRarity?: ItemRarity;
+  /** Uniques only: key into ITEM_PASSIVES (data/uniques.ts). */
+  passiveId?: string;
+  /** Set pieces only: key into SET_DEFINITIONS (data/uniques.ts). */
+  setId?: string;
+  /** Uniques/set pieces: existing template whose inventory icon this one reuses. */
+  iconTemplateId?: string;
+}
+
+/** `value` is the final rolled magnitude, already level-scaled where the affix scales. */
+export interface ItemAffix {
+  id: string;
+  value: number;
 }
 
 export interface EquipmentInstance {
@@ -159,6 +173,8 @@ export interface EquipmentInstance {
   templateId: string;
   rarity: ItemRarity;
   itemLevel: number;
+  /** Absent on items saved before affixes existed — treated as none. */
+  affixes?: ItemAffix[];
   /** Gem id socketed into this item, if any — adds its stat bonus and tints the item with a glow. */
   socketedGemId?: string;
 }
