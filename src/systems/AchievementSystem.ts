@@ -10,6 +10,7 @@ import {
   type AchievementReward,
 } from '../data/achievements';
 import { CHEST_DEFINITIONS } from '../data/chests';
+import { LORE_FRAGMENTS } from '../data/loreFragments';
 import { lastCallingQuestIdForClass } from '../data/quests';
 import type { Player } from '../entities/Player';
 import {
@@ -22,6 +23,7 @@ import {
   recordNpcMet as codexRecordNpcMet,
   syncCodexFromHoldings,
 } from './CodexSystem';
+import { getCounter } from './WorldStateSystem';
 
 /**
  * Conquistas: data-driven (`data/achievements.ts`) e quase sempre derivadas
@@ -130,6 +132,13 @@ export function conditionProgress(condition: AchievementCondition, player: Playe
       return clampProgress(Object.values(player.dungeonTiers).filter((tier) => tier > 0).length, condition.target);
     case 'zones':
       return clampProgress(condition.zoneIds.filter((id) => player.achievements.flags[`zone:${id}`]).length, condition.zoneIds.length);
+    case 'worldCounter':
+      return clampProgress(getCounter(player.worldState, condition.key), condition.target);
+    case 'lore': {
+      const valid = new Set(LORE_FRAGMENTS.map((f) => f.id));
+      const found = new Set(player.discoveredLoreIds.filter((id) => valid.has(id))).size;
+      return clampProgress(found, resolveTarget(condition.target, LORE_FRAGMENTS.length));
+    }
     case 'equippedRarity': {
       const min = rarityTier(condition.min);
       const met = Object.values(player.equipment).some((item) => item !== undefined && rarityTier(item.rarity) >= min);
@@ -256,6 +265,11 @@ export function recordPlayerDefeated(player: Player): AchievementDefinition[] {
 export function recordItemCrafted(player: Player, rarity: ItemRarity): AchievementDefinition[] {
   bump(player.achievements, 'itemsCrafted');
   if (rarityTier(rarity) >= rarityTier('azul')) bump(player.achievements, 'rareCrafted');
+  return checkAchievements(player);
+}
+
+/** A Fragmento de Memória was just examined for the first time (`Player.discoveredLoreIds` already holds it). */
+export function recordLoreDiscovered(player: Player): AchievementDefinition[] {
   return checkAchievements(player);
 }
 

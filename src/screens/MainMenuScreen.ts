@@ -5,8 +5,10 @@ import type { Screen } from '../engine/Screen';
 import { GltfActor } from '../render/gltfModel';
 import { loadPreviewAvatar } from '../render/playerAvatar';
 import { audio } from '../systems/AudioSystem';
-import { deleteSlotSave, listSaveSlots, loadSlotSave, setActiveSlot, type SaveSlotEntry } from '../systems/SaveSystem';
+import { deleteSlotSave, exportSlot, importSlot, listSaveSlots, loadSlot, previewImport, setActiveSlot, type SaveSlotEntry, type SaveSlotSummary } from '../systems/SaveSystem';
+import { confirmDialog, noticeDialog } from '../ui/dialogs';
 import { el, goToLazy } from '../ui/dom';
+import { downloadTextFile, pickTextFile } from '../ui/files';
 import { IntroScreen } from './IntroScreen';
 
 /** Classic cheat-code key sequence — arrow keys then b, a. Nothing else on this screen listens for arrow keys, so it's safe to consume here without colliding with any real control. */
@@ -14,6 +16,16 @@ const KONAMI_SEQUENCE = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowL
 /** Rapid clicks on the logo, within this window, celebrate instead of doing nothing — see onLogoClick. */
 const LOGO_CLICK_THRESHOLD = 8;
 const LOGO_CLICK_WINDOW = 2.5;
+
+function describeSlot(summary: SaveSlotSummary): string {
+  let className = summary.classId;
+  try {
+    className = getClassById(summary.classId).name;
+  } catch {
+    // An unknown class id still deserves a readable card.
+  }
+  return `${summary.name} — ${className} Nv.${summary.level}`;
+}
 
 export class MainMenuScreen implements Screen {
   scene = new THREE.Scene();
@@ -393,42 +405,109 @@ export class MainMenuScreen implements Screen {
     this.game.goTo(new IntroScreen(this.game));
   }
 
-  private continueSlot(slot: number): void {
-    const player = loadSlotSave(slot);
-    if (player) {
+  private async onNewGameClick(slot: number, occupied: boolean): Promise<void> {
+    if (occupied) {
+      const ok = await confirmDialog(this.game.uiRoot, {
+        title: 'Substituir personagem?',
+        message: `O Slot ${slot + 1} já tem um personagem. Começar um novo jogo aqui substitui esse progresso. Exporte o save antes se quiser guardá-lo.`,
+        confirmLabel: 'Novo Jogo',
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    this.startNewGame(slot);
+  }
+
+  private async continueSlot(slot: number): Promise<void> {
+    const result = loadSlot(slot);
+    if (result.status === 'ok') {
+      const { player } = result;
+      if (result.recoveredFromBackup) {
+        await noticeDialog(this.game.uiRoot, 'Save restaurado', 'O último salvamento deste slot estava corrompido. Carregamos o backup do salvamento anterior.');
+      }
       goToLazy(this.game, async () => {
         const [{ OverworldScreen }, { loadPlayerAvatar }] = await Promise.all([import('./OverworldScreen'), import('../render/playerAvatar')]);
         const avatar = await loadPlayerAvatar(player);
         return new OverworldScreen(this.game, player, avatar);
       });
+    } else if (result.status === 'newer') {
+      await noticeDialog(this.game.uiRoot, 'Save de versão mais nova', 'Este personagem foi salvo por uma versão mais nova do jogo. Atualize o jogo para continuar. Nada foi apagado.');
+    } else if (result.status === 'empty') {
+      this.game.goTo(new MainMenuScreen(this.game));
     } else {
-      // Corrupted/unreadable save: don't leave the button silently doing
-      // nothing — clear it and let the player start a new character here.
+      // Corrupted/unreadable save (and no usable backup): don't leave the
+      // button silently doing nothing — clear it and let the player start a
+      // new character here.
+      await noticeDialog(this.game.uiRoot, 'Save corrompido', 'Não foi possível carregar o jogo salvo (dados corrompidos). Iniciando um novo jogo.');
       deleteSlotSave(slot);
-      alert('Não foi possível carregar o jogo salvo (dados corrompidos). Iniciando um novo jogo.');
       this.startNewGame(slot);
     }
   }
 
-  private deleteSlot(slot: number): void {
-    if (!confirm('Tem certeza que deseja excluir este personagem? Esta ação não pode ser desfeita.')) return;
+  private async deleteSlot(slot: number): Promise<void> {
+    const ok = await confirmDialog(this.game.uiRoot, {
+      title: 'Excluir personagem?',
+      message: `Tem certeza que deseja excluir o personagem do Slot ${slot + 1}? Esta ação não pode ser desfeita.`,
+      confirmLabel: 'Excluir',
+      danger: true,
+    });
+    if (!ok) return;
     deleteSlotSave(slot);
     this.game.goTo(new MainMenuScreen(this.game));
   }
 
+  private async exportSlotFile(slot: number): Promise<void> {
+    const file = exportSlot(slot);
+    if (!file) {
+      await noticeDialog(this.game.uiRoot, 'Exportação falhou', 'Não foi possível ler o save deste slot.');
+      return;
+    }
+    downloadTextFile(file.filename, file.text);
+  }
+
+  private async importIntoSlot(slot: number, occupied: boolean): Promise<void> {
+    const text = await pickTextFile();
+    if (text === null) return;
+    const preview = previewImport(text);
+    if (!preview.ok) {
+      await noticeDialog(this.game.uiRoot, 'Importação falhou', preview.error);
+      return;
+    }
+    if (occupied) {
+      const ok = await confirmDialog(this.game.uiRoot, {
+        title: 'Substituir personagem?',
+        message: `Importar ${describeSlot(preview.summary)} substitui o personagem atual do Slot ${slot + 1}.`,
+        confirmLabel: 'Importar',
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    const result = importSlot(slot, text);
+    if (!result.ok) {
+      await noticeDialog(this.game.uiRoot, 'Importação falhou', result.error);
+      return;
+    }
+    this.game.goTo(new MainMenuScreen(this.game));
+  }
+
   private buildSlotCard(slot: number, entry: SaveSlotEntry): HTMLElement {
+    const importBtn = el('div', { className: 'btn small', text: 'Importar', onClick: () => void this.importIntoSlot(slot, entry !== null) });
     if (!entry) {
       return el('div', { className: 'save-slot empty' }, [
         el('div', { className: 'slot-info', text: `Slot ${slot + 1}: vazio` }),
-        el('div', { className: 'btn primary', text: 'Novo Jogo', onClick: () => this.startNewGame(slot) }),
+        el('div', { className: 'row' }, [el('div', { className: 'btn primary', text: 'Novo Jogo', onClick: () => void this.onNewGameClick(slot, false) }), importBtn]),
       ]);
     }
-    const className = getClassById(entry.summary.classId).name;
     return el('div', { className: 'save-slot' }, [
-      el('div', { className: 'slot-info', text: `Slot ${slot + 1}: ${entry.summary.name} — ${className} Nv.${entry.summary.level}` }),
+      el('div', { className: 'slot-info', text: `Slot ${slot + 1}: ${describeSlot(entry.summary)}` }),
       el('div', { className: 'row' }, [
-        el('div', { className: 'btn primary', text: 'Continuar', onClick: () => this.continueSlot(slot) }),
-        el('div', { className: 'btn danger', text: 'Excluir', onClick: () => this.deleteSlot(slot) }),
+        el('div', { className: 'btn primary', text: 'Continuar', onClick: () => void this.continueSlot(slot) }),
+        el('div', { className: 'btn danger', text: 'Excluir', onClick: () => void this.deleteSlot(slot) }),
+      ]),
+      el('div', { className: 'slot-tools' }, [
+        el('div', { className: 'btn small', text: 'Novo Jogo', onClick: () => void this.onNewGameClick(slot, true) }),
+        el('div', { className: 'btn small', text: 'Exportar', onClick: () => void this.exportSlotFile(slot) }),
+        importBtn,
       ]),
     ]);
   }

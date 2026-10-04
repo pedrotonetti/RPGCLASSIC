@@ -4,6 +4,7 @@ import { MATERIAL_DEFINITIONS, MATERIAL_DROP_CHANCE } from '../data/materials';
 import type { DamageElement, EquipmentInstance, SkillDefinition, SkillTarget, StatusEffectType, StatusInflict, Stats } from '../config/types';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
+import { rewardMultiplier } from './AdaptiveDifficulty';
 import {
   CLASS_METER_MAX,
   FAITH_PER_BLOCK,
@@ -1071,9 +1072,11 @@ export class CombatEngine {
 
   private checkVictory(events: CombatEvent[]): void {
     if (this.enemies.length === 0 || this.aliveEnemies().length > 0) return;
-    const xpGained = this.enemies.reduce((s, e) => s + e.def.xpReward, 0);
+    // Adaptive difficulty's only payout lever: a small bonus while struggling (never a penalty).
+    const rewardMult = rewardMultiplier(this.player.adaptive);
+    const xpGained = Math.round(this.enemies.reduce((s, e) => s + e.def.xpReward, 0) * rewardMult);
     const fx = this.itemEffects();
-    const goldGained = Math.round(this.enemies.reduce((s, e) => s + e.def.goldReward, 0) * (1 + fx.mods.goldFind));
+    const goldGained = Math.round(this.enemies.reduce((s, e) => s + e.def.goldReward, 0) * (1 + fx.mods.goldFind) * rewardMult);
     const loot: EquipmentInstance[] = [];
     const materialsGained: Record<string, number> = {};
     for (let i = 0; i < this.enemies.length; i++) {

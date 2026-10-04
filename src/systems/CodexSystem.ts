@@ -4,6 +4,7 @@ import { BOSS_DEFINITIONS } from '../data/bosses';
 import { DUNGEON_DEFINITIONS } from '../data/dungeons';
 import { ENEMY_DEFINITIONS } from '../data/enemies';
 import { EQUIPMENT_TEMPLATES } from '../data/equipment';
+import { LORE_FRAGMENTS } from '../data/loreFragments';
 import { MATERIAL_DEFINITIONS } from '../data/materials';
 import { NPC_DEFINITIONS } from '../data/npcs';
 import { ZONE_DEFINITIONS } from '../data/zones';
@@ -266,4 +267,28 @@ export function codexEntryViews(state: CodexState, section: CodexSection): Codex
     case 'equipment':
       return EQUIPMENT_TEMPLATES.map((t) => equipmentView(state, t.id));
   }
+}
+
+// --- lore -----------------------------------------------------------------
+
+/** Fragmentos de Memória live on `Player.discoveredLoreIds`, not in CodexState, so they are read by id list rather than as a CodexSection. */
+export function loreCounts(discoveredIds: readonly string[]): CodexCounts {
+  const found = new Set(discoveredIds);
+  const n = LORE_FRAGMENTS.filter((f) => found.has(f.id)).length;
+  return { discovered: n, completed: n, total: LORE_FRAGMENTS.length };
+}
+
+export function loreEntryViews(discoveredIds: readonly string[]): CodexEntryView[] {
+  const found = new Set(discoveredIds);
+  return LORE_FRAGMENTS.map((fragment) => {
+    if (!found.has(fragment.id)) return undiscovered(fragment.id);
+    const zoneName = ZONE_DEFINITIONS[fragment.zoneId]?.name ?? fragment.zoneId;
+    return {
+      id: fragment.id,
+      discovered: true,
+      name: fragment.title,
+      description: `Local: ${zoneName}${fragment.nightOnly ? ' · só se revela à noite' : ''}`,
+      details: [...fragment.lines],
+    };
+  });
 }

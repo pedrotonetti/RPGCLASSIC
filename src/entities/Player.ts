@@ -6,6 +6,7 @@ import { computeEquipmentBonus, createStarterItem, getEquipmentTemplate } from '
 import { getItemById } from '../data/items';
 import { computeSkillLevelStats, skillPointsForLevel, ultimateLevelForCharacter } from '../systems/skillMath';
 import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder } from '../systems/statusEffects';
+import { cloneAdaptiveState, createInitialAdaptiveState, normalizeAdaptiveState, type AdaptiveState } from '../systems/AdaptiveDifficulty';
 import { cloneAchievementState, createInitialAchievementState, normalizeAchievementState, recordItemAcquired, type AchievementState } from '../systems/AchievementSystem';
 import { cloneCodexState, createInitialCodexState, normalizeCodexState, type CodexState } from '../systems/CodexSystem';
 import { restoreEventState, serializeEventState, type WorldEventSave, type WorldEventState } from '../systems/EventSystem';
@@ -87,6 +88,8 @@ export interface PlayerSaveData {
   rarePity: number;
   /** Ids of data/loreFragments.ts fragments already examined; absent on old saves. */
   discoveredLoreIds: string[];
+  /** Recent-fight performance feeding systems/AdaptiveDifficulty.ts; absent on old saves. */
+  adaptive: AdaptiveState;
 }
 
 /** The three closures Ato 3 branches into — see LORE.md's "O final". */
@@ -138,6 +141,7 @@ export class Player implements StatusEffectHolder {
   codex: CodexState;
   rarePity: number;
   discoveredLoreIds: string[];
+  adaptive: AdaptiveState;
   /**
    * Session-only "enter the next dungeon at this tier" hand-off — set by
    * OverworldScreen.enterDungeon just before swapping to the dungeon's own
@@ -188,6 +192,7 @@ export class Player implements StatusEffectHolder {
     this.codex = data?.codex ? normalizeCodexState(data.codex) : createInitialCodexState();
     this.rarePity = normalizePity(data?.rarePity);
     this.discoveredLoreIds = data?.discoveredLoreIds ?? [];
+    this.adaptive = data?.adaptive ? normalizeAdaptiveState(data.adaptive) : createInitialAdaptiveState();
     this.currentHp = data?.currentHp ?? this.stats.maxHp;
     this.currentMp = data?.currentMp ?? this.stats.maxMp;
   }
@@ -485,6 +490,7 @@ export class Player implements StatusEffectHolder {
       codex: cloneCodexState(this.codex),
       rarePity: this.rarePity,
       discoveredLoreIds: [...this.discoveredLoreIds],
+      adaptive: cloneAdaptiveState(this.adaptive),
     };
   }
 }

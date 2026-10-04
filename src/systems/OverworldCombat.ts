@@ -13,6 +13,7 @@ import { applyRareLook } from '../render/rareVariant';
 import type { CharacterAnimatorLike, ActionName } from '../render/animation';
 import { HELD_MESHES, DEFAULT_CLASS } from '../render/playerAvatar';
 import { VfxManager, hitImpactColor } from '../render/vfx';
+import { adaptiveModifiers, recordFight, shiftPackWeights, type AdaptiveModifiers } from './AdaptiveDifficulty';
 import { recordEnemyDefeated, recordEnemyEngaged } from './AchievementSystem';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from './CombatSystem';
 import { audio } from './AudioSystem';
@@ -213,6 +214,11 @@ export class OverworldCombat {
   private activeBossMonster: WorldMonster | null = null;
   /** Any damage the player took since this fight's engine was created — what "derrote um chefe sem ser atingido" (see AchievementSystem.recordEnemyDefeated) checks. */
   private tookDamageThisFight = false;
+  /** This fight's tallies for systems/AdaptiveDifficulty.ts — reset when an engagement starts, recorded when it ends. */
+  private fightStartClock = 0;
+  private fightDamageTaken = 0;
+  private fightPotionsUsed = 0;
+  private adaptiveMods: AdaptiveModifiers;
 
   /** Set only inside a dungeon zone (see OverworldScreen.mount) — lets encounter/boss defeats drive that dungeon's own run-state tracking (DungeonSystem.ts) without OverworldCombat needing to know anything about dungeons itself. */
   private dungeonHooks: DungeonCombatHooks | null = null;
@@ -240,6 +246,7 @@ export class OverworldCombat {
     this.playerVfxAnchor = new THREE.Object3D();
     this.scene.add(this.playerVfxAnchor);
     this.classMechanic = player.classDef.classMechanic;
+    this.adaptiveMods = adaptiveModifiers(player.adaptive);
   }
 
   get inCombat(): boolean {
@@ -283,7 +290,7 @@ export class OverworldCombat {
       opts.minSpacing ?? MIN_SPAWN_SPACING,
       opts.avoid ?? [],
     );
-    const weights = opts.packWeights ?? DEFAULT_PACK_WEIGHTS;
+    const weights = shiftPackWeights(opts.packWeights ?? DEFAULT_PACK_WEIGHTS, this.adaptiveMods.packShift);
     for (const p of points) {
       const id = opts.enemyIds ? opts.enemyIds[Math.floor(Math.random() * opts.enemyIds.length)] : pickEncounterEnemyIds(this.player.level)[0];
       const size = Math.min(rollPackSize(weights), PACK_OFFSETS.length);
@@ -639,7 +646,7 @@ export class OverworldCombat {
     // existing constants, so an enemy with no archetype behaves exactly as
     // before (every multiplier defaults to 1).
     const profile = archetypeProfileFor(m.enemy.archetype);
-    const aggroRadius = AGGRO_RADIUS * profile.aggroRadiusMult;
+    const aggroRadius = AGGRO_RADIUS * profile.aggroRadiusMult * this.adaptiveMods.aggroRadiusMult;
     const deaggroRadius = DEAGGRO_RADIUS * profile.deaggroRadiusMult;
 
     if (dist <= aggroRadius) {
@@ -750,6 +757,9 @@ export class OverworldCombat {
     recordEnemyEngaged(this.player, m.enemy.definitionId);
     if (!this.engine) {
       this.tookDamageThisFight = false;
+      this.fightStartClock = this.clock;
+      this.fightDamageTaken = 0;
+      this.fightPotionsUsed = 0;
       this.engine = new CombatEngine(this.player, []);
       this.buildHotbar();
       this.buildItemBar();
@@ -766,6 +776,15 @@ export class OverworldCombat {
   }
 
   private endEngagement(outcome: 'victory' | 'defeat' | 'fled'): void {
+    if (outcome !== 'fled') {
+      recordFight(this.player.adaptive, {
+        died: outcome === 'defeat',
+        hpLost: this.fightDamageTaken / Math.max(1, this.player.stats.maxHp),
+        potions: this.fightPotionsUsed,
+        seconds: this.clock - this.fightStartClock,
+      });
+      this.adaptiveMods = adaptiveModifiers(this.player.adaptive);
+    }
     const rareNotes = this.pendingRareNotes.splice(0);
     if (outcome === 'victory') {
       let lastMessage: string | null = null;
@@ -1121,6 +1140,7 @@ export class OverworldCombat {
       if (result.reason === 'cooldown') this.showMessage('Aguarde para usar este item novamente...', 1200);
       return;
     }
+    this.fightPotionsUsed += 1;
     this.animator.play('eat');
     audio.itemUse();
     this.processEvents(result.events);
@@ -1227,7 +1247,10 @@ export class OverworldCombat {
   private processEvents(events: CombatEvent[], opts?: { onDeferrableImpact?: (targetIndex: number, reveal: () => void) => void }): void {
     if (!this.engine) return;
     for (const event of events) {
-      if (event.kind === 'damage' && event.targetIsPlayer && (event.amount ?? 0) > 0) this.tookDamageThisFight = true;
+      if (event.kind === 'damage' && event.targetIsPlayer && (event.amount ?? 0) > 0) {
+        this.tookDamageThisFight = true;
+        this.fightDamageTaken += event.amount ?? 0;
+      }
       if (event.text) this.showMessage(event.text, 2600);
       if (event.kind === 'telegraph') {
         this.messageEl.classList.add('telegraph');

@@ -8,6 +8,7 @@ import {
 } from '../data/achievements';
 import { CHEST_DEFINITIONS } from '../data/chests';
 import { createStarterItem } from '../data/equipment';
+import { LORE_FRAGMENTS } from '../data/loreFragments';
 import { MATERIAL_DEFINITIONS } from '../data/materials';
 import { NPC_DEFINITIONS } from '../data/npcs';
 import { getQuestById, lastCallingQuestIdForClass } from '../data/quests';
@@ -28,11 +29,13 @@ import {
   recordEnemyEngaged,
   recordItemAcquired,
   recordItemCrafted,
+  recordLoreDiscovered,
   recordNpcTalkedTo,
   recordPlayerDefeated,
   recordZoneVisited,
 } from './AchievementSystem';
 import { codexCounts, findEnemyDefinition } from './CodexSystem';
+import { incrementCounter } from './WorldStateSystem';
 
 function freshPlayer(classId = 'warrior'): Player {
   return Player.createNew('Testador', classId);
@@ -43,9 +46,9 @@ function ids(defs: AchievementDefinition[]): string[] {
 }
 
 describe('achievement data', () => {
-  it('has a focused catalog (18-26 entries) with unique ids and pt-BR text', () => {
+  it('has a focused catalog (18-32 entries) with unique ids and pt-BR text', () => {
     expect(ACHIEVEMENT_DEFINITIONS.length).toBeGreaterThanOrEqual(18);
-    expect(ACHIEVEMENT_DEFINITIONS.length).toBeLessThanOrEqual(26);
+    expect(ACHIEVEMENT_DEFINITIONS.length).toBeLessThanOrEqual(32);
     expect(new Set(ACHIEVEMENT_DEFINITIONS.map((a) => a.id)).size).toBe(ACHIEVEMENT_DEFINITIONS.length);
     for (const def of ACHIEVEMENT_DEFINITIONS) {
       expect(def.name.trim().length).toBeGreaterThan(0);
@@ -61,6 +64,7 @@ describe('achievement data', () => {
       if (c.kind === 'quest') expect(getQuestById(c.questId)).toBeDefined();
       if (c.kind === 'zones') for (const id of c.zoneIds) expect(ZONE_DEFINITIONS[id]).toBeDefined();
       if (c.kind === 'chests' && c.target !== 'all') expect(c.target).toBeLessThanOrEqual(CHEST_DEFINITIONS.length);
+      if (c.kind === 'lore' && c.target !== 'all') expect(c.target).toBeLessThanOrEqual(LORE_FRAGMENTS.length);
       if (c.kind === 'codex' && c.target !== 'all') {
         const player = freshPlayer();
         expect(c.target).toBeLessThanOrEqual(codexCounts(player.codex, c.section).total);
@@ -383,5 +387,61 @@ describe('toast queue and reward text', () => {
     const state = createInitialAchievementState();
     state.unlocked.push('maos_de_artesao', 'sem_um_arranhao', 'maos_de_artesao');
     expect(earnedTitles(state)).toEqual(['Artesão', 'Intocável']);
+  });
+});
+
+describe('rare creatures', () => {
+  it('unlocks "Brilho Dourado" once a rare kill is on the world counter and the next victory check runs', () => {
+    const player = freshPlayer();
+    expect(isUnlocked(player.achievements, 'brilho_dourado')).toBe(false);
+    incrementCounter(player.worldState, 'rares_defeated');
+    const unlocked = recordEnemyDefeated(player, 'slime');
+    expect(ids(unlocked)).toContain('brilho_dourado');
+    expect(ids(unlocked)).not.toContain('cacador_de_ancestrais');
+  });
+
+  it('tracks progress toward the 5-rare title and pays it once', () => {
+    const player = freshPlayer();
+    incrementCounter(player.worldState, 'rares_defeated', 4);
+    checkAchievements(player);
+    const hunter = getAchievementById('cacador_de_ancestrais')!;
+    expect(achievementProgress(hunter, player)).toEqual({ current: 4, target: 5 });
+    expect(isUnlocked(player.achievements, 'cacador_de_ancestrais')).toBe(false);
+
+    incrementCounter(player.worldState, 'rares_defeated');
+    expect(ids(checkAchievements(player))).toContain('cacador_de_ancestrais');
+    expect(earnedTitles(player.achievements)).toContain('Caçador de Ancestrais');
+    expect(checkAchievements(player)).toEqual([]);
+  });
+
+  it('credits rares an old save already defeated, since the counter is derived world state', () => {
+    const save = freshPlayer().toSaveData();
+    save.worldState.counters.rares_defeated = 2;
+    const loaded = Player.fromSaveData(JSON.parse(JSON.stringify(save)) as PlayerSaveData);
+    expect(ids(checkAchievements(loaded))).toContain('brilho_dourado');
+  });
+});
+
+describe('memory fragments', () => {
+  it('unlocks "Eco da Raiz" on the first fragment via the discovery hook', () => {
+    const player = freshPlayer();
+    expect(recordLoreDiscovered(player)).toEqual([]);
+    player.discoveredLoreIds.push(LORE_FRAGMENTS[0].id);
+    expect(ids(recordLoreDiscovered(player))).toEqual(['eco_da_raiz']);
+    expect(player.achievements.pending).toContain('eco_da_raiz');
+  });
+
+  it('only unlocks "Memória de Ipêra" with every fragment, ignoring duplicates and unknown ids', () => {
+    const player = freshPlayer();
+    const all = LORE_FRAGMENTS.map((f) => f.id);
+    player.discoveredLoreIds.push(...all.slice(0, -1), all[0], 'frag_inexistente');
+    recordLoreDiscovered(player);
+    const finale = getAchievementById('memoria_de_ipera')!;
+    expect(isUnlocked(player.achievements, 'memoria_de_ipera')).toBe(false);
+    expect(achievementProgress(finale, player)).toEqual({ current: LORE_FRAGMENTS.length - 1, target: LORE_FRAGMENTS.length });
+
+    player.discoveredLoreIds.push(all[all.length - 1]);
+    expect(ids(recordLoreDiscovered(player))).toContain('memoria_de_ipera');
+    expect(earnedTitles(player.achievements)).toContain('Guardião da Memória');
   });
 });

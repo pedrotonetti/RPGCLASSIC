@@ -141,6 +141,14 @@ describe('tickEvents — starting', () => {
     expect(state.nextCheckIn).toBe(EVENT_CHECK_INTERVAL);
   });
 
+  it('scales the start chance by chanceMultiplier (adaptive difficulty) and defaults to unscaled', () => {
+    const chance = startChance(ctx(), {});
+    const roll = chance * 0.9;
+    expect(tickEvents(readyState(), 1, tickCtx(), () => roll)).toHaveLength(1);
+    expect(tickEvents(readyState(), 1, tickCtx({ chanceMultiplier: 0.8 }), () => roll)).toEqual([]);
+    expect(tickEvents(readyState(), 1, tickCtx({ chanceMultiplier: 1.1 }), () => chance * 1.05)).toHaveLength(1);
+  });
+
   it('does not start anything on a losing roll, and rolls again a full interval later', () => {
     const state = readyState();
     expect(tickEvents(state, 1, tickCtx(), () => 0.99)).toEqual([]);

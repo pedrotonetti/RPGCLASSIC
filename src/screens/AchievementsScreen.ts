@@ -5,11 +5,11 @@ import type { Player } from '../entities/Player';
 import { RARITY_ORDER, rarityToHex } from '../config/rarity';
 import { ACHIEVEMENT_CATEGORY_LABEL, ACHIEVEMENT_CATEGORY_ORDER, ACHIEVEMENT_DEFINITIONS, type AchievementDefinition } from '../data/achievements';
 import { achievementProgress, checkAchievements, describeReward, earnedTitles, isUnlocked } from '../systems/AchievementSystem';
-import { codexCompletion, codexCounts, codexEntryViews, UNDISCOVERED_NAME, type CodexEntryView, type CodexSection } from '../systems/CodexSystem';
+import { codexCompletion, codexCounts, codexEntryViews, loreCounts, loreEntryViews, UNDISCOVERED_NAME, type CodexEntryView, type CodexSection } from '../systems/CodexSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { el } from '../ui/dom';
 
-type TabId = 'achievements' | 'enemies' | 'bosses' | 'npcs' | 'items';
+type TabId = 'achievements' | 'enemies' | 'bosses' | 'npcs' | 'items' | 'lore';
 
 interface TabDefinition {
   id: TabId;
@@ -31,10 +31,15 @@ const TABS: TabDefinition[] = [
       { section: 'equipment', heading: 'Equipamentos' },
     ],
   },
+  { id: 'lore', label: 'Lore', sections: [] },
 ];
 
 function tabCountLabel(player: Player, tab: TabDefinition): string {
   if (tab.id === 'achievements') return `${player.achievements.unlocked.length}/${ACHIEVEMENT_DEFINITIONS.length}`;
+  if (tab.id === 'lore') {
+    const counts = loreCounts(player.discoveredLoreIds);
+    return `${counts.discovered}/${counts.total}`;
+  }
   let discovered = 0;
   let total = 0;
   for (const { section } of tab.sections) {
@@ -103,7 +108,8 @@ export class AchievementsScreen implements Screen {
   private renderPanel(): void {
     this.panelEl.scrollTop = 0;
     const tab = TABS.find((t) => t.id === this.tab)!;
-    this.panelEl.replaceChildren(...(tab.id === 'achievements' ? this.achievementsContent() : this.codexContent(tab)));
+    const content = tab.id === 'achievements' ? this.achievementsContent() : tab.id === 'lore' ? this.loreContent() : this.codexContent(tab);
+    this.panelEl.replaceChildren(...content);
   }
 
   // --- Conquistas ---------------------------------------------------------
@@ -150,6 +156,14 @@ export class AchievementsScreen implements Screen {
       nodes.push(el('div', { className: 'achv-list' }, codexEntryViews(this.player.codex, section).map((view) => this.codexCard(view))));
     }
     return nodes;
+  }
+
+  private loreContent(): HTMLElement[] {
+    const counts = loreCounts(this.player.discoveredLoreIds);
+    return [
+      el('h3', { text: `Fragmentos de Memória — ${counts.discovered}/${counts.total} descobertos` }),
+      el('div', { className: 'achv-list' }, loreEntryViews(this.player.discoveredLoreIds).map((view) => this.codexCard(view))),
+    ];
   }
 
   private codexCard(view: CodexEntryView): HTMLElement {

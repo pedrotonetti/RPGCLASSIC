@@ -37,7 +37,7 @@ import { WildlifeManager } from '../render/wildlife';
 import { pickWildlifeLayout } from '../systems/wildlifePlacement';
 import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { animateWaterMaterial, buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
-import { recordItemCrafted, recordPlayerDefeated } from '../systems/AchievementSystem';
+import { recordItemCrafted, recordLoreDiscovered, recordPlayerDefeated } from '../systems/AchievementSystem';
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { OverworldEvents, type EventInteractable } from './OverworldEvents';
 import { buildWalkabilityGrid, findNearestWalkable, pathfindToClick } from '../systems/Pathfinding';
@@ -1472,6 +1472,7 @@ export class OverworldScreen implements Screen {
       this.player.discoveredLoreIds.push(def.id);
       adjustWorldState(this.player.worldState, { hope: 1 });
       this.loreLayer?.markDiscovered(def.id);
+      recordLoreDiscovered(this.player);
       saveGame(this.player);
       this.combat.showBanner(`Fragmento de Memória descoberto (${this.player.discoveredLoreIds.length}/${LORE_FRAGMENTS.length}).`, 3200);
     }

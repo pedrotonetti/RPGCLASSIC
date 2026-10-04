@@ -9,6 +9,7 @@ import type { Player } from '../entities/Player';
 import { animateCorruptedTree, buildCorruptedTreeMesh, disposeCorruptedTree, setTreePurified, type CorruptedTreeMesh } from '../render/corruptedTree';
 import { buildWorldEventHud, drawEventMinimapMarker, pointArrowAt, type WorldEventHud } from '../render/worldEventHud';
 import { tileCenterWorld } from '../render/worldBuilder';
+import { eventChanceMultiplier } from '../systems/AdaptiveDifficulty';
 import { audio } from '../systems/AudioSystem';
 import { pickEncounterEnemyIds } from '../systems/EncounterSystem';
 import {
@@ -114,6 +115,7 @@ export class OverworldEvents {
       playerLevel: player.level,
       night: isNight(player.gameClock),
       canStart: !this.isDungeon,
+      chanceMultiplier: eventChanceMultiplier(player.adaptive),
       pickTile: (def: WorldEventDefinition) => this.pickTile(def),
     };
     for (const t of tickEvents(this.state, dt, ctx)) {

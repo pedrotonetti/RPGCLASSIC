@@ -162,6 +162,8 @@ export interface EventTickContext extends EventContext {
   canStart: boolean;
   /** Supplied by the screen for 'near_player' events: a spot for this def, or null when the surroundings have none right now. */
   pickTile?: (def: WorldEventDefinition) => TilePoint | null;
+  /** Scales the start chance (AdaptiveDifficulty's event-frequency bias); defaults to 1. */
+  chanceMultiplier?: number;
 }
 
 /**
@@ -196,7 +198,7 @@ export function tickEvents(state: WorldEventState, dt: number, ctx: EventTickCon
   state.nextCheckIn = EVENT_CHECK_INTERVAL;
 
   let candidates = eligibleCandidates(ctx, state.cooldowns);
-  if (rng() >= chanceOf(candidates)) return [];
+  if (rng() >= chanceOf(candidates) * (ctx.chanceMultiplier ?? 1)) return [];
 
   while (candidates.length > 0) {
     const pick = weightedPick(candidates, rng);

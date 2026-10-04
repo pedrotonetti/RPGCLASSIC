@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { BOSS_DEFINITIONS } from '../data/bosses';
 import { ENEMY_DEFINITIONS } from '../data/enemies';
 import { EQUIPMENT_TEMPLATES, createStarterItem } from '../data/equipment';
+import { LORE_FRAGMENTS } from '../data/loreFragments';
 import { MATERIAL_DEFINITIONS } from '../data/materials';
 import { NPC_DEFINITIONS } from '../data/npcs';
 import {
   CODEX_SECTIONS,
+  loreCounts,
+  loreEntryViews,
   UNDISCOVERED_NAME,
   cloneCodexState,
   codexCompletion,
@@ -196,5 +199,35 @@ describe('CodexSystem — entry views', () => {
     expect(equipmentView.name).toBe('Espada Curta');
     expect(equipmentView.rarityTierFound).toBe(3);
     expect(equipmentView.details).toContain('Melhor raridade encontrada: Lendário');
+  });
+});
+
+describe('CodexSystem — lore tab', () => {
+  it('lists every fragment as "???" until it is discovered', () => {
+    const views = loreEntryViews([]);
+    expect(views).toHaveLength(LORE_FRAGMENTS.length);
+    for (const view of views) {
+      expect(view.discovered).toBe(false);
+      expect(view.name).toBe(UNDISCOVERED_NAME);
+      expect(view.details).toEqual([]);
+    }
+    expect(loreCounts([])).toEqual({ discovered: 0, completed: 0, total: LORE_FRAGMENTS.length });
+  });
+
+  it('shows title, place and full text for a discovered fragment, leaving the rest hidden', () => {
+    const found = LORE_FRAGMENTS[0];
+    const views = loreEntryViews([found.id, 'frag_inexistente']);
+    const view = views.find((v) => v.id === found.id)!;
+    expect(view.discovered).toBe(true);
+    expect(view.name).toBe(found.title);
+    expect(view.description).toContain('Local:');
+    expect(view.details).toEqual(found.lines);
+    expect(views.filter((v) => v.discovered)).toHaveLength(1);
+    expect(loreCounts([found.id, found.id, 'frag_inexistente']).discovered).toBe(1);
+  });
+
+  it('flags night-only fragments in their place line', () => {
+    const night = LORE_FRAGMENTS.find((f) => f.nightOnly)!;
+    expect(loreEntryViews([night.id]).find((v) => v.id === night.id)!.description).toContain('à noite');
   });
 });

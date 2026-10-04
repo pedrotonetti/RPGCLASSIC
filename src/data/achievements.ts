@@ -36,7 +36,11 @@ export type AchievementCondition =
   | { kind: 'chests'; target: number | 'all' }
   | { kind: 'dungeonsCleared'; target: number }
   | { kind: 'zones'; zoneIds: string[] }
-  | { kind: 'equippedRarity'; min: ItemRarity };
+  | { kind: 'equippedRarity'; min: ItemRarity }
+  /** A `WorldState.counters` entry the game already bumps (e.g. 'rares_defeated'). */
+  | { kind: 'worldCounter'; key: string; target: number }
+  /** Fragmentos de Memória examinados (`Player.discoveredLoreIds`); 'all' = every fragment. */
+  | { kind: 'lore'; target: number | 'all' };
 
 export interface AchievementReward {
   gold?: number;
@@ -111,6 +115,22 @@ export const ACHIEVEMENT_DEFINITIONS: AchievementDefinition[] = [
     category: 'combate',
     condition: { kind: 'flag', key: 'flawlessBoss' },
     reward: { gold: 150, title: 'Intocável' },
+  },
+  {
+    id: 'brilho_dourado',
+    name: 'Brilho Dourado',
+    description: 'Derrote uma criatura rara — Ancestral ou Fulgente — que despertou em Ipêra.',
+    category: 'combate',
+    condition: { kind: 'worldCounter', key: 'rares_defeated', target: 1 },
+    reward: { gold: 80, xp: 60 },
+  },
+  {
+    id: 'cacador_de_ancestrais',
+    name: 'Caçador de Ancestrais',
+    description: 'Derrote 5 criaturas raras. Cada uma guardava algo que a Sede ainda não alcançou.',
+    category: 'combate',
+    condition: { kind: 'worldCounter', key: 'rares_defeated', target: 5 },
+    reward: { gold: 250, xp: 250, title: 'Caçador de Ancestrais' },
   },
   {
     id: 'terra_que_acolhe',
@@ -197,6 +217,22 @@ export const ACHIEVEMENT_DEFINITIONS: AchievementDefinition[] = [
     category: 'exploracao',
     condition: { kind: 'zones', zoneIds: EXPLORATION_ZONE_IDS },
     reward: { gold: 200, xp: 200, title: 'Andarilho de Ipêra' },
+  },
+  {
+    id: 'eco_da_raiz',
+    name: 'Eco da Raiz',
+    description: 'Encontre e examine seu primeiro Fragmento de Memória, escondido num canto esquecido de Ipêra.',
+    category: 'exploracao',
+    condition: { kind: 'lore', target: 1 },
+    reward: { gold: 40, xp: 40 },
+  },
+  {
+    id: 'memoria_de_ipera',
+    name: 'Memória de Ipêra',
+    description: 'Examine todos os Fragmentos de Memória. Quem lembra tudo já não carrega a Sede sozinho.',
+    category: 'exploracao',
+    condition: { kind: 'lore', target: 'all' },
+    reward: { gold: 300, xp: 300, title: 'Guardião da Memória' },
   },
   {
     id: 'raizes_fundas',
