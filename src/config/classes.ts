@@ -50,16 +50,24 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
     growth: { maxHp: 3, maxMp: 5, attack: 0, magicAttack: 3, defense: 1, magicDefense: 2, speed: 1, luck: 1 },
     basicAttack: makeBasicAttack('magical'),
     skills: [
-      makeSkill({ id: 'mage_fireball', name: 'Bola de Fogo', description: 'Lança uma bola de fogo que causa dano mágico e queima o alvo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.8, inflicts: { type: 'burn', chance: 0.6 } }),
-      makeSkill({ id: 'mage_ice_lance', name: 'Lança de Gelo', description: 'Uma lâmina de gelo perfurante que retarda o alvo.', kind: 'magical', target: 'enemy', unlockLevel: 5, baseCooldown: 7, baseCost: 14, basePower: 2.0, inflicts: { type: 'slow', chance: 0.6 } }),
+      makeSkill({ id: 'mage_fireball', name: 'Bola de Fogo', description: 'Lança uma bola de fogo que causa dano mágico e queima o alvo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.8, element: 'fire', inflicts: { type: 'burn', chance: 0.6 } }),
+      makeSkill({ id: 'mage_ice_lance', name: 'Lança de Gelo', description: 'Uma lâmina de gelo perfurante que retarda o alvo.', kind: 'magical', target: 'enemy', unlockLevel: 5, baseCooldown: 7, baseCost: 14, basePower: 2.0, element: 'ice', inflicts: { type: 'slow', chance: 0.6 } }),
       // Fase 3 (systems/statusSynergies.ts): 'slow' -> 'freeze' — the
       // description already said "congela" (freezes); the mechanic just
       // hadn't caught up until the type existed. Also makes Estilhaçamento
       // (freeze + any later hit) reachable for a mage.
-      makeSkill({ id: 'mage_blizzard', name: 'Nevasca', description: 'Congela todos os inimigos com dano mágico em área, retardando-os.', kind: 'magical', target: 'allEnemies', unlockLevel: 10, baseCooldown: 12, baseCost: 20, basePower: 1.3, inflicts: { type: 'freeze', chance: 0.5 } }),
+      makeSkill({ id: 'mage_blizzard', name: 'Nevasca', description: 'Congela todos os inimigos com dano mágico em área, retardando-os.', kind: 'magical', target: 'allEnemies', unlockLevel: 10, baseCooldown: 12, baseCost: 20, basePower: 1.3, element: 'ice', inflicts: { type: 'freeze', chance: 0.5 } }),
       makeSkill({ id: 'mage_arcane_shield', name: 'Escudo Arcano', description: 'Envolve-se em energia que reduz o dano recebido.', kind: 'buff', target: 'self', unlockLevel: 15, baseCooldown: 18, baseCost: 16, basePower: 1.5, buffStat: 'defense' }),
-      makeUltimate({ id: 'mage_ultimate', name: 'Meteoro Arcano', description: 'Invoca um meteoro flamejante que arrasa e queima todos os inimigos.', kind: 'magical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 28, baseCost: 45, basePower: 2.6, inflicts: { type: 'burn', chance: 0.55 } }),
+      makeUltimate({ id: 'mage_ultimate', name: 'Meteoro Arcano', description: 'Invoca um meteoro flamejante que arrasa e queima todos os inimigos.', kind: 'magical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 28, baseCost: 45, basePower: 2.6, element: 'fire', inflicts: { type: 'burn', chance: 0.55 } }),
     ],
+    classMechanic: {
+      id: 'overcharge',
+      name: 'Sobrecarga',
+      description:
+        'Cada magia lançada acumula Carga Arcana (ataques básicos acumulam um pouco). Com a barra cheia, sua próxima magia de dano não gasta MP e causa +50% de dano. A Sobrecarga zera a cada batalha.',
+      kind: 'meter',
+      readyMessage: 'Sobrecarga pronta! Sua próxima magia não gasta MP e causa mais dano.',
+    },
   },
   {
     id: 'archer',
@@ -96,7 +104,7 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
     basicAttack: makeBasicAttack('magical'),
     skills: [
       makeSkill({ id: 'cleric_heal', name: 'Cura', description: 'Restaura uma boa quantidade de pontos de vida.', kind: 'heal', target: 'self', unlockLevel: 1, baseCooldown: 6, baseCost: 10, basePower: 2.2 }),
-      makeSkill({ id: 'cleric_smite', name: 'Julgamento', description: 'Invoca energia sagrada contra um inimigo.', kind: 'magical', target: 'enemy', unlockLevel: 5, baseCooldown: 7, baseCost: 12, basePower: 1.7 }),
+      makeSkill({ id: 'cleric_smite', name: 'Julgamento', description: 'Invoca energia sagrada contra um inimigo.', kind: 'magical', target: 'enemy', unlockLevel: 5, baseCooldown: 7, baseCost: 12, basePower: 1.7, element: 'holy' }),
       makeSkill({ id: 'cleric_blessing', name: 'Bênção', description: 'Reduz o dano mágico recebido por um tempo.', kind: 'buff', target: 'self', unlockLevel: 10, baseCooldown: 14, baseCost: 16, basePower: 1.5, buffStat: 'magicDefense' }),
       makeSkill({ id: 'cleric_light', name: 'Luz Purificadora', description: 'Uma cura poderosa que remove aflições.', kind: 'heal', target: 'self', unlockLevel: 15, baseCooldown: 16, baseCost: 22, basePower: 3.0 }),
       makeUltimate({ id: 'cleric_ultimate', name: 'Renascimento Divino', description: 'Energia divina restaura quase toda a sua vitalidade.', kind: 'heal', target: 'self', unlockLevel: 20, baseCooldown: 30, baseCost: 40, basePower: 5.0 }),
@@ -123,12 +131,23 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
     growth: { maxHp: 6, maxMp: 3, attack: 1, magicAttack: 1, defense: 2, magicDefense: 2, speed: 1, luck: 1 },
     basicAttack: makeBasicAttack('physical'),
     skills: [
-      makeSkill({ id: 'paladin_holy_strike', name: 'Golpe Sagrado', description: 'Um golpe abençoado contra um inimigo.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.6 }),
+      makeSkill({ id: 'paladin_holy_strike', name: 'Golpe Sagrado', description: 'Um golpe abençoado contra um inimigo.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.6, element: 'holy' }),
       makeSkill({ id: 'paladin_divine_shield', name: 'Escudo Divino', description: 'Uma barreira sagrada reduz o dano recebido.', kind: 'buff', target: 'self', unlockLevel: 5, baseCooldown: 10, baseCost: 14, basePower: 1.6, buffStat: 'defense' }),
-      makeSkill({ id: 'paladin_judgement_hammer', name: 'Martelo da Justiça', description: 'Um golpe pesado com energia sagrada.', kind: 'physical', target: 'enemy', unlockLevel: 10, baseCooldown: 9, baseCost: 16, basePower: 2.1 }),
+      makeSkill({ id: 'paladin_judgement_hammer', name: 'Martelo da Justiça', description: 'Um golpe pesado com energia sagrada.', kind: 'physical', target: 'enemy', unlockLevel: 10, baseCooldown: 9, baseCost: 16, basePower: 2.1, element: 'holy' }),
       makeSkill({ id: 'paladin_aura', name: 'Aura de Proteção', description: 'Uma aura sagrada restaura parte da sua vida.', kind: 'heal', target: 'self', unlockLevel: 15, baseCooldown: 16, baseCost: 18, basePower: 2.0 }),
-      makeUltimate({ id: 'paladin_ultimate', name: 'Julgamento Celestial', description: 'Convoca fogo sagrado dos céus sobre todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 26, baseCost: 42, basePower: 2.8, inflicts: { type: 'burn', chance: 0.45 } }),
+      makeUltimate({ id: 'paladin_ultimate', name: 'Julgamento Celestial', description: 'Convoca fogo sagrado dos céus sobre todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 26, baseCost: 42, basePower: 2.8, element: 'holy', inflicts: { type: 'burn', chance: 0.45 } }),
     ],
+    classMechanic: {
+      id: 'vow',
+      name: 'Juramento',
+      description:
+        'Segurar a linha enche o Juramento: bloquear ataques (um bloqueio perfeito rende mais) e levar dano sem se defender, e um pouco ao acertar golpes. Quanto mais cheio, menos dano você sofre (até -15%). Com a barra cheia, libere o Veredito Sagrado. O Juramento zera a cada batalha.',
+      kind: 'meter',
+      ability: {
+        name: 'Veredito Sagrado',
+        description: 'Com o Juramento cheio: luz sagrada que nunca erra atinge todos os inimigos e restaura parte da sua vida. Consome todo o Juramento.',
+      },
+    },
   },
   {
     id: 'assassin',
@@ -146,6 +165,18 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
       makeSkill({ id: 'assassin_blade_dance', name: 'Dança das Lâminas', description: 'Uma sequência de cortes contra todos os inimigos.', kind: 'physical', target: 'allEnemies', unlockLevel: 15, baseCooldown: 12, baseCost: 20, basePower: 1.3, inflicts: { type: 'bleed', chance: 0.45 } }),
       makeUltimate({ id: 'assassin_ultimate', name: 'Execução Sombria', description: 'Um golpe fatal contra um único alvo, uma ferida que não estanca.', kind: 'physical', target: 'enemy', unlockLevel: 20, baseCooldown: 22, baseCost: 36, basePower: 4.5, inflicts: { type: 'bleed', chance: 0.8 } }),
     ],
+    classMechanic: {
+      id: 'marks',
+      name: 'Marca da Morte',
+      description:
+        'Cada golpe que acerta marca o alvo (um crítico marca em dobro), até 5 Marcas, e cada Marca aumenta um pouco o dano contra ele. A barra mostra o inimigo mais marcado. Com 5 Marcas, libere o Golpe Fatal. As Marcas zeram a cada batalha.',
+      kind: 'meter',
+      steps: 5,
+      ability: {
+        name: 'Golpe Fatal',
+        description: 'Em um inimigo com 5 Marcas: um golpe físico que nunca erra, com dano que cresce quanto menos vida o alvo tiver (até +80%). Consome as Marcas.',
+      },
+    },
   },
   {
     id: 'necromancer',
@@ -157,11 +188,11 @@ export const CLASS_DEFINITIONS: CharacterClassDefinition[] = [
     growth: { maxHp: 3, maxMp: 5, attack: 0, magicAttack: 3, defense: 1, magicDefense: 1, speed: 1, luck: 1 },
     basicAttack: makeBasicAttack('magical'),
     skills: [
-      makeSkill({ id: 'necro_dark_touch', name: 'Toque Sombrio', description: 'Corrompe o alvo com energia sombria que continua a apodrecê-lo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.7, inflicts: { type: 'bleed', chance: 0.5 } }),
-      makeSkill({ id: 'necro_drain', name: 'Drenar Vida', description: 'Rouba a força vital do inimigo.', kind: 'magical', target: 'enemy', unlockLevel: 5, baseCooldown: 8, baseCost: 14, basePower: 1.8 }),
-      makeSkill({ id: 'necro_curse', name: 'Maldição', description: 'Amaldiçoa todos os inimigos com energia sombria que os corrói lentamente.', kind: 'magical', target: 'allEnemies', unlockLevel: 10, baseCooldown: 12, baseCost: 18, basePower: 1.3, inflicts: { type: 'bleed', chance: 0.4 } }),
+      makeSkill({ id: 'necro_dark_touch', name: 'Toque Sombrio', description: 'Corrompe o alvo com energia sombria que continua a apodrecê-lo.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 5, baseCost: 10, basePower: 1.7, element: 'dark', inflicts: { type: 'bleed', chance: 0.5 } }),
+      makeSkill({ id: 'necro_drain', name: 'Drenar Vida', description: 'Rouba a força vital do inimigo.', kind: 'magical', target: 'enemy', unlockLevel: 5, baseCooldown: 8, baseCost: 14, basePower: 1.8, element: 'dark' }),
+      makeSkill({ id: 'necro_curse', name: 'Maldição', description: 'Amaldiçoa todos os inimigos com energia sombria que os corrói lentamente.', kind: 'magical', target: 'allEnemies', unlockLevel: 10, baseCooldown: 12, baseCost: 18, basePower: 1.3, element: 'dark', inflicts: { type: 'bleed', chance: 0.4 } }),
       makeSkill({ id: 'necro_bone_armor', name: 'Armadura Óssea', description: 'Invoca ossos para se proteger.', kind: 'buff', target: 'self', unlockLevel: 15, baseCooldown: 16, baseCost: 16, basePower: 1.5, buffStat: 'defense' }),
-      makeUltimate({ id: 'necro_ultimate', name: 'Exército dos Mortos', description: 'Invoca legiões sombrias contra todos os inimigos.', kind: 'magical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 27, baseCost: 44, basePower: 2.5 }),
+      makeUltimate({ id: 'necro_ultimate', name: 'Exército dos Mortos', description: 'Invoca legiões sombrias contra todos os inimigos.', kind: 'magical', target: 'allEnemies', unlockLevel: 20, baseCooldown: 27, baseCost: 44, basePower: 2.5, element: 'dark' }),
     ],
     classMechanic: {
       id: 'souls',

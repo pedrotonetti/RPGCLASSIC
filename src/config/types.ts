@@ -19,6 +19,12 @@ export type SkillKind = 'physical' | 'magical' | 'heal' | 'buff';
  */
 export type StatusEffectType = 'bleed' | 'burn' | 'slow' | 'poison' | 'freeze' | 'stun';
 
+/** An element a skill's damage can carry on top of its physical/magical kind — see `systems/damageAffinity.ts`. */
+export type DamageElement = 'fire' | 'ice' | 'holy' | 'dark';
+
+/** Everything an `EnemyDefinition` can be weak or resistant to: a skill's kind or its element. */
+export type DamageTag = 'physical' | 'magical' | DamageElement;
+
 /**
  * A recognizable AI personality an `EnemyDefinition` can opt into — see
  * `systems/enemyArchetypes.ts` for what each one actually does (movement,
@@ -72,6 +78,8 @@ export interface SkillDefinition {
   buffStat?: keyof Stats;
   /** A status effect this skill can inflict on a hit target (physical/magical skills only — never buff/heal). */
   inflicts?: StatusInflict;
+  /** The element this skill's damage carries, checked against an enemy's `weaknesses`/`resistances` (see `systems/damageAffinity.ts`). Unset = plain physical/magical. */
+  element?: DamageElement;
 }
 
 export interface SkillLevelStats {
@@ -109,6 +117,10 @@ export interface ClassMechanicDefinition {
    * (e.g. the archer's Precisão) and for `combo` mechanics.
    */
   ability?: { name: string; description: string };
+  /** Shows the meter as discrete steps (e.g. 5 marks -> "3/5") instead of a 0-100 percentage. */
+  steps?: number;
+  /** For a passive meter with no `ability`: announced the moment the meter fills, so the payoff isn't a silent surprise. */
+  readyMessage?: string;
 }
 
 export interface CharacterClassDefinition {
@@ -200,6 +212,10 @@ export interface EnemyDefinition {
    * fight, no phase transitions.
    */
   phases?: BossPhaseDefinition[];
+  /** Damage tags this enemy takes extra damage from (see `systems/damageAffinity.ts`). Unset = no weaknesses. */
+  weaknesses?: DamageTag[];
+  /** Damage tags this enemy takes reduced damage from. A tag in both lists cancels out. */
+  resistances?: DamageTag[];
 }
 
 /** One phase of a scripted boss fight — see `EnemyDefinition.phases` and `systems/BossPhaseSystem.ts`. */

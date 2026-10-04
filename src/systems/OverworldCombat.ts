@@ -1245,6 +1245,13 @@ export class OverworldCombat {
     } else if (event.kind === 'damage' && event.amount) {
       text = `-${event.amount}`;
       color = event.crit ? '#ffcf4e' : '#ffffff';
+      if (event.affinity === 'weak') {
+        text += ' Fraco!';
+        color = '#ff7a3d';
+      } else if (event.affinity === 'resist') {
+        text += ' Resistiu';
+        color = '#9aa7b5';
+      }
     } else if (event.kind === 'heal' && event.amount) {
       text = `+${event.amount}`;
       color = '#6bff8e';
@@ -1313,7 +1320,9 @@ export class OverworldCombat {
       full = level >= FLOW_MAX_LEVEL;
     } else {
       fraction = this.engine.classMeterFraction();
-      valueText = `${Math.floor(this.engine.classMeterValue)}/${CLASS_METER_MAX}`;
+      valueText = mechanic.steps
+        ? `${Math.round(fraction * mechanic.steps)}/${mechanic.steps}`
+        : `${Math.floor(this.engine.classMeterValue)}/${CLASS_METER_MAX}`;
       full = this.engine.isClassMeterFull();
     }
     if (valueText === this.lastClassMeterText) return;
@@ -1331,6 +1340,8 @@ export class OverworldCombat {
     // down, and announcing there would bury the "Vitória!" message.
     if (full && !this.lastClassMeterReady && mechanic.ability && this.classAbilityBtnEl && this.engine.outcome === 'ongoing') {
       this.showMessage(`${mechanic.ability.name} pronto! (${CLASS_ABILITY_KEY.toUpperCase()})`, 2200);
+    } else if (full && !this.lastClassMeterReady && mechanic.readyMessage && this.engine.outcome === 'ongoing') {
+      this.showMessage(mechanic.readyMessage, 2200);
     }
     this.lastClassMeterReady = full;
   }

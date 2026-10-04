@@ -71,6 +71,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [],
     level: 1,
     archetype: 'guardian',
+    weaknesses: ['fire'],
   },
   {
     id: 'bat',
@@ -84,6 +85,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [],
     level: 2,
     archetype: 'ambusher',
+    weaknesses: ['physical'],
+    resistances: ['dark'],
   },
   {
     id: 'goblin',
@@ -99,6 +102,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     ],
     level: 3,
     archetype: 'predator',
+    weaknesses: ['fire'],
   },
   {
     id: 'bandit',
@@ -129,6 +133,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     ],
     level: 5,
     archetype: 'predator',
+    weaknesses: ['holy'],
+    resistances: ['dark'],
   },
   {
     id: 'skeleton',
@@ -146,6 +152,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     ],
     level: 6,
     archetype: 'support',
+    weaknesses: ['physical', 'holy'],
+    resistances: ['dark'],
   },
   {
     id: 'giant_spider',
@@ -165,6 +173,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     ],
     level: 7,
     archetype: 'controller',
+    weaknesses: ['fire'],
   },
   {
     id: 'orc',
@@ -180,6 +189,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     ],
     level: 8,
     archetype: 'tank',
+    weaknesses: ['fire'],
+    resistances: ['ice'],
   },
   {
     id: 'fire_elemental',
@@ -195,6 +206,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     ],
     level: 9,
     archetype: 'berserker',
+    weaknesses: ['ice'],
+    resistances: ['fire'],
   },
   {
     id: 'troll',
@@ -210,6 +223,7 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     ],
     level: 10,
     archetype: 'berserker',
+    weaknesses: ['ice'],
   },
   {
     id: 'stone_golem',
@@ -225,6 +239,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     ],
     level: 11,
     archetype: 'guardian',
+    weaknesses: ['ice'],
+    resistances: ['physical'],
   },
   {
     id: 'young_dragon',
@@ -239,6 +255,8 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     skills: [DRAGON_CLAW, DRAGON_BREATH],
     level: 18,
     archetype: 'berserker',
+    weaknesses: ['ice'],
+    resistances: ['fire'],
     // Fase 3 (PDF section 7) — 100-65%: padrão básico (só as duas skills
     // acima). 65-30%: ganha o Rugido Corrompido. 30-0%: desesperado —
     // mesmo conjunto de skills, mas mais rápido e mais forte (ver

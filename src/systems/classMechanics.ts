@@ -1,4 +1,4 @@
-import type { SkillTarget } from '../config/types';
+import type { SkillKind, SkillTarget } from '../config/types';
 
 /**
  * Phase 2 ("Identidade") class mechanics — every tuning number and pure rule
@@ -117,11 +117,63 @@ export const FLOW_MAX_LEVEL = 3;
 /** Added to the combo damage multiplier for every monk hit landed at FLOW_MAX_LEVEL. */
 export const FLOW_FINISHER_BONUS = 0.1;
 
+// --- Mago: Sobrecarga Arcana --------------------------------------------
+// Passive trigger, no button: every spell cast charges the meter, and once
+// it's full the NEXT damaging spell is free and hits harder. Four spell casts
+// (or two plus a handful of basic attacks) fill it — the mage's own MP pool
+// is the real limiter, so the charge shows up about once per real fight.
+
+/** Per skill cast (damage spell or buff) — sized by cast, not by MP spent, so the pacing doesn't drift as skill costs scale with level. */
+export const OVERCHARGE_PER_SPELL = 25;
+/** Per basic attack: a trickle to build between spell cooldowns. */
+export const OVERCHARGE_PER_BASIC = 8;
+/** Extra damage on the overcharged spell, on top of it costing no MP — mostly a refund (the mage is mana-starved) plus a punchy hit. */
+export const OVERCHARGE_DAMAGE_BONUS = 0.5;
+
+// --- Paladino: Juramento ------------------------------------------------
+// The defensive mirror of Fúria: it fills from HOLDING the line (blocks are
+// the clean route; eating a hit is the slow fallback), only a trickle from
+// attacking. Two blocks, a couple of hits taken and a handful of attacks
+// fill it in a real fight. Passive half ("Fé Inabalável"): the fuller the
+// Juramento, the less damage the paladin takes. Active half: Veredito Sagrado.
+
+/** Per player action that connected with at least one target. */
+export const VOW_PER_HIT = 4;
+export const VOW_PER_BLOCK = 20;
+export const VOW_PER_PERFECT_BLOCK = 30;
+/** Per enemy hit taken fully unmitigated. */
+export const VOW_PER_DAMAGE_TAKEN = 10;
+/** Damage reduction at a full meter, scaling linearly with it — small enough that blocking stays the real defense. */
+export const VOW_MAX_DAMAGE_REDUCTION = 0.15;
+/** Veredito Sagrado's holy damage per enemy (vs. attack) — an AoE a notch under the level-20 ultimate's 2.8. Never misses. */
+export const VERDICT_POWER = 1.8;
+/** Veredito Sagrado's heal power through `resolveHeal` — Aura de Proteção's level-1 power; the heal is a bonus, not a Cura. */
+export const VERDICT_HEAL_POWER = 2.0;
+
+// --- Assassino: Marca da Morte ------------------------------------------
+// Per-TARGET stacks, not a shared pool: every landed hit marks its target
+// (a crit marks twice), up to MARKS_MAX. The marks also sharpen later hits on
+// that target. At full marks Golpe Fatal consumes them; it hits harder the
+// lower the target's HP, so it rewards finishing rather than opening. The HUD
+// meter shows the most-marked living enemy.
+
+export const MARKS_MAX = 5;
+export const MARKS_PER_HIT = 1;
+export const MARKS_PER_CRIT = 2;
+/** Damage bonus per mark already on the target, for the assassin's own normal hits (max +10% at 5 marks). */
+export const MARK_DAMAGE_BONUS_PER_STACK = 0.02;
+/** Golpe Fatal's power against a full-HP target (vs. attack); never misses. */
+export const FATAL_STRIKE_POWER = 2.0;
+/** Extra power fraction at 0% target HP, scaling linearly with the HP missing (x1.8 at the very end). */
+export const FATAL_STRIKE_LOW_HP_BONUS = 0.8;
+
 /** Which mechanic ids have an active ability, and what it targets — `CombatEngine.useClassAbility` implements each one. */
 const CLASS_ABILITY_TARGET: Record<string, SkillTarget> = {
   fury: 'enemy',
   faith: 'self',
   souls: 'allEnemies',
+  vow: 'allEnemies',
+  marks: 'enemy',
 };
 
 /** What `mechanicId`'s active ability targets, or null if that mechanic has no active ability (passive meters, `combo` mechanics, no mechanic at all). */
@@ -157,4 +209,41 @@ export function comboLabel(mechanicId: string | undefined, comboHits: number): s
     return level >= FLOW_MAX_LEVEL ? `Fluxo Nível ${level} — Finalizador!` : `Fluxo Nível ${level}`;
   }
   return comboHits > 1 ? `Combo x${comboHits}` : null;
+}
+
+/** Whether this skill cast is the mage's free, empowered one: a full Sobrecarga and a damaging (non-basic) spell. */
+export function isOverchargeCast(mechanicId: string | undefined, meter: number, skillKind: SkillKind, isBasic: boolean): boolean {
+  return mechanicId === 'overcharge' && meter >= CLASS_METER_MAX && skillKind === 'magical' && !isBasic;
+}
+
+/** How much Sobrecarga one cast adds. */
+export function overchargeGain(isBasic: boolean): number {
+  return isBasic ? OVERCHARGE_PER_BASIC : OVERCHARGE_PER_SPELL;
+}
+
+/** The paladin's Fé Inabalável: fraction of incoming damage shaved off for a given Juramento value (0 for every other mechanic). */
+export function vowDamageReduction(mechanicId: string | undefined, meter: number): number {
+  if (mechanicId !== 'vow') return 0;
+  return VOW_MAX_DAMAGE_REDUCTION * Math.max(0, Math.min(1, meter / CLASS_METER_MAX));
+}
+
+/** Marks on a target after one more landed hit. */
+export function marksAfterHit(current: number, crit: boolean): number {
+  return Math.min(MARKS_MAX, current + (crit ? MARKS_PER_CRIT : MARKS_PER_HIT));
+}
+
+/** The assassin's damage bonus from the marks already on the target — 0 for every other mechanic. */
+export function markDamageBonus(mechanicId: string | undefined, marks: number): number {
+  return mechanicId === 'marks' ? MARK_DAMAGE_BONUS_PER_STACK * Math.max(0, Math.min(MARKS_MAX, marks)) : 0;
+}
+
+/** Marks as a 0..CLASS_METER_MAX meter value, so the generic class HUD can draw them. */
+export function marksMeterValue(marks: number): number {
+  return Math.min(CLASS_METER_MAX, (Math.max(0, marks) * CLASS_METER_MAX) / MARKS_MAX);
+}
+
+/** Golpe Fatal's power for a target at `hpFraction` of its max HP (0..1). */
+export function fatalStrikePower(hpFraction: number): number {
+  const missing = 1 - Math.max(0, Math.min(1, hpFraction));
+  return FATAL_STRIKE_POWER * (1 + FATAL_STRIKE_LOW_HP_BONUS * missing);
 }

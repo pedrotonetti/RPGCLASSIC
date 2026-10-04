@@ -1388,6 +1388,15 @@ body {
 .mech-flow {
   --meter-color: #ff9d3a;
 }
+.mech-overcharge {
+  --meter-color: #6ab7ff;
+}
+.mech-vow {
+  --meter-color: #f2e6b0;
+}
+.mech-marks {
+  --meter-color: #c25bff;
+}
 /* Mounted INSIDE the hotbar (see OverworldCombat.classMeterEl) and pinned
    just above it, so it follows however many rows the hotbar wraps to. Fills
    UP left-to-right as the resource grows — the boss banner's width-based

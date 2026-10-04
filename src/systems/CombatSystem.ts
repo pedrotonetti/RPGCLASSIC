@@ -1,7 +1,7 @@
 import { ENEMY_BALANCE } from '../config/balance';
 import { generateLoot } from '../data/equipment';
 import { MATERIAL_DEFINITIONS, MATERIAL_DROP_CHANCE } from '../data/materials';
-import type { EquipmentInstance, SkillDefinition, SkillTarget, StatusEffectType, StatusInflict, Stats } from '../config/types';
+import type { DamageElement, EquipmentInstance, SkillDefinition, SkillTarget, StatusEffectType, StatusInflict, Stats } from '../config/types';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
 import {
@@ -13,19 +13,36 @@ import {
   FURY_PER_DAMAGE_TAKEN,
   FURY_PER_HIT,
   FURY_PER_PERFECT_BLOCK,
+  MARKS_MAX,
   MIRACLE_HEAL_POWER,
+  OVERCHARGE_DAMAGE_BONUS,
+  OVERCHARGE_PER_SPELL,
   PRECISION_PER_HIT,
   SAVAGE_STRIKE_POWER,
   SOUL_DRAIN_LIFESTEAL,
   SOUL_DRAIN_POWER,
   SOULS_PER_HIT,
   SOULS_PER_KILL,
+  VERDICT_HEAL_POWER,
+  VERDICT_POWER,
+  VOW_PER_BLOCK,
+  VOW_PER_DAMAGE_TAKEN,
+  VOW_PER_HIT,
+  VOW_PER_PERFECT_BLOCK,
   classAbilityTarget,
   comboLabel,
+  fatalStrikePower,
   flowFinisherBonus,
   flowLevelForCombo,
+  isOverchargeCast,
+  markDamageBonus,
+  marksAfterHit,
+  marksMeterValue,
+  overchargeGain,
   precisionCritBonus,
+  vowDamageReduction,
 } from './classMechanics';
+import { affinityLabel, affinityMultiplier, damageAffinity, type DamageAffinity } from './damageAffinity';
 import { archetypeActionIntervalMultiplier, archetypeDamageMultiplier, archetypeProfileFor, pickSkillForArchetype, telegraphTextFor } from './enemyArchetypes';
 import { phaseActionIntervalMultiplier, phaseDamageMultiplier, phaseIndexForHp } from './BossPhaseSystem';
 import { computeSkillLevelStats } from './skillMath';
@@ -68,6 +85,8 @@ export interface CombatEvent {
   mitigation?: 'block' | 'perfectBlock' | 'dodge';
   /** Set on `statusApplied`/`statusTick` events — which affliction this is about, for VFX/UI. */
   statusType?: StatusEffectType;
+  /** Set on a player `damage` event when the target's weakness/resistance changed it — lets the UI pick the floating-text cue without parsing text. */
+  affinity?: DamageAffinity;
   /** Set on `damage`/`heal`/`buff` events raised by an actual skill (not a DoT tick) — lets the UI pick the right shared hit/impact VFX without re-deriving it from the skill id. */
   skillKind?: 'physical' | 'magical' | 'heal' | 'buff';
 }
@@ -229,6 +248,8 @@ export class CombatEngine {
   private classMeter = 0;
   /** `player.classDef.classMechanic?.id`, resolved once — every class-mechanic hook below dispatches on it. */
   private readonly mechanicId: string | undefined;
+  /** The assassin's Marca da Morte stacks, per target (see classMechanics.ts) — battle-scoped like `classMeter`, empty for every other class. */
+  private marks = new Map<Enemy, number>();
 
   constructor(
     public player: Player,
@@ -244,17 +265,20 @@ export class CombatEngine {
     return this.clock - this.lastComboHitAt > COMBO_WINDOW ? 0 : this.comboCount;
   }
 
-  /** Current class-meter value, 0..CLASS_METER_MAX. */
+  /** Current class-meter value, 0..CLASS_METER_MAX. For the assassin that's its most-marked living target (marks are per enemy, not a shared pool). */
   get classMeterValue(): number {
-    return this.classMeter;
+    if (this.mechanicId !== 'marks') return this.classMeter;
+    let top = 0;
+    for (const enemy of this.enemies) if (enemy.isAlive()) top = Math.max(top, this.marks.get(enemy) ?? 0);
+    return marksMeterValue(top);
   }
 
   classMeterFraction(): number {
-    return this.classMeter / CLASS_METER_MAX;
+    return this.classMeterValue / CLASS_METER_MAX;
   }
 
   isClassMeterFull(): boolean {
-    return this.classMeter >= CLASS_METER_MAX;
+    return this.classMeterValue >= CLASS_METER_MAX;
   }
 
   /** What this class's active ability targets, or null if its mechanic has none (the archer's passive Precisão, the monk's Fluxo, a class with no mechanic). */
@@ -323,9 +347,11 @@ export class CombatEngine {
     const isBasic = skillId === this.player.classDef.basicAttack.id;
     const level = isBasic ? 1 : this.player.skillLevel(skillId);
     const levelStats = computeSkillLevelStats(skill, level);
-    if (this.player.currentMp < levelStats.cost) return { ok: false, reason: 'mana' };
+    const overcharged = isOverchargeCast(this.mechanicId, this.classMeter, skill.kind, isBasic);
+    if (!overcharged && this.player.currentMp < levelStats.cost) return { ok: false, reason: 'mana' };
 
-    this.player.spendMp(levelStats.cost);
+    if (overcharged) this.classMeter = 0;
+    else this.player.spendMp(levelStats.cost);
     this.cooldowns[skillId] = levelStats.cooldown;
 
     const events: CombatEvent[] = [];
@@ -370,9 +396,12 @@ export class CombatEngine {
           continue;
         }
         landed += 1;
-        this.landPlayerHit(enemy, roll, skill.name, kind, events, { inflicts: skill.inflicts, feedsMeter: true });
+        if (overcharged) roll.damage = Math.round(roll.damage * (1 + OVERCHARGE_DAMAGE_BONUS));
+        const actionName = overcharged ? `${skill.name} (Sobrecarga!)` : skill.name;
+        this.landPlayerHit(enemy, roll, actionName, kind, events, { inflicts: skill.inflicts, feedsMeter: true, element: skill.element });
       }
       this.onPlayerAttackResolved(landed, missed);
+      if (this.mechanicId === 'overcharge' && !overcharged) this.gainClassMeter(overchargeGain(isBasic));
     }
 
     this.checkVictory(events);
@@ -393,26 +422,32 @@ export class CombatEngine {
     actionName: string,
     kind: 'physical' | 'magical',
     events: CombatEvent[],
-    opts: { inflicts?: StatusInflict; feedsMeter: boolean },
+    opts: { inflicts?: StatusInflict; feedsMeter: boolean; element?: DamageElement },
   ): number {
     const index = this.enemies.indexOf(enemy);
     if (this.clock - this.lastComboHitAt > COMBO_WINDOW) this.comboCount = 0;
     this.comboCount = Math.min(COMBO_MAX_STACKS, this.comboCount + 1);
     this.lastComboHitAt = this.clock;
-    const comboMult = 1 + this.comboCount * COMBO_DAMAGE_PER_HIT + flowFinisherBonus(this.mechanicId, this.comboCount);
+    const marksBefore = this.marks.get(enemy) ?? 0;
+    const comboMult =
+      1 + this.comboCount * COMBO_DAMAGE_PER_HIT + flowFinisherBonus(this.mechanicId, this.comboCount) + markDamageBonus(this.mechanicId, marksBefore);
+    const affinity = damageAffinity(enemy.def, kind, opts.element);
 
-    const dealt = enemy.takeDamage(roll.damage * comboMult);
+    const dealt = enemy.takeDamage(roll.damage * comboMult * affinityMultiplier(affinity));
+    if (opts.feedsMeter && this.mechanicId === 'marks') this.marks.set(enemy, marksAfterHit(marksBefore, roll.crit));
     const label = comboLabel(this.mechanicId, this.comboCount);
     const comboText = label ? ` (${label})` : '';
+    const affinityText = affinity ? ` (${affinityLabel(affinity)})` : '';
     events.push({
       kind: 'damage',
-      text: `Você usou ${actionName} em ${enemy.name}${roll.crit ? ' (Crítico!)' : ''}${comboText}`,
+      text: `Você usou ${actionName} em ${enemy.name}${roll.crit ? ' (Crítico!)' : ''}${comboText}${affinityText}`,
       actorIsPlayer: true,
       targetIndex: index,
       amount: dealt,
       crit: roll.crit,
       targetHpAfter: enemy.currentHp,
       skillKind: kind,
+      affinity: affinity ?? undefined,
     });
     if (!enemy.isAlive()) {
       events.push({ kind: 'defeated', text: `${enemy.name} foi derrotado!`, actorIsPlayer: true, targetIndex: index });
@@ -506,6 +541,32 @@ export class CombatEngine {
         targetHpAfter: this.player.currentHp,
         skillKind: 'heal',
       });
+    } else if (this.mechanicId === 'vow') {
+      const targets = this.aliveEnemies();
+      if (targets.length === 0) return { ok: false, reason: 'unknown' };
+      this.classMeter = 0;
+      for (const enemy of targets) {
+        const roll = resolveAttack(atkStats, enemy.stats, VERDICT_POWER, 'physical', { noMiss: true });
+        this.landPlayerHit(enemy, roll, ability.name, 'physical', events, { feedsMeter: false, element: 'holy' });
+      }
+      const healed = this.player.heal(resolveHeal(atkStats, VERDICT_HEAL_POWER));
+      events.push({
+        kind: 'heal',
+        text: 'A luz do Veredito restaura sua vida.',
+        actorIsPlayer: true,
+        targetIsPlayer: true,
+        amount: healed,
+        targetHpAfter: this.player.currentHp,
+        skillKind: 'heal',
+      });
+    } else if (this.mechanicId === 'marks') {
+      const enemy = this.enemies[targetIndex ?? 0];
+      if (!enemy || !enemy.isAlive()) return { ok: false, reason: 'unknown' };
+      // The HUD meter shows the most-marked enemy, but the strike needs the CHOSEN target to be at full marks.
+      if ((this.marks.get(enemy) ?? 0) < MARKS_MAX) return { ok: false, reason: 'meter' };
+      this.marks.delete(enemy);
+      const roll = resolveAttack(atkStats, enemy.stats, fatalStrikePower(enemy.currentHp / enemy.stats.maxHp), 'physical', { noMiss: true });
+      this.landPlayerHit(enemy, roll, ability.name, 'physical', events, { feedsMeter: false });
     } else {
       return { ok: false, reason: 'unknown' };
     }
@@ -528,12 +589,14 @@ export class CombatEngine {
     } else if (landed > 0) {
       if (this.mechanicId === 'fury') this.gainClassMeter(FURY_PER_HIT);
       else if (this.mechanicId === 'souls') this.gainClassMeter(SOULS_PER_HIT);
+      else if (this.mechanicId === 'vow') this.gainClassMeter(VOW_PER_HIT);
     }
   }
 
   /** After a heal or buff skill is cast. */
   private onSupportCast(): void {
     if (this.mechanicId === 'faith') this.gainClassMeter(FAITH_PER_CAST);
+    else if (this.mechanicId === 'overcharge') this.gainClassMeter(OVERCHARGE_PER_SPELL);
   }
 
   /** On every `defeated` event from the player's own attacks or DoTs (never from a class ability). */
@@ -550,6 +613,10 @@ export class CombatEngine {
     } else if (this.mechanicId === 'faith') {
       if (mitigation === 'perfectBlock') this.gainClassMeter(FAITH_PER_PERFECT_BLOCK);
       else if (mitigation === 'block') this.gainClassMeter(FAITH_PER_BLOCK);
+    } else if (this.mechanicId === 'vow') {
+      if (mitigation === 'perfectBlock') this.gainClassMeter(VOW_PER_PERFECT_BLOCK);
+      else if (mitigation === 'block') this.gainClassMeter(VOW_PER_BLOCK);
+      else if (mitigation === undefined) this.gainClassMeter(VOW_PER_DAMAGE_TAKEN);
     }
   }
 
@@ -840,6 +907,8 @@ export class CombatEngine {
     this.hasActed.add(enemy);
     archetypeMult *= phaseDamageMultiplier(enemy.def.phases, enemy.phaseIndex);
     if (archetypeMult !== 1) roll.damage = Math.max(1, Math.round(roll.damage * archetypeMult));
+    const vowReduction = vowDamageReduction(this.mechanicId, this.classMeter);
+    if (vowReduction > 0) roll.damage = Math.max(1, Math.round(roll.damage * (1 - vowReduction)));
     const actorIndex = this.enemies.indexOf(enemy);
 
     if (roll.missed) {

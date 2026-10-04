@@ -8,6 +8,8 @@ import {
   FAITH_PER_BLOCK,
   FAITH_PER_CAST,
   FAITH_PER_PERFECT_BLOCK,
+  FATAL_STRIKE_LOW_HP_BONUS,
+  FATAL_STRIKE_POWER,
   FLOW_FINISHER_BONUS,
   FLOW_MAX_LEVEL,
   FLOW_STACKS_PER_LEVEL,
@@ -15,15 +17,33 @@ import {
   FURY_PER_DAMAGE_TAKEN,
   FURY_PER_HIT,
   FURY_PER_PERFECT_BLOCK,
+  MARKS_MAX,
+  MARKS_PER_CRIT,
+  MARKS_PER_HIT,
+  MARK_DAMAGE_BONUS_PER_STACK,
+  OVERCHARGE_DAMAGE_BONUS,
+  OVERCHARGE_PER_BASIC,
+  OVERCHARGE_PER_SPELL,
   PRECISION_MAX_CRIT_BONUS,
   PRECISION_PER_HIT,
   SOUL_DRAIN_LIFESTEAL,
   SOULS_PER_HIT,
   SOULS_PER_KILL,
+  VOW_MAX_DAMAGE_REDUCTION,
+  VOW_PER_BLOCK,
+  VOW_PER_DAMAGE_TAKEN,
+  VOW_PER_HIT,
+  VOW_PER_PERFECT_BLOCK,
   classAbilityTarget,
   comboLabel,
+  fatalStrikePower,
   flowLevelForCombo,
+  isOverchargeCast,
+  markDamageBonus,
+  marksAfterHit,
+  marksMeterValue,
   precisionCritBonus,
+  vowDamageReduction,
 } from './classMechanics';
 import { applyStatusEffect } from './statusEffects';
 
@@ -110,6 +130,9 @@ describe('class mechanic data contract', () => {
       cleric: { id: 'faith', kind: 'meter' },
       necromancer: { id: 'souls', kind: 'meter' },
       monk: { id: 'flow', kind: 'combo' },
+      mage: { id: 'overcharge', kind: 'meter' },
+      paladin: { id: 'vow', kind: 'meter' },
+      assassin: { id: 'marks', kind: 'meter' },
     };
     for (const [classId, want] of Object.entries(expected)) {
       const mechanic = getClassById(classId).classMechanic;
@@ -126,7 +149,19 @@ describe('class mechanic data contract', () => {
     }
     expect(classAbilityTarget('precision')).toBeNull();
     expect(classAbilityTarget('flow')).toBeNull();
+    expect(classAbilityTarget('overcharge')).toBeNull();
+    expect(classAbilityTarget('vow')).toBe('allEnemies');
+    expect(classAbilityTarget('marks')).toBe('enemy');
     expect(classAbilityTarget(undefined)).toBeNull();
+  });
+
+  it('all 8 classes have their own mechanic id, and a passive meter announces when it fills', () => {
+    expect(CLASS_DEFINITIONS).toHaveLength(8);
+    const ids = CLASS_DEFINITIONS.map((c) => c.classMechanic?.id);
+    expect(ids.every(Boolean)).toBe(true);
+    expect(new Set(ids).size).toBe(8);
+    expect(getClassById('mage').classMechanic?.readyMessage?.length).toBeGreaterThan(10);
+    expect(getClassById('assassin').classMechanic?.steps).toBe(MARKS_MAX);
   });
 
   it('a class without any mechanic gains nothing, has no class ability, and keeps the generic combo label', () => {
@@ -478,5 +513,287 @@ describe('Monge — Fluxo', () => {
     struck.tick(0.1); // telegraph
     struck.tick(0.5); // lands unmitigated, well inside the combo window
     expect(struck.flowLevel).toBe(0);
+  });
+});
+
+/** Neutral to every element and kind (no weaknesses/resistances), so these tests measure the class mechanic and nothing else. */
+const bandit = () => dummy(1_000_000, 'bandit');
+
+describe('Mago — Sobrecarga Arcana', () => {
+  /** Casts Bola de Fogo `count` times with MP topped up, waiting out its 5s cooldown (and the combo window) after each. */
+  function castFireballs(player: Player, engine: CombatEngine, count: number): CombatEvent[][] {
+    const all: CombatEvent[][] = [];
+    for (let i = 0; i < count; i++) {
+      player.currentMp = player.stats.maxMp;
+      const result = engine.useSkill('mage_fireball', 0);
+      expect(result.ok).toBe(true);
+      if (result.ok) all.push(result.events);
+      engine.tick(6);
+    }
+    return all;
+  }
+
+  it('charges per spell cast (a buff counts), a little per basic attack', () => {
+    mockRandom(0.99);
+    const player = freshPlayer('mage');
+    const engine = new CombatEngine(player, [bandit()]);
+    basicAttacks(engine, 1);
+    expect(engine.classMeterValue).toBe(OVERCHARGE_PER_BASIC);
+    castFireballs(player, engine, 1);
+    expect(engine.classMeterValue).toBe(OVERCHARGE_PER_BASIC + OVERCHARGE_PER_SPELL);
+    player.currentMp = player.stats.maxMp;
+    expect(engine.useSkill('mage_arcane_shield').ok).toBe(true);
+    expect(engine.classMeterValue).toBe(OVERCHARGE_PER_BASIC + 2 * OVERCHARGE_PER_SPELL);
+    expect(OVERCHARGE_PER_SPELL).toBeGreaterThan(OVERCHARGE_PER_BASIC);
+  });
+
+  it('a full Sobrecarga makes the next spell free (even at 0 MP) and stronger, then empties — and that cast never recharges it', () => {
+    mockRandom(0.99);
+    const player = freshPlayer('mage');
+    const engine = new CombatEngine(player, [bandit()]);
+    const [firstCast] = castFireballs(player, engine, 1);
+    castFireballs(player, engine, 3);
+    expect(engine.isClassMeterFull()).toBe(true);
+
+    player.currentMp = 0;
+    const result = engine.useSkill('mage_fireball', 0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const empowered = result.events.find((e) => e.kind === 'damage')!;
+    const normal = firstCast.find((e) => e.kind === 'damage')!;
+    expect(empowered.text).toContain('Sobrecarga!');
+    expect(normal.text).not.toContain('Sobrecarga');
+    expect(player.currentMp).toBe(0);
+    // Same combo stack, no crit on either: the difference is the empowered bonus.
+    expect(empowered.amount! / normal.amount!).toBeGreaterThan(1 + OVERCHARGE_DAMAGE_BONUS - 0.1);
+    expect(empowered.amount! / normal.amount!).toBeLessThan(1 + OVERCHARGE_DAMAGE_BONUS + 0.1);
+    expect(engine.classMeterValue).toBe(0);
+  });
+
+  it('the cast after an empowered one is an ordinary paid cast that charges again', () => {
+    mockRandom(0.99);
+    const player = freshPlayer('mage');
+    const engine = new CombatEngine(player, [bandit()]);
+    castFireballs(player, engine, 4);
+    player.currentMp = player.stats.maxMp;
+    engine.useSkill('mage_fireball', 0);
+    engine.tick(6);
+    player.currentMp = player.stats.maxMp;
+    expect(engine.useSkill('mage_fireball', 0).ok).toBe(true);
+    expect(player.currentMp).toBeLessThan(player.stats.maxMp);
+    expect(engine.classMeterValue).toBe(OVERCHARGE_PER_SPELL);
+  });
+
+  it('a basic attack never uses up a full Sobrecarga, and without one a mage with no MP still cannot cast', () => {
+    mockRandom(0.99);
+    const player = freshPlayer('mage');
+    const engine = new CombatEngine(player, [bandit()]);
+    castFireballs(player, engine, 4);
+    const [basic] = basicAttacks(engine, 1);
+    expect(basic.find((e) => e.kind === 'damage')!.text).not.toContain('Sobrecarga');
+    expect(engine.isClassMeterFull()).toBe(true);
+
+    const broke = freshPlayer('mage');
+    broke.currentMp = 0;
+    expect(new CombatEngine(broke, [bandit()]).useSkill('mage_fireball', 0)).toEqual({ ok: false, reason: 'mana' });
+  });
+
+  it('only a damaging, non-basic spell cast by a mage at a full meter counts as empowered', () => {
+    expect(isOverchargeCast('overcharge', CLASS_METER_MAX, 'magical', false)).toBe(true);
+    expect(isOverchargeCast('overcharge', CLASS_METER_MAX - 1, 'magical', false)).toBe(false);
+    expect(isOverchargeCast('overcharge', CLASS_METER_MAX, 'magical', true)).toBe(false);
+    expect(isOverchargeCast('overcharge', CLASS_METER_MAX, 'buff', false)).toBe(false);
+    expect(isOverchargeCast('overcharge', CLASS_METER_MAX, 'physical', false)).toBe(false);
+    expect(isOverchargeCast('faith', CLASS_METER_MAX, 'magical', false)).toBe(false);
+    expect(isOverchargeCast(undefined, CLASS_METER_MAX, 'magical', false)).toBe(false);
+  });
+
+  it('has no button: the class ability is refused even at a full meter', () => {
+    mockRandom(0.99);
+    const player = freshPlayer('mage');
+    const engine = new CombatEngine(player, [bandit()]);
+    castFireballs(player, engine, 4);
+    expect(engine.isClassMeterFull()).toBe(true);
+    expect(engine.classAbilityTarget()).toBeNull();
+    expect(engine.useClassAbility(0)).toEqual({ ok: false, reason: 'unknown' });
+  });
+});
+
+describe('Paladino — Juramento', () => {
+  it('gains a little per attack action (an AoE counts once), far more from blocking, and a middling amount from a hit taken', () => {
+    mockRandom(0.99);
+    const engine = new CombatEngine(freshPlayer('paladin'), [bandit()]);
+    basicAttacks(engine, 1);
+    expect(engine.classMeterValue).toBe(VOW_PER_HIT);
+
+    const aoe = new CombatEngine(freshPlayer('paladin', 20), [bandit(), bandit(), bandit()]);
+    expect(aoe.useSkill('paladin_ultimate').ok).toBe(true);
+    expect(aoe.classMeterValue).toBe(VOW_PER_HIT);
+
+    expect(takeOneHit(freshPlayer('paladin'), 'unmitigated').classMeterValue).toBe(VOW_PER_DAMAGE_TAKEN);
+    expect(takeOneHit(freshPlayer('paladin'), 'block').classMeterValue).toBe(VOW_PER_BLOCK);
+    expect(takeOneHit(freshPlayer('paladin'), 'perfectBlock').classMeterValue).toBe(VOW_PER_PERFECT_BLOCK);
+    expect(takeOneHit(freshPlayer('paladin'), 'dodge').classMeterValue).toBe(0);
+    expect(VOW_PER_PERFECT_BLOCK).toBeGreaterThan(VOW_PER_BLOCK);
+    expect(VOW_PER_BLOCK).toBeGreaterThan(VOW_PER_DAMAGE_TAKEN);
+    expect(VOW_PER_DAMAGE_TAKEN).toBeGreaterThan(VOW_PER_HIT);
+  });
+
+  it('Fé Inabalável: damage reduction scales linearly with the meter up to its cap, for the paladin only', () => {
+    expect(vowDamageReduction('vow', 0)).toBe(0);
+    expect(vowDamageReduction('vow', CLASS_METER_MAX / 2)).toBeCloseTo(VOW_MAX_DAMAGE_REDUCTION / 2, 10);
+    expect(vowDamageReduction('vow', CLASS_METER_MAX)).toBeCloseTo(VOW_MAX_DAMAGE_REDUCTION, 10);
+    expect(vowDamageReduction('vow', CLASS_METER_MAX * 3)).toBeCloseTo(VOW_MAX_DAMAGE_REDUCTION, 10);
+    expect(vowDamageReduction('fury', CLASS_METER_MAX)).toBe(0);
+    expect(vowDamageReduction(undefined, CLASS_METER_MAX)).toBe(0);
+  });
+
+  it('a full-Juramento paladin takes exactly the capped share less from the very same enemy hit', () => {
+    mockRandom(0.99);
+    const incomingDamage = (prefill: boolean): number => {
+      const striker = new Enemy('troll');
+      striker.actionTimer = Number.POSITIVE_INFINITY;
+      const engine = new CombatEngine(freshPlayer('paladin', 5), [bandit(), striker]);
+      if (prefill) {
+        basicAttacks(engine, CLASS_METER_MAX / VOW_PER_HIT, 0);
+        expect(engine.isClassMeterFull()).toBe(true);
+      }
+      striker.actionTimer = 0;
+      engine.tick(0.1); // telegraph (resolves at +0.45)
+      const hit = engine.tick(0.5).find((e) => e.kind === 'damage' && e.targetIsPlayer);
+      expect(hit?.mitigation).toBeUndefined();
+      return hit!.amount!;
+    };
+    const empty = incomingDamage(false);
+    const full = incomingDamage(true);
+    expect(full).toBeLessThan(empty);
+    expect(full).toBe(Math.round(empty * (1 - VOW_MAX_DAMAGE_REDUCTION)));
+  });
+
+  it('Veredito Sagrado is refused until full, then hits every living enemy without missing, heals, and its own hits never refill the Juramento', () => {
+    const rand = mockRandom(0.99);
+    const player = freshPlayer('paladin');
+    const enemies = [bandit(), bandit(), bandit()];
+    enemies[2].currentHp = 0;
+    const engine = new CombatEngine(player, enemies);
+    basicAttacks(engine, CLASS_METER_MAX / VOW_PER_HIT - 1, 0);
+    expect(engine.useClassAbility()).toEqual({ ok: false, reason: 'meter' });
+    basicAttacks(engine, 1, 0);
+    expect(engine.isClassMeterFull()).toBe(true);
+
+    player.currentHp = 1;
+    rand.mockReturnValue(0); // every normal attack would miss
+    const result = engine.useClassAbility();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.events.some((e) => e.kind === 'miss')).toBe(false);
+    const damage = result.events.filter((e) => e.kind === 'damage');
+    expect(damage.map((e) => e.targetIndex).sort()).toEqual([0, 1]);
+    expect(damage.every((e) => e.text.includes('Veredito Sagrado') && (e.amount ?? 0) > 0)).toBe(true);
+    const heal = result.events.find((e) => e.kind === 'heal' && e.targetIsPlayer)!;
+    expect(heal.amount!).toBeGreaterThan(0);
+    expect(player.currentHp).toBe(1 + heal.amount!);
+    expect(engine.classMeterValue).toBe(0);
+  });
+});
+
+describe('Assassino — Marca da Morte', () => {
+  it("pure rules: crits mark twice, marks cap, damage bonus and the meter scale with marks, Golpe Fatal grows as the target's HP falls", () => {
+    expect(marksAfterHit(0, false)).toBe(MARKS_PER_HIT);
+    expect(marksAfterHit(0, true)).toBe(MARKS_PER_CRIT);
+    expect(marksAfterHit(MARKS_MAX - 1, true)).toBe(MARKS_MAX);
+    expect(marksAfterHit(MARKS_MAX, false)).toBe(MARKS_MAX);
+    expect(marksMeterValue(0)).toBe(0);
+    expect(marksMeterValue(MARKS_MAX)).toBe(CLASS_METER_MAX);
+    expect(markDamageBonus('marks', 3)).toBeCloseTo(3 * MARK_DAMAGE_BONUS_PER_STACK, 10);
+    expect(markDamageBonus('marks', MARKS_MAX * 2)).toBeCloseTo(MARKS_MAX * MARK_DAMAGE_BONUS_PER_STACK, 10);
+    expect(markDamageBonus('fury', 3)).toBe(0);
+    expect(fatalStrikePower(1)).toBeCloseTo(FATAL_STRIKE_POWER, 10);
+    expect(fatalStrikePower(0)).toBeCloseTo(FATAL_STRIKE_POWER * (1 + FATAL_STRIKE_LOW_HP_BONUS), 10);
+    expect(fatalStrikePower(0.25)).toBeGreaterThan(fatalStrikePower(0.75));
+    expect(fatalStrikePower(5)).toBeCloseTo(FATAL_STRIKE_POWER, 10);
+    expect(fatalStrikePower(-1)).toBeCloseTo(FATAL_STRIKE_POWER * (1 + FATAL_STRIKE_LOW_HP_BONUS), 10);
+  });
+
+  it('every landed hit marks its target and a crit marks twice; a miss marks nothing', () => {
+    const rand = mockRandom(0.99);
+    const engine = new CombatEngine(freshPlayer('assassin'), [bandit()]);
+    basicAttacks(engine, 1);
+    expect(engine.classMeterValue).toBe(marksMeterValue(MARKS_PER_HIT));
+    rand.mockReturnValue(0.1); // above the miss floor, under the assassin's ~18% crit chance
+    const [crit] = basicAttacks(engine, 1);
+    expect(crit.find((e) => e.kind === 'damage')!.crit).toBe(true);
+    expect(engine.classMeterValue).toBe(marksMeterValue(MARKS_PER_HIT + MARKS_PER_CRIT));
+    rand.mockReturnValue(0); // a guaranteed miss
+    basicAttacks(engine, 1);
+    expect(engine.classMeterValue).toBe(marksMeterValue(MARKS_PER_HIT + MARKS_PER_CRIT));
+  });
+
+  it('marks are per target: the meter follows the most-marked living enemy', () => {
+    mockRandom(0.99);
+    const enemies = [bandit(), bandit()];
+    const engine = new CombatEngine(freshPlayer('assassin'), enemies);
+    basicAttacks(engine, 3, 0);
+    basicAttacks(engine, 1, 1);
+    expect(engine.classMeterValue).toBe(marksMeterValue(3));
+    enemies[0].currentHp = 0;
+    expect(engine.classMeterValue).toBe(marksMeterValue(1));
+  });
+
+  it('marks sharpen later hits on the marked target, for the assassin only', () => {
+    mockRandom(0.99);
+    const fifthHit = (engine: CombatEngine) => basicAttacks(engine, 5)[4].find((e) => e.kind === 'damage')!.amount!;
+    const marked = fifthHit(new CombatEngine(freshPlayer('assassin', 15), [bandit()]));
+    vi.spyOn(Player.prototype, 'classDef', 'get').mockReturnValue({ ...getClassById('assassin'), classMechanic: undefined });
+    const plain = fifthHit(new CombatEngine(freshPlayer('assassin', 15), [bandit()]));
+    expect(marked).toBeGreaterThan(plain);
+  });
+
+  it('Golpe Fatal needs 5 marks on the CHOSEN target (an AoE marks every enemy it hits), spends them, and never misses', () => {
+    const rand = mockRandom(0.99);
+    const enemies = [bandit(), bandit()];
+    const engine = new CombatEngine(freshPlayer('assassin', 15), enemies);
+    expect(engine.useSkill('assassin_blade_dance').ok).toBe(true); // 1 mark on each
+    basicAttacks(engine, 3, 0);
+    expect(engine.useClassAbility(0)).toEqual({ ok: false, reason: 'meter' }); // 4 marks
+    basicAttacks(engine, 1, 0);
+    expect(engine.isClassMeterFull()).toBe(true);
+    expect(engine.useClassAbility(1)).toEqual({ ok: false, reason: 'meter' }); // enemy 1 only has 1
+
+    rand.mockReturnValue(0); // every normal attack would miss
+    const result = engine.useClassAbility(0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.events.some((e) => e.kind === 'miss')).toBe(false);
+    const hit = result.events.find((e) => e.kind === 'damage')!;
+    expect(hit.text).toContain('Golpe Fatal');
+    expect(hit.targetIndex).toBe(0);
+    expect(engine.classMeterValue).toBe(marksMeterValue(1)); // enemy 0's marks are gone, enemy 1 keeps its one
+    expect(engine.useClassAbility(0)).toEqual({ ok: false, reason: 'meter' });
+  });
+
+  it("Golpe Fatal hits harder the lower the target's HP", () => {
+    mockRandom(0.99);
+    const fatalAt = (hpFraction: number): number => {
+      const enemy = bandit();
+      const engine = new CombatEngine(freshPlayer('assassin', 10), [enemy]);
+      basicAttacks(engine, MARKS_MAX);
+      enemy.currentHp = Math.round(enemy.stats.maxHp * hpFraction);
+      const result = engine.useClassAbility(0);
+      if (!result.ok) throw new Error('Golpe Fatal refused');
+      return result.events.find((e) => e.kind === 'damage')!.amount!;
+    };
+    expect(fatalAt(0.25)).toBeGreaterThan(fatalAt(1));
+  });
+
+  it('refuses without spending anything when the chosen target is already dead', () => {
+    mockRandom(0.99);
+    const enemies = [bandit(), bandit()];
+    const engine = new CombatEngine(freshPlayer('assassin'), enemies);
+    basicAttacks(engine, MARKS_MAX, 0);
+    enemies[1].currentHp = 0;
+    expect(engine.useClassAbility(1)).toEqual({ ok: false, reason: 'unknown' });
+    expect(engine.isClassMeterFull()).toBe(true);
   });
 });
