@@ -2277,6 +2277,174 @@ body {
   padding: 8px 12px;
 }
 
+/* --- Conquistas e Códex (screens/AchievementsScreen.ts) ---------------- */
+.achievements-screen {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(16px + var(--safe-t)) calc(20px + var(--safe-r)) 0 calc(20px + var(--safe-l));
+}
+.achievements-screen .top-bar {
+  text-align: center;
+  margin-bottom: 8px;
+}
+.achievements-screen .bottom-bar {
+  padding-bottom: calc(12px + var(--safe-b));
+}
+/* Tab buttons wrap onto a second row on a narrow phone instead of scrolling sideways. */
+.achv-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  width: min(720px, 92vw);
+  margin-bottom: 8px;
+}
+.achv-tab {
+  font-size: 18px;
+  padding: 5px 12px;
+}
+.achv-panel {
+  width: min(720px, 92vw);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px 18px 16px;
+  margin-bottom: 12px;
+}
+.achv-panel h3 {
+  color: var(--accent);
+  font-weight: normal;
+  font-size: 18px;
+  margin: 12px 0 6px;
+}
+.achv-titles {
+  font-size: 15px;
+  color: #8ec9e0;
+  margin-top: 4px;
+}
+.achv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.achv-card {
+  background: rgba(42, 32, 56, 0.5);
+  border: 1px solid rgba(107, 95, 120, 0.4);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+.achv-card.unlocked {
+  border-color: var(--accent);
+  background: rgba(74, 58, 99, 0.45);
+}
+.achv-card.locked .achv-name {
+  color: var(--text-dim);
+}
+.achv-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+.achv-name {
+  font-size: 19px;
+  color: var(--accent);
+}
+.achv-state {
+  font-size: 15px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.achv-card.unlocked .achv-state {
+  color: var(--heal);
+}
+.achv-desc {
+  font-size: 15px;
+  color: var(--text-dim);
+  line-height: 1.3;
+  margin-top: 2px;
+}
+.achv-bar {
+  height: 6px;
+  margin-top: 6px;
+  background: #1a1423;
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.achv-bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
+.achv-reward {
+  font-size: 14px;
+  color: #8ec9e0;
+  margin-top: 4px;
+}
+.codex-entry.locked {
+  opacity: 0.7;
+}
+.codex-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+}
+.codex-detail {
+  font-size: 14px;
+  color: var(--text);
+  margin-top: 2px;
+}
+
+/* Unlock toast in the overworld HUD (ui/achievementToast.ts) — sits under the
+   combat message bar/combo badge, purely visual so it never eats a tap. */
+.achievement-toast {
+  position: absolute;
+  top: calc(84px + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(360px, 88vw);
+  padding: 8px 14px;
+  text-align: center;
+  background: rgba(26, 20, 35, 0.92);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 6;
+  animation: achievement-toast-in 0.35s ease-out;
+}
+.achievement-toast-label {
+  font-size: 14px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.achievement-toast-name {
+  font-size: 22px;
+  color: var(--accent);
+  text-shadow: 2px 2px 0 #000;
+}
+.achievement-toast-reward {
+  font-size: 15px;
+  color: #8ec9e0;
+}
+@keyframes achievement-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 /* --- Intro narrativa ---------------------------------------------- */
 .intro-screen {
   width: 100%;

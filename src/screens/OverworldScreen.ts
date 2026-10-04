@@ -36,6 +36,7 @@ import { WildlifeManager } from '../render/wildlife';
 import { pickWildlifeLayout } from '../systems/wildlifePlacement';
 import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { animateWaterMaterial, buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
+import { recordItemCrafted, recordPlayerDefeated } from '../systems/AchievementSystem';
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { buildWalkabilityGrid, findNearestWalkable, pathfindToClick } from '../systems/Pathfinding';
 import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
@@ -57,6 +58,7 @@ import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
 import { el, goToLazy } from '../ui/dom';
 import { isTouchDevice } from '../ui/device';
+import { buildAchievementToast, type AchievementToastHandle } from '../ui/achievementToast';
 import { buildGlobeIconSvg, buildWorldMapOverlay, type WorldMapOverlayHandle } from '../ui/worldMap';
 
 const SLOT_LABELS: Record<EquipmentSlot, string> = { arma: 'Arma', armadura: 'Armadura', acessorio: 'Acessório' };
@@ -420,6 +422,7 @@ export class OverworldScreen implements Screen {
   private dialogueNameEl!: HTMLElement;
   private dialogueLineEl!: HTMLElement;
   private pauseOverlay!: HTMLElement;
+  private achievementToast!: AchievementToastHandle;
   private questTrackerEl!: HTMLElement;
   private questZoneHintEl!: HTMLElement;
   /** Directional pointer toward the current quest's objective — see updateQuestIndicator. Hidden whenever there's nothing in the current zone to point at. */
@@ -579,6 +582,7 @@ export class OverworldScreen implements Screen {
     this.buildDialogueOverlay();
     this.buildShopOverlay();
     this.buildPauseOverlay();
+    this.achievementToast = buildAchievementToast(this.game, this.player);
     this.buildAct3Overlays();
     this.buildMinimap();
     if (this.activeDungeon) {
@@ -659,6 +663,7 @@ export class OverworldScreen implements Screen {
     // frame like refreshHud already does.
     this.refreshQuestTracker();
     this.applyWorldMood();
+    this.achievementToast.update(dt);
   }
 
   /**
@@ -1188,6 +1193,7 @@ export class OverworldScreen implements Screen {
     this.player.currentHp = Math.max(1, Math.floor(this.player.stats.maxHp * 0.5));
     this.player.currentMp = this.player.stats.maxMp;
     this.player.gold = Math.floor(this.player.gold * 0.5);
+    recordPlayerDefeated(this.player);
     saveGame(this.player);
   }
 
@@ -1817,6 +1823,7 @@ export class OverworldScreen implements Screen {
               if (this.player.inventory[vendor.craftMaterialId] <= 0) delete this.player.inventory[vendor.craftMaterialId];
               this.player.gold -= craftGold;
               this.player.addLoot(createStarterItem(templateId, 'azul', Math.max(1, this.player.level)));
+              recordItemCrafted(this.player, 'azul');
               saveGame(this.player);
               this.renderShop();
             },
@@ -2957,6 +2964,21 @@ export class OverworldScreen implements Screen {
         });
       },
     });
+    const achievementsBtn = el('div', {
+      className: 'btn',
+      text: 'Conquistas e Códex',
+      onClick: () => {
+        saveGame(this.player);
+        goToLazy(this.game, async () => {
+          const { AchievementsScreen } = await import('./AchievementsScreen');
+          return new AchievementsScreen(
+            this.game,
+            () => this.game.goTo(new OverworldScreen(this.game, this.player, this.avatarData)),
+            this.player,
+          );
+        });
+      },
+    });
     const exitBtn = el('div', {
       className: 'btn',
       text: 'Salvar e Sair ao Menu',
@@ -2973,7 +2995,7 @@ export class OverworldScreen implements Screen {
 
     this.pauseOverlay = el('div', { className: 'panel pause-overlay' }, [
       el('h2', { text: 'Pausado' }),
-      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn, questLogBtn, worldMapBtn, settingsBtn]),
+      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn, questLogBtn, achievementsBtn, worldMapBtn, settingsBtn]),
       el('div', { className: 'pause-divider' }),
       this.mountSectionEl,
       el('div', { className: 'pause-divider' }),

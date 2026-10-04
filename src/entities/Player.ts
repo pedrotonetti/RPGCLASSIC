@@ -6,6 +6,8 @@ import { computeEquipmentBonus, createStarterItem, getEquipmentTemplate } from '
 import { getItemById } from '../data/items';
 import { computeSkillLevelStats, skillPointsForLevel, ultimateLevelForCharacter } from '../systems/skillMath';
 import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder } from '../systems/statusEffects';
+import { cloneAchievementState, createInitialAchievementState, normalizeAchievementState, recordItemAcquired, type AchievementState } from '../systems/AchievementSystem';
+import { cloneCodexState, createInitialCodexState, normalizeCodexState, type CodexState } from '../systems/CodexSystem';
 import { createInitialGameClock, type GameClockState } from '../systems/GameClock';
 import { createInitialWorldState, type WorldState } from '../systems/WorldStateSystem';
 import { arriveWorldPosition, getZoneById, MAIN_CITY_ID, startZoneForClass } from '../data/zones';
@@ -69,6 +71,10 @@ export interface PlayerSaveData {
   openedChestIds: string[];
   /** The in-game clock (see systems/GameClock.ts) — hour-of-day for ambient lighting and (later) NPC schedules. Absent on any save from before this field existed — defaulted the same way worldState was. */
   gameClock: GameClockState;
+  /** Conquistas (ver systems/AchievementSystem.ts) — desbloqueios, contadores e avisos pendentes. Absent on any save from before this field existed — defaulted the same way worldState was. */
+  achievements: AchievementState;
+  /** O Códex (ver systems/CodexSystem.ts) — inimigos, NPCs, materiais e equipamentos já descobertos. Absent on any save from before this field existed — defaulted the same way worldState was. */
+  codex: CodexState;
 }
 
 /** The three closures Ato 3 branches into — see LORE.md's "O final". */
@@ -111,6 +117,10 @@ export class Player implements StatusEffectHolder {
   openedChestIds: string[];
   /** See PlayerSaveData.gameClock's own doc comment. */
   gameClock: GameClockState;
+  /** See PlayerSaveData.achievements's own doc comment. */
+  achievements: AchievementState;
+  /** See PlayerSaveData.codex's own doc comment. */
+  codex: CodexState;
   /**
    * Session-only "enter the next dungeon at this tier" hand-off — set by
    * OverworldScreen.enterDungeon just before swapping to the dungeon's own
@@ -155,6 +165,8 @@ export class Player implements StatusEffectHolder {
     this.worldState = data?.worldState ?? createInitialWorldState();
     this.gameClock = data?.gameClock ?? createInitialGameClock();
     this.openedChestIds = data?.openedChestIds ?? [];
+    this.achievements = data?.achievements ? normalizeAchievementState(data.achievements) : createInitialAchievementState();
+    this.codex = data?.codex ? normalizeCodexState(data.codex) : createInitialCodexState();
     this.currentHp = data?.currentHp ?? this.stats.maxHp;
     this.currentMp = data?.currentMp ?? this.stats.maxMp;
   }
@@ -330,6 +342,7 @@ export class Player implements StatusEffectHolder {
 
   addItem(itemId: string, qty = 1): void {
     this.inventory[itemId] = (this.inventory[itemId] ?? 0) + qty;
+    recordItemAcquired(this, itemId, qty);
   }
 
   /** Consumes one unit of the item and applies its effect. Returns false if unavailable. */
@@ -416,6 +429,8 @@ export class Player implements StatusEffectHolder {
       },
       openedChestIds: [...this.openedChestIds],
       gameClock: { ...this.gameClock },
+      achievements: cloneAchievementState(this.achievements),
+      codex: cloneCodexState(this.codex),
     };
   }
 }

@@ -12,6 +12,7 @@ import { buildEnemyModel } from '../render/characterModel';
 import type { CharacterAnimatorLike, ActionName } from '../render/animation';
 import { HELD_MESHES, DEFAULT_CLASS } from '../render/playerAvatar';
 import { VfxManager, hitImpactColor } from '../render/vfx';
+import { recordEnemyDefeated, recordEnemyEngaged } from './AchievementSystem';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from './CombatSystem';
 import { audio } from './AudioSystem';
 import { CLASS_METER_MAX, FLOW_MAX_LEVEL, comboLabel } from './classMechanics';
@@ -192,6 +193,8 @@ export class OverworldCombat {
   private bossBannerNameEl: HTMLElement | null = null;
   private bossBannerFillEl: HTMLElement | null = null;
   private activeBossMonster: WorldMonster | null = null;
+  /** Any damage the player took since this fight's engine was created — what "derrote um chefe sem ser atingido" (see AchievementSystem.recordEnemyDefeated) checks. */
+  private tookDamageThisFight = false;
 
   /** Set only inside a dungeon zone (see OverworldScreen.mount) — lets encounter/boss defeats drive that dungeon's own run-state tracking (DungeonSystem.ts) without OverworldCombat needing to know anything about dungeons itself. */
   private dungeonHooks: DungeonCombatHooks | null = null;
@@ -644,7 +647,9 @@ export class OverworldCombat {
   private beginEngagement(m: WorldMonster): void {
     m.state = 'engaged';
     m.labelEl.classList.remove('defeated');
+    recordEnemyEngaged(this.player, m.enemy.definitionId);
     if (!this.engine) {
+      this.tookDamageThisFight = false;
       this.engine = new CombatEngine(this.player, []);
       this.buildHotbar();
       this.buildItemBar();
@@ -666,6 +671,7 @@ export class OverworldCombat {
       for (const m of this.engagedMonsters) {
         const msg = notifyEnemyDefeated(this.player, m.enemy.definitionId);
         if (msg) lastMessage = msg;
+        recordEnemyDefeated(this.player, m.enemy.definitionId, { flawless: !this.tookDamageThisFight });
       }
       const levelMsg = notifyLevelChanged(this.player);
       if (levelMsg) lastMessage = levelMsg;
@@ -1116,6 +1122,7 @@ export class OverworldCombat {
   private processEvents(events: CombatEvent[], opts?: { onDeferrableImpact?: (targetIndex: number, reveal: () => void) => void }): void {
     if (!this.engine) return;
     for (const event of events) {
+      if (event.kind === 'damage' && event.targetIsPlayer && (event.amount ?? 0) > 0) this.tookDamageThisFight = true;
       if (event.text) this.showMessage(event.text, 2600);
       if (event.kind === 'telegraph') {
         this.messageEl.classList.add('telegraph');

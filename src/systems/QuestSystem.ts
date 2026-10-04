@@ -1,3 +1,4 @@
+import { checkAchievements, recordNpcTalkedTo } from './AchievementSystem';
 import { applyChoiceEffect } from './ChoiceSystem';
 import { createStarterItem } from '../data/equipment';
 import { getNpcById } from '../data/npcs';
@@ -182,6 +183,7 @@ export function offerSideQuest(player: Player, npcId: string): string | null {
 }
 
 export function notifyTalkedTo(player: Player, npcId: string): string | null {
+  recordNpcTalkedTo(player, npcId);
   const messages: string[] = [];
   for (const slot of QUEST_SLOTS) {
     const quest = currentQuest(player, slot);
@@ -220,6 +222,7 @@ export function notifyEnemyDefeated(player: Player, enemyId: string): string | n
 
 /** Call after any level-up to check "reach level N" objectives, in either quest slot (see QuestSlot). */
 export function notifyLevelChanged(player: Player): string | null {
+  checkAchievements(player);
   const messages: string[] = [];
   for (const slot of QUEST_SLOTS) {
     const quest = currentQuest(player, slot);
