@@ -10,6 +10,7 @@ import { getGemById } from '../data/gems';
 import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
+import { addMountXp, FLY_XP_PER_SECOND, mountProfile, mountStage, nextMountInCycle, syncMountUnlocks } from '../systems/MountSystem';
 import { dialogueLinesFor, getNpcById, NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
 import {
   arriveWorldPosition,
@@ -333,6 +334,10 @@ export class OverworldScreen implements Screen {
   private mountModel: THREE.Group | null = null;
   /** Drives the currently-mounted creature's own idle/walk clip (see animateMount) — null whenever unmounted. */
   private mountActor: MountAnimator | null = null;
+  /** Evolution stage the current mount visual was built for — see syncMountVisualStage. */
+  private mountVisualStage = 0;
+  private mountProgressTimer = 0;
+  private pendingFlyXp = 0;
   /** Bumped on every setMounted(...) call that starts a mount load — see attachMountVisual's own comment on why a stale load must be able to tell it lost the race. */
   private mountLoadToken = 0;
   /** Whichever object currently moves through the world — the rider alone, or the mount carrying them. */
@@ -736,6 +741,7 @@ export class OverworldScreen implements Screen {
     this.animator.setMoving(this.isMoving);
     this.animator.update(simDt);
     this.animateMount(dt);
+    this.updateMountProgress(dt);
     this.animateWater();
     this.wildlife?.update(dt, this.avatar.position, isNight(this.player.gameClock));
     this.updateNpcActors(dt);
@@ -927,12 +933,42 @@ export class OverworldScreen implements Screen {
     else if (this.nearbyLore) this.examineLoreFragment(this.nearbyLore);
   }
 
+  /** M key: on foot → equipped ground mount → equipped flying mount → on foot (systems/MountSystem.ts). */
   private cycleMount(): void {
-    const mounts = this.player.unlockedMounts;
-    if (mounts.length === 0) return;
-    const currentIndex = this.player.activeMountId ? mounts.indexOf(this.player.activeMountId) : -1;
-    const nextIndex = currentIndex + 1;
-    this.setMounted(nextIndex >= mounts.length ? null : mounts[nextIndex]);
+    this.setMounted(nextMountInCycle(this.player));
+  }
+
+  /**
+   * Once a second: new mount unlocks (side quests, level, lore...) and the
+   * ridden flying mount's evolution XP from flying. An evolution swaps the
+   * creature's visual for its new stage right away.
+   */
+  private updateMountProgress(dt: number): void {
+    const flying = this.player.activeMountId ? getMountById(this.player.activeMountId) : null;
+    if (flying?.stages && this.isMoving) this.pendingFlyXp += dt * FLY_XP_PER_SECOND;
+    this.mountProgressTimer += dt;
+    if (this.mountProgressTimer < 1) return;
+    this.mountProgressTimer = 0;
+
+    const messages = syncMountUnlocks(this.player);
+    if (flying?.stages && this.pendingFlyXp > 0) {
+      const evolved = addMountXp(this.player, flying.id, this.pendingFlyXp);
+      if (evolved) messages.push(evolved);
+    }
+    this.pendingFlyXp = 0;
+    if (messages.length > 0) {
+      this.combat.showBanner(messages.join('\n'));
+      this.refreshMountSection();
+      saveGame(this.player);
+    }
+    this.syncMountVisualStage();
+  }
+
+  /** Rebuilds the ridden creature when its evolution stage changed (by flying here, or by a fight in OverworldCombat). */
+  private syncMountVisualStage(): void {
+    const id = this.player.activeMountId;
+    if (!id || !this.mountModel) return;
+    if (mountStage(this.player, id) !== this.mountVisualStage) this.setMounted(id, true);
   }
 
   private onKeyUp(e: KeyboardEvent): void {
@@ -1076,7 +1112,7 @@ export class OverworldScreen implements Screen {
   ): Promise<void> {
     let visual;
     try {
-      visual = await loadMountVisual(mountId);
+      visual = await loadMountVisual(mountId, mountStage(this.player, mountId));
     } catch (err) {
       console.error(`Falha ao carregar o modelo da montaria "${mountId}"`, err);
       return;
@@ -1099,7 +1135,8 @@ export class OverworldScreen implements Screen {
 
     this.scene.add(mountGroup);
     this.mountModel = mountGroup;
-    this.mountActor = new MountAnimator(visual.actor, visual.config.clips);
+    this.mountActor = new MountAnimator(visual.actor, visual.config.clips, visual.wings);
+    this.mountVisualStage = mountStage(this.player, mountId);
     this.avatar = mountGroup;
     if (instant) this.animator.setMounted(true);
     else this.animator.play('mount', () => this.animator.setMounted(true));
@@ -1181,7 +1218,7 @@ export class OverworldScreen implements Screen {
     this.isMoving = axis.x !== 0 || axis.z !== 0;
 
     if (this.isMoving) {
-      const mount = this.player.activeMountId ? getMountById(this.player.activeMountId) : null;
+      const mount = this.player.activeMountId ? mountProfile(this.player, this.player.activeMountId) : null;
       const speed = PLAYER_SPEED * (mount?.speedMultiplier ?? 1);
       const flying = this.isFlyingMounted();
       const pos = this.avatar.position;
@@ -3330,16 +3367,18 @@ export class OverworldScreen implements Screen {
   private refreshMountSection(): void {
     if (!this.mountSectionEl) return;
     const buttons: HTMLElement[] = [];
-    for (const mountId of this.player.unlockedMounts) {
-      const def = getMountById(mountId);
+    for (const kind of ['terrestre', 'voadora'] as const) {
+      const mountId = this.player.equippedMounts[kind];
+      if (!mountId) continue;
+      const profile = mountProfile(this.player, mountId);
       const active = this.player.activeMountId === mountId;
-      const perk = def.combat ? `${def.combat.perkName}: ${def.combat.perkText}` : 'Voa sobre rios e desfiladeiros.';
+      const perk = profile.combat ? `${profile.combat.perkName}` : 'Voa sobre rios e desfiladeiros.';
       buttons.push(
         el('div', {
           className: `btn mount-option ${active ? 'primary' : ''}`,
           onClick: () => this.setMounted(active ? null : mountId),
         }, [
-          el('span', { text: active ? `Montado: ${def.name}` : `Montar ${def.name}` }),
+          el('span', { text: active ? `Montado: ${profile.name}` : `${kind === 'voadora' ? 'Voar' : 'Montar'}: ${profile.name}` }),
           el('span', { className: 'mount-perk', text: perk }),
         ]),
       );
@@ -3347,6 +3386,7 @@ export class OverworldScreen implements Screen {
     if (this.player.activeMountId) {
       buttons.push(el('div', { className: 'btn', text: 'Desmontar', onClick: () => this.setMounted(null) }));
     }
+    buttons.push(el('div', { className: 'mount-hint', text: 'Troque de montaria no Inventário · tecla M alterna' }));
     this.mountSectionEl.replaceChildren(...buttons);
   }
 

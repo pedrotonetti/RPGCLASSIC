@@ -20,6 +20,14 @@ import { el, goToLazy } from '../ui/dom';
 import { ItemCompareController } from '../ui/itemComparePanel';
 import { addHotkeyHint, bindBackKey } from '../ui/menuKeys';
 import { compareItems } from '../systems/ItemComparison';
+import { getMountById, MOUNT_DEFINITIONS } from '../data/mounts';
+import { equipMount, mountProfile, nextEvolution } from '../systems/MountSystem';
+
+/** "+6% de dano e 15%..." with every percentage multiplied by an evolved mount's perk multiplier. */
+function scaledPerkText(text: string, mult: number): string {
+  if (mult === 1) return text;
+  return text.replace(/(\d+(?:,\d+)?)%/g, (_, n: string) => `${(Number(n.replace(',', '.')) * mult).toFixed(1).replace('.', ',').replace(',0', '')}%`);
+}
 
 /** "3x Minério de Ferro, 1x Essência Sedenta" */
 function describeYield(stacks: MaterialStack[]): string {
@@ -184,6 +192,7 @@ export class InventoryScreen implements Screen {
   private slotsEl!: HTMLElement;
   private bagEl!: HTMLElement;
   private suppliesEl!: HTMLElement;
+  private mountsEl!: HTMLElement;
   private powerScoreEl!: HTMLElement;
   private salvageBarEl!: HTMLElement;
   private salvageNotice: string | null = null;
@@ -241,6 +250,7 @@ export class InventoryScreen implements Screen {
     this.slotsEl = el('div', { className: 'equip-slots' });
     this.bagEl = el('div', { className: 'bag-list' });
     this.suppliesEl = el('div', { className: 'bag-list' });
+    this.mountsEl = el('div', { className: 'mount-inventory' });
     this.salvageBarEl = el('div', { className: 'salvage-bar' });
 
     const backBtn = el('div', {
@@ -263,6 +273,8 @@ export class InventoryScreen implements Screen {
       el('div', { className: 'inventory-panel panel' }, [
         el('h3', { text: 'Equipado' }),
         this.slotsEl,
+        el('h3', { text: 'Montarias' }),
+        this.mountsEl,
         el('h3', { text: 'Mochila' }),
         this.salvageBarEl,
         this.bagEl,
@@ -472,6 +484,7 @@ export class InventoryScreen implements Screen {
     this.renderSalvageBar();
 
     this.slotsEl.replaceChildren(...SLOT_ORDER.map((slot) => this.equipSlotCard(slot)));
+    this.renderMounts();
 
     this.renderSupplies();
 
@@ -504,6 +517,73 @@ export class InventoryScreen implements Screen {
       );
     }
     this.bagEl.replaceChildren(...sections);
+  }
+
+  /**
+   * One equipped mount per kind (systems/MountSystem.ts): the ridden one
+   * when you press M / pick it in the pause menu. Locked mounts stay listed
+   * with how to earn them; flying mounts show their evolution progress.
+   */
+  private renderMounts(): void {
+    const sections: HTMLElement[] = [];
+    for (const kind of ['terrestre', 'voadora'] as const) {
+      const cards = MOUNT_DEFINITIONS.filter((def) => def.kind === kind).map((def) => this.mountCard(def.id));
+      sections.push(
+        el('div', { className: 'bag-section' }, [
+          el('div', { className: 'bag-slot-header', text: kind === 'terrestre' ? 'Terrestres — liberadas por missões secundárias' : 'Voadoras — evoluem voando e lutando montado' }),
+          el('div', { className: 'mount-grid' }, cards),
+        ]),
+      );
+    }
+    this.mountsEl.replaceChildren(...sections);
+  }
+
+  private mountCard(mountId: string): HTMLElement {
+    const def = getMountById(mountId);
+    const unlocked = this.player.unlockedMounts.includes(mountId);
+    const equipped = this.player.equippedMounts[def.kind] === mountId;
+    if (!unlocked) {
+      return el('div', { className: 'mount-card locked' }, [
+        el('div', { className: 'mount-name', text: `🔒 ${def.name}` }),
+        el('div', { className: 'mount-perk', text: def.unlockText }),
+      ]);
+    }
+    const profile = mountProfile(this.player, mountId);
+    const rows: HTMLElement[] = [
+      el('div', { className: 'mount-name' }, [
+        el('span', { className: 'mount-swatch', style: { background: `#${def.color.toString(16).padStart(6, '0')}` } }),
+        profile.name,
+      ]),
+      el('div', { className: 'mount-perk', text: `Velocidade ×${profile.speedMultiplier.toFixed(2)}` }),
+    ];
+    if (profile.combat) rows.push(el('div', { className: 'mount-perk', text: `${profile.combat.perkName}: ${def.stages ? scaledPerkText(def.combat?.perkText ?? '', def.stages[profile.stage].perkMult) : profile.combat.perkText}` }));
+    if (def.stages) {
+      const next = nextEvolution(this.player, mountId);
+      const stageLabel = `Estágio ${profile.stage + 1}/${def.stages.length}`;
+      if (next) {
+        const pct = Math.min(100, Math.round((next.xp / next.needed) * 100));
+        rows.push(
+          el('div', { className: 'mount-perk', text: `${stageLabel} · próxima: ${next.name} (${next.xp}/${next.needed} XP)` }),
+          el('div', { className: 'mount-xp' }, [el('div', { className: 'mount-xp-fill', style: { width: `${pct}%` } })]),
+        );
+      } else {
+        rows.push(el('div', { className: 'mount-perk', text: `${stageLabel} · forma final!` }));
+      }
+    }
+    rows.push(
+      equipped
+        ? el('div', { className: 'mount-equipped', text: '✓ Equipada' })
+        : el('div', {
+            className: 'btn small',
+            text: 'Equipar',
+            onClick: () => {
+              equipMount(this.player, mountId);
+              saveGame(this.player);
+              this.renderMounts();
+            },
+          }),
+    );
+    return el('div', { className: `mount-card${equipped ? ' equipped' : ''}` }, rows);
   }
 
   private renderSupplies(): void {

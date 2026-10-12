@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { getClassById } from '../config/classes';
 import { TILE_SIZE } from '../config/gameConfig';
 import { TileType } from '../config/tiles';
-import { getMountById } from '../data/mounts';
+import { addMountXp, FIGHT_XP_PER_ENEMY, mountProfile } from './MountSystem';
 import type { ClassMechanicDefinition, SkillDefinition, SkillTarget } from '../config/types';
 import type { Game } from '../engine/Game';
 import { Enemy } from '../entities/Enemy';
@@ -914,7 +914,7 @@ export class OverworldCombat {
       this.buildHotbar();
       this.buildItemBar();
       // Riding into a fight arms the mount's Investida: the first blow hits harder (see Player.itemEffects).
-      const mountCombat = this.player.activeMountId ? getMountById(this.player.activeMountId).combat : undefined;
+      const mountCombat = this.player.activeMountId ? mountProfile(this.player, this.player.activeMountId).combat : undefined;
       this.player.mountChargeReady = Boolean(mountCombat);
       if (mountCombat) this.showMessage(`Investida! Primeiro golpe +${Math.round(mountCombat.chargeBonus * 100)}% de dano · ${mountCombat.perkName}`, 1800);
     }
@@ -949,6 +949,11 @@ export class OverworldCombat {
       }
       const levelMsg = notifyLevelChanged(this.player);
       if (levelMsg) lastMessage = levelMsg;
+      // A flying mount ridden into the fight grows with it (systems/MountSystem.ts).
+      if (this.player.activeMountId) {
+        const evolved = addMountXp(this.player, this.player.activeMountId, FIGHT_XP_PER_ENEMY * this.engagedMonsters.length);
+        if (evolved) lastMessage = [lastMessage, evolved].filter(Boolean).join('\n');
+      }
       if (rareNotes.length > 0) lastMessage = [lastMessage, ...rareNotes].filter(Boolean).join('\n');
       if (lastMessage) this.showMessage(lastMessage, rareNotes.length > 0 ? 3600 : 2200);
       saveGame(this.player);

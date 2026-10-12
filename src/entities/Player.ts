@@ -4,7 +4,8 @@ import { XP_TO_LEVEL } from '../config/gameConfig';
 import type { CharacterClassDefinition, EquipmentInstance, EquipmentSlot, SkillDefinition, SkillLevelStats, Stats } from '../config/types';
 import { computeEquipmentBonus, createStarterItem, getEquipmentTemplate } from '../data/equipment';
 import { getItemById } from '../data/items';
-import { getMountById, normalizeMountId, normalizeUnlockedMounts } from '../data/mounts';
+import { getMountById, normalizeMountId, type MountKind } from '../data/mounts';
+import { mountProfile, normalizeEquippedMounts, normalizeMountXp, syncMountUnlocks } from '../systems/MountSystem';
 import { computeSkillLevelStats, skillPointsForLevel, ultimateLevelForCharacter } from '../systems/skillMath';
 import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder } from '../systems/statusEffects';
 import { cloneAdaptiveState, createInitialAdaptiveState, normalizeAdaptiveState, type AdaptiveState } from '../systems/AdaptiveDifficulty';
@@ -57,6 +58,10 @@ export interface PlayerSaveData {
   questProgress: Record<string, number>;
   unlockedMounts: string[];
   activeMountId: string | null;
+  /** One equipped mount per kind, chosen in the Inventory (systems/MountSystem.ts). Absent on saves from before mount progression — those re-earn their unlocks from progress. */
+  equippedMounts?: Partial<Record<MountKind, string>>;
+  /** Evolution XP per flying mount id. Absent on old saves. */
+  mountXp?: Record<string, number>;
   /** Which of Ato 3's three branching endings (see LORE.md) the player chose — null until OverworldScreen's Act3ChoiceOverlay resolves one. Also doubles as "has the player finished the main story" for anything that should only apply post-ending. */
   act3Ending: Act3Ending | null;
   /** Whether this character has already dismissed OverworldScreen's first-time tutorial overlay — false only for a brand-new character, never reset afterward. */
@@ -131,6 +136,8 @@ export class Player implements StatusEffectHolder {
   questProgress: Record<string, number>;
   unlockedMounts: string[];
   activeMountId: string | null;
+  equippedMounts: Partial<Record<MountKind, string>>;
+  mountXp: Record<string, number>;
   act3Ending: Act3Ending | null;
   hasSeenTutorial: boolean;
   dungeonTiers: Record<string, number>;
@@ -193,9 +200,16 @@ export class Player implements StatusEffectHolder {
     this.activeQuestId = data?.activeQuestId ?? null;
     this.sideQuestId = data?.sideQuestId ?? null;
     this.questProgress = data?.questProgress ?? {};
-    // Every mount is unlocked by default in this build; old ids (the goat "llama") migrate — see data/mounts.ts.
-    this.unlockedMounts = normalizeUnlockedMounts(data?.unlockedMounts);
+    // Mount progression (systems/MountSystem.ts): saves from before it (no
+    // `equippedMounts`) had every mount unlocked for free — drop that list and
+    // let syncMountUnlocks (end of constructor) re-earn from real progress.
+    const mountsTracked = data?.equippedMounts !== undefined;
+    this.unlockedMounts = mountsTracked
+      ? (data?.unlockedMounts ?? []).map((id) => normalizeMountId(id)).filter((id): id is string => id !== null)
+      : [];
     this.activeMountId = normalizeMountId(data?.activeMountId);
+    this.equippedMounts = {};
+    this.mountXp = normalizeMountXp(data?.mountXp);
     this.act3Ending = data?.act3Ending ?? null;
     this.hasSeenTutorial = data?.hasSeenTutorial ?? false;
     this.dungeonTiers = data?.dungeonTiers ?? {};
@@ -211,6 +225,15 @@ export class Player implements StatusEffectHolder {
     this.dungeonRecords = normalizeDungeonRecords(data?.dungeonRecords);
     this.currentHp = data?.currentHp ?? this.stats.maxHp;
     this.currentMp = data?.currentMp ?? this.stats.maxMp;
+
+    // Needs level/quests/dungeon tiers/lore already loaded above.
+    syncMountUnlocks(this);
+    this.equippedMounts = normalizeEquippedMounts(data?.equippedMounts, this.unlockedMounts);
+    for (const id of this.unlockedMounts) {
+      const kind = getMountById(id).kind;
+      if (!this.equippedMounts[kind]) this.equippedMounts[kind] = id;
+    }
+    if (this.activeMountId && !this.unlockedMounts.includes(this.activeMountId)) this.activeMountId = null;
   }
 
   static createNew(name: string, classId: string): Player {
@@ -271,7 +294,7 @@ export class Player implements StatusEffectHolder {
     // A dungeon run's Distorções/blessings stack AFTER the gear caps on purpose — they're the run's own rules, not gear.
     if (this.dungeonRunMods) addModifiers(resolved.mods, this.dungeonRunMods);
     // The active mount's combat perk (data/mounts.ts) — like a blessing, on top of the gear caps.
-    const mountCombat = this.activeMountId ? getMountById(this.activeMountId).combat : undefined;
+    const mountCombat = this.activeMountId ? mountProfile(this, this.activeMountId).combat : undefined;
     if (mountCombat) {
       addModifiers(resolved.mods, mountCombat.mods);
       if (this.mountChargeReady) addModifiers(resolved.mods, { damageDealt: mountCombat.chargeBonus });
@@ -517,6 +540,8 @@ export class Player implements StatusEffectHolder {
       discoveredLoreIds: [...this.discoveredLoreIds],
       adaptive: cloneAdaptiveState(this.adaptive),
       dungeonRecords: cloneDungeonRecords(this.dungeonRecords),
+      equippedMounts: { ...this.equippedMounts },
+      mountXp: { ...this.mountXp },
     };
   }
 }

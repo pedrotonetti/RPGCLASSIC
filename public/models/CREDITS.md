@@ -40,10 +40,10 @@ this commit — intended to replace/extend the procedural player model in
 Knight → warrior/paladin, Mage → mage/necromancer/cleric, Rogue →
 archer/assassin/monk, Barbarian as an alternate/heavier build).
 
-## mounts/horse_white.glb, mounts/wolf.glb, mounts/stag.glb
+## mounts/horse_brown.glb, mounts/horse_white.glb, mounts/wolf.glb, mounts/stag.glb
 
 Source: [Quaternius — Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html)
-by Quaternius ([quaternius.com](https://quaternius.com)), `Horse_White.gltf`,
+by Quaternius ([quaternius.com](https://quaternius.com)), `Horse.gltf`, `Horse_White.gltf`,
 `Wolf.gltf` and `Stag.gltf` from the pack's official Google Drive folder,
 converted to binary .glb and keyframe-resampled/deduplicated with
 `@gltf-transform/cli` (no geometry or animation changes).
@@ -54,7 +54,10 @@ converted to binary .glb and keyframe-resampled/deduplicated with
 Ground mounts in `data/mounts.ts` (driven by `render/mountModel.ts`): white
 horse → Corcel de Prata and, with a procedural horn/tint, the Unicórnio; wolf
 → Lobo Cinzento and, re-coated with procedural rosettes, the Leopardo; stag →
-Cervo Real. Clips used: `Idle`, `Walk`, `Gallop`, `Attack`/`Attack_Headbutt`,
+Cervo Real; brown horse → Cavalo Baio (starter) and, tinted black with
+procedural leather wings, the Corcel Sombrio. The flying Pégaso, Grifo,
+Dragão (drake) and Cervo Alado are these same models plus procedural wings,
+horns and coats built in `render/mountModel.ts`. Clips used: `Idle`, `Walk`, `Gallop`, `Attack`/`Attack_Headbutt`,
 `Idle_HitReact1`.
 
 ## mounts/pterodactylus.glb (goat.glb removed — replaced by the Quaternius mounts above)

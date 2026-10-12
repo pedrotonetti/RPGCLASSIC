@@ -1,4 +1,6 @@
 import type { Player } from '../entities/Player';
+import { getMountById, MOUNT_DEFINITIONS } from '../data/mounts';
+import { addMountXp } from '../systems/MountSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { el } from '../ui/dom';
 
@@ -71,12 +73,34 @@ export function buildDevPanel(player: Player | null): HTMLElement {
     },
   });
 
+  const unlockMountsBtn = el('div', {
+    className: 'btn',
+    text: 'Liberar todas as montarias',
+    onClick: () => {
+      for (const def of MOUNT_DEFINITIONS) if (!player.unlockedMounts.includes(def.id)) player.unlockedMounts.push(def.id);
+      saveGame(player);
+      showStatus('Todas as montarias liberadas — equipe no Inventário.');
+    },
+  });
+  const mountXpBtn = el('div', {
+    className: 'btn',
+    text: '+300 XP na voadora equipada',
+    onClick: () => {
+      const id = player.equippedMounts.voadora;
+      if (!id) return showStatus('Nenhuma montaria voadora equipada.');
+      const evolved = addMountXp(player, id, 300);
+      saveGame(player);
+      showStatus(evolved ?? `+300 XP para ${getMountById(id).name}.`);
+    },
+  });
+
   return el('div', { className: 'panel dev-panel' }, [
     el('h3', { text: 'Modo Desenvolvedor' }),
     el('div', { className: 'settings-hint', text: 'Ferramentas de teste — mudanças aqui salvam imediatamente no slot ativo.' }),
     readout,
     el('div', { className: 'settings-row' }, [nameInput, renameBtn]),
     el('div', { className: 'settings-row' }, [levelInput, levelBtn]),
+    el('div', { className: 'settings-row' }, [unlockMountsBtn, mountXpBtn]),
     statusEl,
   ]);
 }
