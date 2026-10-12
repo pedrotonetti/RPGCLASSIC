@@ -17,7 +17,7 @@ export const ACHIEVEMENT_CATEGORY_LABEL: Record<AchievementCategory, string> = {
 export const ACHIEVEMENT_CATEGORY_ORDER: AchievementCategory[] = ['combate', 'codex', 'itens', 'exploracao', 'progressao', 'historia'];
 
 /** Tallies only the hooks in `AchievementSystem` ever bump — everything else a condition reads is derived from state the player already persists (level, quests, chests...). */
-export type AchievementCounter = 'kills' | 'bossKills' | 'deaths' | 'materialsCollected' | 'itemsCrafted' | 'rareCrafted';
+export type AchievementCounter = 'kills' | 'bossKills' | 'deaths' | 'materialsCollected' | 'itemsCrafted' | 'rareCrafted' | 'itemsEnchanted' | 'itemsUpgraded' | 'itemsSalvaged';
 
 export type AchievementFlag = 'flawlessBoss';
 
@@ -175,6 +175,30 @@ export const ACHIEVEMENT_DEFINITIONS: AchievementDefinition[] = [
     category: 'itens',
     condition: { kind: 'counter', key: 'materialsCollected', target: 50 },
     reward: { gold: 80 },
+  },
+  {
+    id: 'primeira_receita',
+    name: 'Primeira Receita',
+    description: 'Crie qualquer coisa numa bancada de ofício.',
+    category: 'itens',
+    condition: { kind: 'counter', key: 'itemsCrafted', target: 1 },
+    reward: { gold: 25 },
+  },
+  {
+    id: 'primeiro_encanto',
+    name: 'Faísca Arcana',
+    description: 'Encante um afixo de um equipamento no Joalheiro.',
+    category: 'itens',
+    condition: { kind: 'counter', key: 'itemsEnchanted', target: 1 },
+    reward: { gold: 40 },
+  },
+  {
+    id: 'desmanche',
+    name: 'Nada se Perde',
+    description: 'Desmonte 20 equipamentos.',
+    category: 'itens',
+    condition: { kind: 'counter', key: 'itemsSalvaged', target: 20 },
+    reward: { gold: 60 },
   },
   {
     id: 'maos_de_artesao',

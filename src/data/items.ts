@@ -19,6 +19,25 @@ export const ITEM_DEFINITIONS: ItemDefinition[] = [
     healMp: 20,
     price: 20,
   },
+  // --- só por receita (data/recipes.ts) — nenhum vendedor os tem em estoque ---
+  {
+    id: 'potion_hp_major',
+    name: 'Poção de Vida Maior',
+    description: 'Restaura 80 pontos de vida.',
+    kind: 'consumable',
+    healHp: 80,
+    healMp: 0,
+    price: 45,
+  },
+  {
+    id: 'elixir_restorer',
+    name: 'Elixir Restaurador',
+    description: 'Restaura 50 pontos de vida e 40 de mana.',
+    kind: 'consumable',
+    healHp: 50,
+    healMp: 40,
+    price: 60,
+  },
 ];
 
 export function getItemById(id: string): ItemDefinition {

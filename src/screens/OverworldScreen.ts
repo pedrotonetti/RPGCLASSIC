@@ -38,6 +38,7 @@ import { pickWildlifeLayout } from '../systems/wildlifePlacement';
 import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { animateWaterMaterial, buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
 import { checkAchievements, recordItemCrafted, recordLoreDiscovered, recordPlayerDefeated } from '../systems/AchievementSystem';
+import { WorkshopPanel } from '../ui/workshop';
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { OverworldEvents, type EventInteractable } from './OverworldEvents';
 import { buildWalkabilityGrid, findNearestWalkable, pathfindToClick } from '../systems/Pathfinding';
@@ -451,6 +452,8 @@ export class OverworldScreen implements Screen {
   private dialogueLines: string[] = [];
   private nearbyNpc: NpcDefinition | null = null;
   private shopNpc: NpcDefinition | null = null;
+  /** Bancadas de ofício (receitas, encantamento, aprimoramento) dentro da loja — ver ui/workshop.ts. */
+  private workshopPanel: WorkshopPanel | null = null;
 
   private promptEl!: HTMLElement;
   private nameLineEl!: HTMLElement;
@@ -1947,6 +1950,7 @@ export class OverworldScreen implements Screen {
 
   private openShop(npc: NpcDefinition): void {
     this.shopNpc = npc;
+    this.workshop().reset();
     this.shopOverlay.hidden = false;
     this.renderShop();
   }
@@ -2112,7 +2116,17 @@ export class OverworldScreen implements Screen {
       sections.push(this.buildSocketSection());
     }
 
+    sections.push(...this.workshop().sections(vendor));
+
     this.shopBodyEl.replaceChildren(...sections);
+  }
+
+  private workshop(): WorkshopPanel {
+    this.workshopPanel ??= new WorkshopPanel(this.player, () => {
+      saveGame(this.player);
+      this.renderShop();
+    });
+    return this.workshopPanel;
   }
 
   private shopRow(

@@ -148,7 +148,8 @@ export function describeAffix(affix: ItemAffix): string | null {
   return def ? def.text.replace('{v}', formatValue(affix.value, def.format)) : null;
 }
 
-function rollValue(def: AffixDefinition, itemLevel: number, rng: () => number): number {
+/** One roll of `def`'s magnitude at `itemLevel` — also used by the enchanting bench to reroll a single affix. */
+export function rollAffixValue(def: AffixDefinition, itemLevel: number, rng: () => number): number {
   const base = def.min + (def.max - def.min) * rng();
   const scaled = def.scalesWithLevel ? base * (1 + (Math.max(1, itemLevel) - 1) * AFFIX_LEVEL_SCALING) : base;
   if (def.format === 'flat') return Math.max(1, Math.round(scaled));
@@ -175,7 +176,7 @@ export function rollAffixes(
     const preferred = remaining.filter((a) => a.kind === wanted);
     chosen.push(pickFrom(preferred.length > 0 ? preferred : remaining, rng));
   }
-  return chosen.map((def) => ({ id: def.id, value: rollValue(def, itemLevel, rng) }));
+  return chosen.map((def) => ({ id: def.id, value: rollAffixValue(def, itemLevel, rng) }));
 }
 
 /** Flat stat bonuses from an item's affixes — ids missing from the table (removed or renamed) are ignored. */

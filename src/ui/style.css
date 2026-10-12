@@ -3117,4 +3117,36 @@ body {
   .dungeon-mod-chip {
     font-size: 11px;
   }
+/* --- Oficina: receitas, encantamento, aprimoramento e desmontagem ---------- */
+.workshop-notice {
+  font-size: 14px;
+  color: var(--accent);
+  margin: 4px 0 10px;
+}
+.workshop-cost {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.workshop-affix-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 2px 0;
+}
+.workshop-locked {
+  opacity: 0.55;
+}
+.bag-card-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.salvage-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }

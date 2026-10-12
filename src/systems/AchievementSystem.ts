@@ -268,6 +268,24 @@ export function recordItemCrafted(player: Player, rarity: ItemRarity): Achieveme
   return checkAchievements(player);
 }
 
+/** An affix was rerolled at the enchanting bench (systems/EnchantSystem.ts). */
+export function recordItemEnchanted(player: Player): AchievementDefinition[] {
+  bump(player.achievements, 'itemsEnchanted');
+  return checkAchievements(player);
+}
+
+/** An item was raised one upgrade step at the forge (systems/EnchantSystem.ts). */
+export function recordItemUpgraded(player: Player): AchievementDefinition[] {
+  bump(player.achievements, 'itemsUpgraded');
+  return checkAchievements(player);
+}
+
+/** `count` items were just broken down into materials (systems/SalvageSystem.ts). */
+export function recordItemsSalvaged(player: Player, count = 1): AchievementDefinition[] {
+  if (count > 0) bump(player.achievements, 'itemsSalvaged', count);
+  return checkAchievements(player);
+}
+
 /** A Fragmento de Memória was just examined for the first time (`Player.discoveredLoreIds` already holds it). */
 export function recordLoreDiscovered(player: Player): AchievementDefinition[] {
   return checkAchievements(player);
