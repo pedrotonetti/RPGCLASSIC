@@ -4,6 +4,7 @@ import type { Screen } from '../engine/Screen';
 import { Player } from '../entities/Player';
 import { getBossById } from '../data/bosses';
 import { getEnemyById } from '../data/enemies';
+import { getItemById } from '../data/items';
 import { getNpcById } from '../data/npcs';
 import { getQuestById, type QuestDefinition } from '../data/quests';
 import { getZoneById } from '../data/zones';
@@ -37,6 +38,7 @@ function objectiveLine(player: Player, quest: QuestDefinition): string {
 function rewardLine(quest: QuestDefinition): string {
   const parts = [`+${quest.rewardXp} XP`, `+${quest.rewardGold} ouro`];
   if (quest.rewardItem) parts.push('1 item');
+  for (const stack of quest.onCompleteEffect?.grantItems ?? []) parts.push(`${stack.qty}x ${getItemById(stack.itemId).name}`);
   return `Recompensa: ${parts.join(', ')}.`;
 }
 

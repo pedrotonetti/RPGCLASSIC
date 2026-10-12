@@ -1,6 +1,8 @@
 import { defaultAppearance } from '../config/customization';
 import type { ChoiceEffect } from '../systems/ChoiceSystem';
+import { CLASS_ZONE_THEMES } from './classZones';
 import type { NpcDefinition } from './npcs';
+import { MAIN_CITY_ID } from './zones';
 
 /**
  * Local, temporary happenings the world rolls on its own while the player
@@ -72,6 +74,10 @@ export interface WorldEventDefinition {
   consequence?: ChoiceEffect;
   /** Invasion only: how many monsters the band fields. */
   enemyCount?: [number, number];
+  /** Invasion only: the band is drawn from these enemy ids instead of the zone's own pool (or Pedravale's level-weighted one). */
+  enemyIds?: string[];
+  /** Interactive (tree) events only: the prompt shown next to the spot — omit for the corrupted tree's default "Purificar" wording. */
+  interactPrompt?: { key: string; touch: string };
 }
 
 export const WORLD_EVENT_DEFINITIONS: WorldEventDefinition[] = [
@@ -152,6 +158,82 @@ export const WORLD_EVENT_DEFINITIONS: WorldEventDefinition[] = [
     ],
     durationSeconds: 150,
     cooldownSeconds: 360,
+    placement: 'none',
+  },
+
+  // --- Expansão de conteúdo ----------------------------------------------
+  // Each reuses an existing `kind`'s stage dressing (OverworldEvents never
+  // needs a new branch) and sets only what makes it its own event.
+  {
+    // A night swarm of the new tier-3 vagalumes (data/enemies.ts) — an early
+    // invasion for characters still below the regular one's real threat.
+    id: 'revoada_brasas',
+    kind: 'invasao',
+    name: 'Revoada de Brasas',
+    objective: 'Apague a revoada de vagalumes de brasa',
+    startMessage: 'Uma revoada de vagalumes de brasa desceu por perto — onde pousam, o mato chia e seca! Marcada no mapa.',
+    successMessage: 'A revoada se apagou',
+    endMessage: 'A revoada passou, e deixou um rastro de mato chamuscado para trás.',
+    resolution: 'defeat',
+    zoneIds: [MAIN_CITY_ID, ...CLASS_ZONE_THEMES.flatMap((t) => [t.startVillageId, t.secondaryVillageId])],
+    conditions: { time: 'night', minPlayerLevel: 4, maxPlayerLevel: 12 },
+    weight: 1.2,
+    weightModifiers: [{ when: { minCorruption: 60 }, multiplier: 1.5 }],
+    durationSeconds: 200,
+    cooldownSeconds: 480,
+    placement: 'near_player',
+    placementRadius: [8, 13],
+    enemyCount: [3, 4],
+    enemyIds: ['vagalume_brasa'],
+    reward: {
+      xp: 20,
+      xpPerLevel: 8,
+      grantGold: 10,
+      goldPerLevel: 4,
+      worldStateDelta: { natureBalance: 2 },
+      grantItems: [{ itemId: 'cha_capim_santo', qty: 1 }],
+      markEventId: 'revoada_brasas',
+    },
+    consequence: { worldStateDelta: { natureBalance: -3, corruption: 2 } },
+  },
+  {
+    // The corrupted tree's mirror image: an Ipê that hasn't rotted yet — a
+    // Raiz calling out at night, asking only to be heard (what an Escolhido
+    // Verde can do and nobody else can — see LORE.md).
+    id: 'ipe_sussurrante',
+    kind: 'arvore_corrompida',
+    name: 'Ipê Sussurrante',
+    objective: 'Ouça o que a Raiz do Ipê tem a dizer',
+    startMessage: 'Uma Ipê-árvore por perto está sussurrando — uma Raiz pede para ser ouvida antes que a Sede a cale. Marcada no mapa.',
+    successMessage: 'A Raiz foi ouvida e voltou a dormir em paz',
+    endMessage: 'O sussurro do ipê se calou sem que ninguém o ouvisse.',
+    resolution: 'interact',
+    conditions: { time: 'night', maxCorruption: 80 },
+    weight: 0.9,
+    weightModifiers: [{ when: { minHope: 55 }, multiplier: 1.5 }],
+    durationSeconds: 240,
+    cooldownSeconds: 600,
+    placement: 'near_player',
+    placementRadius: [7, 12],
+    interactPrompt: { key: '[E] Ouvir a Raiz do Ipê', touch: 'Toque para ouvir a Raiz do Ipê' },
+    reward: { xp: 30, xpPerLevel: 9, worldStateDelta: { hope: 3, natureBalance: 2 }, grantItems: [{ itemId: 'potion_mp', qty: 1 }] },
+    consequence: { worldStateDelta: { hope: -2 } },
+  },
+  {
+    // Weather, like the névoa (same `kind`, so the same fog visuals/audio):
+    // what a corrupted region's sky does once the Sede has burned enough of it.
+    id: 'chuva_de_cinzas',
+    kind: 'nevoa',
+    name: 'Chuva de Cinzas',
+    objective: 'Cinza fina cai do céu',
+    startMessage: 'O céu escurece e começa a cair cinza fina — mato queimado de sede, longe daqui...',
+    endMessage: 'A chuva de cinzas cessa, e o vento leva o que restou.',
+    resolution: 'timed',
+    conditions: { minCorruption: 60 },
+    weight: 1.0,
+    weightModifiers: [{ when: { minCorruption: 80 }, multiplier: 1.6 }],
+    durationSeconds: 140,
+    cooldownSeconds: 540,
     placement: 'none',
   },
 ];

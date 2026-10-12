@@ -50,6 +50,44 @@ export const RECIPES: RecipeDefinition[] = [
     gold: 30,
     output: { kind: 'item', itemId: 'elixir_restorer', qty: 1 },
   },
+  {
+    id: 'rec_racao_montaria',
+    name: 'Ração de Montaria',
+    description: 'Erva seca e uma tira de couro para amarrar o fardo — do jeito que o Tropeiro Amaro ensina.',
+    station: 'boticario',
+    materials: [
+      { materialId: 'mat_herb', qty: 2 },
+      { materialId: 'mat_leather', qty: 1 },
+    ],
+    gold: 10,
+    output: { kind: 'item', itemId: 'racao_montaria', qty: 3 },
+  },
+  {
+    id: 'rec_pocao_mana_maior',
+    name: 'Poção de Mana Maior',
+    description: 'Dois fragmentos arcanos dissolvidos devagar em infusão de erva.',
+    station: 'boticario',
+    materials: [
+      { materialId: 'mat_herb', qty: 1 },
+      { materialId: 'mat_arcane_shard', qty: 2 },
+    ],
+    gold: 25,
+    output: { kind: 'item', itemId: 'potion_mp_major', qty: 2 },
+  },
+  {
+    id: 'rec_elixir_da_raiz',
+    name: 'Elixir da Raiz',
+    description: 'Erva, fragmento e uma gota de Essência Sedenta devolvida à terra antes de virar remédio.',
+    station: 'boticario',
+    materials: [
+      { materialId: 'mat_herb', qty: 3 },
+      { materialId: 'mat_arcane_shard', qty: 2 },
+      { materialId: 'mat_thirst_essence', qty: 1 },
+    ],
+    gold: 60,
+    output: { kind: 'item', itemId: 'elixir_da_raiz', qty: 1 },
+    minLevel: 10,
+  },
 
   // --- Ferreiro ---------------------------------------------------------------
   {
@@ -106,6 +144,20 @@ export const RECIPES: RecipeDefinition[] = [
     output: { kind: 'equipment', templateId: 'couraca_das_brasas', rarity: 'azul' },
     minLevel: 8,
   },
+  {
+    id: 'rec_facao_temperado',
+    name: 'Facão Temperado',
+    description: 'Um Facão de Mato Épico, de lâmina larga e cabo de couro trançado.',
+    station: 'ferreiro',
+    materials: [
+      { materialId: 'mat_iron_ore', qty: 5 },
+      { materialId: 'mat_leather', qty: 1 },
+      { materialId: 'mat_thirst_essence', qty: 1 },
+    ],
+    gold: 110,
+    output: { kind: 'equipment', templateId: 'facao_de_mato', rarity: 'amarelo' },
+    minLevel: 5,
+  },
 
   // --- Tecelã -----------------------------------------------------------------
   {
@@ -136,6 +188,20 @@ export const RECIPES: RecipeDefinition[] = [
     output: { kind: 'equipment', templateId: 'manto_do_peregrino', rarity: 'azul' },
     minLevel: 8,
   },
+  {
+    id: 'rec_gibao_do_tropeiro',
+    name: 'Gibão do Tropeiro',
+    description: 'Peça do conjunto Lida do Tropeiro.',
+    station: 'tecelao',
+    materials: [
+      { materialId: 'mat_leather', qty: 7 },
+      { materialId: 'mat_herb', qty: 1 },
+      { materialId: 'mat_thirst_essence', qty: 2 },
+    ],
+    gold: 160,
+    output: { kind: 'equipment', templateId: 'gibao_do_tropeiro', rarity: 'azul' },
+    minLevel: 8,
+  },
 
   // --- Artesã -----------------------------------------------------------------
   {
@@ -164,6 +230,34 @@ export const RECIPES: RecipeDefinition[] = [
     ],
     gold: 160,
     output: { kind: 'equipment', templateId: 'cajado_do_peregrino', rarity: 'azul' },
+    minLevel: 8,
+  },
+  {
+    id: 'rec_aguilhada_do_tropeiro',
+    name: 'Aguilhada do Tropeiro',
+    description: 'Peça do conjunto Lida do Tropeiro.',
+    station: 'artesao',
+    materials: [
+      { materialId: 'mat_leather', qty: 2 },
+      { materialId: 'mat_iron_ore', qty: 4 },
+      { materialId: 'mat_thirst_essence', qty: 2 },
+    ],
+    gold: 160,
+    output: { kind: 'equipment', templateId: 'aguilhada_do_tropeiro', rarity: 'azul' },
+    minLevel: 8,
+  },
+  {
+    id: 'rec_berrante_do_tropeiro',
+    name: 'Berrante do Tropeiro',
+    description: 'Peça do conjunto Lida do Tropeiro.',
+    station: 'artesao',
+    materials: [
+      { materialId: 'mat_leather', qty: 4 },
+      { materialId: 'mat_arcane_shard', qty: 1 },
+      { materialId: 'mat_thirst_essence', qty: 2 },
+    ],
+    gold: 160,
+    output: { kind: 'equipment', templateId: 'berrante_do_tropeiro', rarity: 'azul' },
     minLevel: 8,
   },
 

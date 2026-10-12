@@ -1152,8 +1152,28 @@ export function buildEnemyModel(enemyId: string, color: number): THREE.Group {
     case 'young_dragon':
       return buildDragon(color);
     default:
-      return buildSlime(color);
+      return buildBorrowedEnemyModel(enemyId, color);
   }
+}
+
+/**
+ * An enemy with no bespoke builder above reuses another enemy's silhouette
+ * through its own `EnemyDefinition.modelId` (tinted with its own color and
+ * resized by `modelScale`) — see `config/types.ts`. Wrapped in an outer group
+ * because `OverworldCombat` overwrites the returned group's own scale; the
+ * inner one carries the size (replacing the builder's own scale, which the
+ * overworld never shows for the original id either) and, for a bat's
+ * silhouette, the same hover height `OverworldCombat` gives the real bat.
+ */
+function buildBorrowedEnemyModel(enemyId: string, color: number): THREE.Group {
+  const def = ENEMY_DEFINITIONS.find((e) => e.id === enemyId);
+  if (!def?.modelId || def.modelId === enemyId) return buildSlime(color);
+  const inner = buildEnemyModel(def.modelId, color);
+  inner.scale.setScalar(def.modelScale ?? 1);
+  if (def.modelId === 'bat') inner.position.y = 1.0;
+  const outer = new THREE.Group();
+  outer.add(inner);
+  return outer;
 }
 
 export function allEnemyIds(): string[] {

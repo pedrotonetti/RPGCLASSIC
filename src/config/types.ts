@@ -238,6 +238,15 @@ export interface EnemyDefinition {
   weaknesses?: DamageTag[];
   /** Damage tags this enemy takes reduced damage from. A tag in both lists cancels out. */
   resistances?: DamageTag[];
+  /**
+   * An existing enemy id whose 3D silhouette (see `render/characterModel.ts`'s
+   * `buildEnemyModel`) this enemy reuses, tinted with its own `color` — how a
+   * new enemy gets a real model without a bespoke builder. Unset for the
+   * original enemies, which each have their own case there.
+   */
+  modelId?: string;
+  /** Multiplies the borrowed `modelId` silhouette's size (1 = as-is). Ignored without `modelId`. */
+  modelScale?: number;
 }
 
 /** One phase of a scripted boss fight — see `EnemyDefinition.phases` and `systems/BossPhaseSystem.ts`. */

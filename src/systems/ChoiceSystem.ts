@@ -22,6 +22,8 @@ export interface ChoiceEffect {
   /** For decisions that move several factions at once; applied in addition to `factionDelta`. */
   factionDeltas?: Array<{ factionId: string; amount: number }>;
   grantItem?: { templateId: string; rarity: ItemRarity };
+  /** Consumables (data/items.ts ids) added to the player's inventory — supplies a quest/event hands over alongside (or instead of) equipment. */
+  grantItems?: Array<{ itemId: string; qty: number }>;
   /** Negative values are a payment; gold never drops below 0. */
   grantGold?: number;
   /** Marks a world event resolved — see WorldState.completedEvents. */
@@ -45,6 +47,7 @@ export function applyChoiceEffect(player: Player, effect: ChoiceEffect): void {
   if (effect.factionDelta) adjustFactionReputation(player.worldState, effect.factionDelta.factionId, effect.factionDelta.amount);
   for (const delta of effect.factionDeltas ?? []) adjustFactionReputation(player.worldState, delta.factionId, delta.amount);
   if (effect.grantItem) player.addLoot(createStarterItem(effect.grantItem.templateId, effect.grantItem.rarity, Math.max(1, player.level)));
+  for (const stack of effect.grantItems ?? []) if (stack.qty > 0) player.addItem(stack.itemId, stack.qty);
   if (effect.grantGold) player.gold = Math.max(0, player.gold + effect.grantGold);
   if (effect.markEventId) markEventCompleted(player.worldState, effect.markEventId);
   if (effect.zoneState) setZoneState(player.worldState, effect.zoneState.zoneId, effect.zoneState.state);

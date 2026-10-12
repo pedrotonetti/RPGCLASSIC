@@ -1,5 +1,7 @@
 import { checkAchievements, recordNpcTalkedTo } from './AchievementSystem';
 import { applyChoiceEffect, type QuestChoice } from './ChoiceSystem';
+import { getBossById } from '../data/bosses';
+import { ENEMY_DEFINITIONS } from '../data/enemies';
 import { createStarterItem } from '../data/equipment';
 import { getNpcById } from '../data/npcs';
 import {
@@ -122,7 +124,8 @@ function questLineFor(player: Player, quest: QuestDefinition): string {
   if (obj.kind === 'talkTo') return `${quest.title}: fale com ${getNpcById(obj.targetId!).name}`;
   if (obj.kind === 'reachLevel') return `${quest.title}: alcance o nível ${obj.amount} (atual: ${player.level})`;
   const have = player.questProgress[quest.id] ?? 0;
-  const targetLabel = obj.targetId ? ` (${obj.targetId})` : '';
+  // The enemy's display name (a boss id first, like QuestLogScreen's own enemyLabel), never its raw data id.
+  const targetLabel = obj.targetId ? ` (${(getBossById(obj.targetId) ?? ENEMY_DEFINITIONS.find((e) => e.id === obj.targetId))?.name ?? obj.targetId})` : '';
   return `${quest.title}: derrote inimigos${targetLabel} (${have}/${obj.amount})`;
 }
 

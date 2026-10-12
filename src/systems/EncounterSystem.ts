@@ -17,13 +17,15 @@ function pickWeighted<T>(items: T[], weights: number[]): T {
  * so leaving them in let the corrupted guardian turn up as ordinary field
  * filler anywhere in Pedravale — exactly what data/zones.ts's own comment on
  * Baluarte do Amanhecer says must never happen. It has its own hand-placed
- * encounter instead (OverworldScreen's BALUARTE_DRAGON_TILE). Weights still
- * key off each enemy's original position in ENEMY_DEFINITIONS, so every
- * regular enemy's odds are unchanged.
+ * encounter instead (OverworldScreen's BALUARTE_DRAGON_TILE). Weights key
+ * off each enemy's own difficulty tier (`EnemyDefinition.level`) — for the
+ * original eleven regular enemies that's exactly their old 1-based position
+ * in ENEMY_DEFINITIONS, so their odds are unchanged, while enemies added
+ * later (wherever they sit in the list) weigh in at their real tier.
  */
 export function pickEncounterEnemyIds(playerLevel: number): string[] {
-  const pool = ENEMY_DEFINITIONS.map((def, i) => {
-    const intendedLevel = i + 1;
+  const pool = ENEMY_DEFINITIONS.map((def) => {
+    const intendedLevel = def.level;
     const diff = Math.abs(intendedLevel - playerLevel);
     return { def, weight: Math.max(1, 10 - diff * 2.5) };
   }).filter((entry) => !entry.def.isBoss);

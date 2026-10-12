@@ -27,6 +27,17 @@ export const EQUIPMENT_TEMPLATES: EquipmentTemplate[] = [
   { id: 'amuleto_vitalidade', name: 'Amuleto da Vitalidade', slot: 'acessorio', description: 'Pulsa com energia vital.', statWeights: { maxHp: 8 } },
   { id: 'bracelete_arcano', name: 'Bracelete Arcano', slot: 'acessorio', description: 'Amplifica o fluxo de mana.', statWeights: { maxMp: 6, magicAttack: 2 } },
   { id: 'talisma_velocidade', name: 'Talismã de Velocidade', slot: 'acessorio', description: 'Deixa os passos mais leves.', statWeights: { speed: 4 } },
+
+  // --- Expansão de conteúdo: equipamento do interior de Ipêra -------------------
+  // Ordinary templates (they roll as loot, are sold by their own trade's
+  // vendor — data/npcs.ts — and are handed out by the new side quests). Each
+  // borrows an existing silhouette for its inventory icon.
+  { id: 'facao_de_mato', name: 'Facão de Mato', slot: 'arma', description: 'Abre trilha e fecha briga.', statWeights: { attack: 3, speed: 1, luck: 1 }, iconTemplateId: 'espada_curta' },
+  { id: 'zarabatana_taquara', name: 'Zarabatana de Taquara', slot: 'arma', description: 'Um sopro, um dardo, e o mato fica quieto de novo.', statWeights: { attack: 2, speed: 2, luck: 2 }, iconTemplateId: 'arco_longo' },
+  { id: 'gibao_couro_cru', name: 'Gibão de Couro Cru', slot: 'armadura', description: 'Couro grosso de vaqueiro, que espinho nenhum atravessa.', statWeights: { defense: 3, maxHp: 4, speed: 1 }, iconTemplateId: 'armadura_couro' },
+  { id: 'ferradura_sorte', name: 'Ferradura da Sorte', slot: 'acessorio', description: 'Gasta de tanta estrada — e por isso mesmo dá sorte.', statWeights: { luck: 2, speed: 2 }, iconTemplateId: 'anel_sorte' },
+  { id: 'colar_escamas', name: 'Colar de Escamas', slot: 'acessorio', description: 'Escamas de peixe de lagoa, secas ao sol e enfiadas em fibra de buriti.', statWeights: { magicDefense: 3, maxHp: 4 }, iconTemplateId: 'amuleto_vitalidade' },
+  { id: 'rosario_sementes', name: 'Rosário de Sementes', slot: 'acessorio', description: 'Contas de semente de ipê, uma para cada reza que ainda não foi atendida.', statWeights: { maxMp: 4, magicDefense: 2, maxHp: 2 }, iconTemplateId: 'bracelete_arcano' },
 ];
 
 const TEMPLATE_BY_ID = new Map<string, EquipmentTemplate>([...EQUIPMENT_TEMPLATES, ...UNIQUE_TEMPLATES, ...SET_TEMPLATES].map((t) => [t.id, t]));

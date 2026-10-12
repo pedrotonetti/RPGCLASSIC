@@ -129,11 +129,11 @@ function npcAppearance(overrides: Partial<CharacterAppearance>): CharacterAppear
 // one shared weapons+armor list sold entirely by the blacksmith — a forge
 // selling woven robes, leather armor, a wooden bow, a staff and a book.
 /** Forged metal: blades, axe, hammer, gauntlets, plate — the blacksmith. */
-const FORGED_TEMPLATE_IDS = ['espada_curta', 'machado_guerra', 'adaga_sombria', 'manoplas_combate', 'martelo_sagrado', 'armadura_placas'];
+const FORGED_TEMPLATE_IDS = ['espada_curta', 'machado_guerra', 'adaga_sombria', 'manoplas_combate', 'martelo_sagrado', 'armadura_placas', 'facao_de_mato'];
 /** Cloth and leather body armor — the weaver. */
-const WOVEN_TEMPLATE_IDS = ['armadura_couro', 'vestes_arcanas', 'manto_sagrado'];
+const WOVEN_TEMPLATE_IDS = ['armadura_couro', 'vestes_arcanas', 'manto_sagrado', 'gibao_couro_cru'];
 /** Carved/bound gear — bow, staff, grimoire — plus every accessory: the artisan. */
-const ARTISAN_TEMPLATE_IDS = ['arco_longo', 'cajado_arcano', 'grimorio_amaldicoado', 'anel_sorte', 'amuleto_vitalidade', 'bracelete_arcano', 'talisma_velocidade'];
+const ARTISAN_TEMPLATE_IDS = ['arco_longo', 'cajado_arcano', 'grimorio_amaldicoado', 'anel_sorte', 'amuleto_vitalidade', 'bracelete_arcano', 'talisma_velocidade', 'zarabatana_taquara', 'ferradura_sorte', 'colar_escamas', 'rosario_sementes'];
 
 /** Where a vendor stands: right in front of their own storefront's counter (see MapGenerator's MAIN_CITY_SHOPS). */
 function shopStand(kind: VendorKind): { mapX: number; mapY: number } {
@@ -325,7 +325,17 @@ export const NPC_DEFINITIONS: NpcDefinition[] = [
       'Poções de vida e mana, sempre à mão para quem parte em aventura.',
       'Rezo pela Florescência todo ano. Este ano, pela primeira vez, tenho medo de que ela não venha.',
     ],
-    vendor: { kind: 'boticario', itemIds: ['potion_hp', 'potion_mp'], craftMaterialId: 'mat_herb' },
+    questDialogue: [
+      {
+        // The Tropeiro Amaro's second errand (data/quests.ts) ends here.
+        questId: 'tropeiro_r2_racao',
+        lines: [
+          'Recado do Amaro? (Ela já estende um fardo amarrado em barbante.) Aquele homem perde tropa e perde recado, mas nunca perde a pressa.',
+          'Milho, rapadura e capim-santo. Leve uns fardos para você também — se um dia tiver montaria, ela vai agradecer. E se não tiver, em apuro até gente come.',
+        ],
+      },
+    ],
+    vendor: { kind: 'boticario', itemIds: ['potion_hp', 'potion_mp', 'cha_capim_santo', 'racao_montaria'], craftMaterialId: 'mat_herb' },
   },
   {
     id: 'zaya',
@@ -671,6 +681,15 @@ NPC_DEFINITIONS.push(
       '(Ele aponta pela janela para a praça murada logo ali fora dos arquivos.) Essa aqui é a Praça da Fundação — o pedaço mais velho de Pedravale, de antes da vila crescer o bastante pra precisar de uma praça nova.',
     ],
     questDialogue: [
+      {
+        // The Batedora Inaê's root sample (data/quests.ts's inae_r2_lingua_sem_raiz) ends here.
+        questId: 'inae_r2_lingua_sem_raiz',
+        lines: [
+          '(Aldo vira o nó de raiz nas mãos, de luvas, como se ele pudesse morder.) Não é ipê. Tem a forma, mas a fibra corre ao contrário — como se tivesse crescido de cima para baixo.',
+          'Os arquivos têm uma única linha sobre isso, num diário dos Zeladores: "o que vem do mar não pede, bebe". Sempre achei que fosse poesia.',
+          '(Ele te devolve o nó.) Guarde. Isto não é peça de museu — é aviso. E agora está escrito, com a sua data, num lugar onde ninguém vai poder dizer que não sabia.',
+        ],
+      },
       {
         questId: 'amara_r2_archives',
         lines: [
@@ -1779,6 +1798,28 @@ NPC_DEFINITIONS.push(
     ],
     questDialogue: [
       {
+        questId: 'quiteria_r2_carpideiras',
+        lines: [
+          'Agora é choro, de noite, na beira. Carpideiras — gente que a gente pagava pra chorar nos enterros, antigamente. Choram sem lágrima, e o choro gela quem escuta.',
+          'Não é assombração, filho(a): é Raiz com sede de lágrima. Cale quatro delas. O resto eu benzo.',
+        ],
+      },
+      {
+        questId: 'quiteria_r1_jacares',
+        lines: [
+          'O Joaquim te falou do rio; ninguém te falou dos jacarés. Ficaram presos na lama quando a água baixou, esperando ela voltar.',
+          'A água voltou pouca — e eles voltaram outra coisa. Dão o bote em quem desce pra encher o balde. Quatro deles, e o leito respira de novo.',
+        ],
+      },
+      {
+        questId: 'quiteria_r2_carpideiras',
+        when: 'completed',
+        lines: [
+          'Fiz um patuá novo, com o junco que nasceu depois da água. (Ela confere o nó no seu pulso, apertado.) Esse não se dá pra qualquer um.',
+          'A beira está quieta de noite. Quieta de verdade — de quem dorme, não de quem morreu. Faz diferença, filho(a). Faz toda a diferença.',
+        ],
+      },
+      {
         questId: 'vau_r2_benzedura',
         when: 'completed',
         lines: [
@@ -1974,6 +2015,18 @@ NPC_DEFINITIONS.push(
     ],
     questDialogue: [
       {
+        questId: 'tome_r1_muralha_de_sal',
+        lines: [
+          'Agora é a praia. Colossos de sal subindo da areia — sentinelas dos Zeladores, enterradas lá embaixo antes de eu nascer. O mar comeu a pedra e deixou o sal no lugar.',
+          'Cada pancada deles na muralha arranca um bloco inteiro. Derrube cinco, e eu te dou a marreta que assentou metade deste Baluarte.',
+        ],
+      },
+      {
+        questId: 'tome_r1_muralha_de_sal',
+        when: 'completed',
+        lines: ['A marreta está em boas mãos. Eu já não acerto a pedra onde ela racha — você acerta. Isso é ofício, não é sorte.'],
+      },
+      {
         questId: 'baluarte_r1_muralha',
         when: 'completed',
         lines: ['Três trechos de muralha de pé numa semana só. Nunca achei que ia ver isso de novo antes de ficar velho demais pra carregar pedra.'],
@@ -2015,6 +2068,25 @@ NPC_DEFINITIONS.push(
     ],
     questDialogue: [
       {
+        questId: 'inae_r2_lingua_sem_raiz',
+        lines: [
+          'Leve esse nó de raiz ao Escrivão Aldo, em Pedravale. Se existe no mundo alguém que lê língua de raiz, deve estar enterrado nos arquivos dele.',
+          'E não deixe ninguém plantar isso. Eu não sei o que nasceria.',
+        ],
+      },
+      {
+        questId: 'inae_r1_raizes_na_praia',
+        lines: [
+          'Lembra das raízes que a maré trouxe? Não ficaram paradas na praia. Andam. Sobem a mata na direção do Baluarte, devagar, como quem procura alguém.',
+          'Corte seis delas antes que cheguem à muralha. E guarde um pedaço — quero que alguém que lê mais do que eu dê uma olhada nisso.',
+        ],
+      },
+      {
+        questId: 'inae_r2_lingua_sem_raiz',
+        when: 'completed',
+        lines: ['O Aldo leu? Então já não sou só eu que sei. Durmo melhor por isso — mas não muito.'],
+      },
+      {
         questId: 'baluarte_r3_cisterna',
         when: 'completed',
         lines: ['Volto pra costa quando a maré baixar. Alguém precisa estar lá quando chegar o que vem depois das raízes.'],
@@ -2034,6 +2106,351 @@ NPC_DEFINITIONS.push(
     ],
   },
 );
+
+// --- Expansão de conteúdo: early-game side-quest givers ---------------------
+// Until this pass almost every side chain waited behind q6_dragon, so a
+// character's first ten levels had one optional errand (the Vau). These
+// NPCs hand out side content from the very first village onward (see
+// data/quests.ts's SIDE_QUEST_STARTERS) — which also matters for the ground
+// mounts, unlocked by completed side quests (data/mounts.ts).
+//
+// 1) One "aprendiz" per class's starting village, tending that village's
+//    communal roça — generated from a small per-class table, the same way the
+//    elder/mentor pair above is generated from data/classZones.ts. Placed in
+//    the village square itself (south-west of its center, clear of the
+//    lamps/well/banners generateVillageMap dresses it with): a brand-new
+//    character meets them minutes after spawning.
+interface ApprenticeSpec {
+  name: string;
+  appearance: Partial<CharacterAppearance>;
+  dialogue: string[];
+  briefing: string[];
+  thanks: string[];
+}
+
+const ROCA_APPRENTICES: Record<string, ApprenticeSpec> = {
+  warrior: {
+    name: 'Aprendiz Tibério',
+    appearance: { hairStyle: 'curto', hairColor: 0x2e2620, bodyType: 'robusto', primaryColor: 0xb33a3a },
+    dialogue: [
+      '(Um rapaz de mãos grossas confere um canteiro roído até o talo.) Quartel sem horta come farinha até a colheita. E eu sou o que cuida da horta.',
+      'O Ancião Rurik diz que todo guerreiro começa cavando. Eu achei que era jeito de falar.',
+    ],
+    briefing: [
+      'Saúvas. Mas não as nossas — essas estão secas por dentro, feito casca. Cortam a folha e levam pra baixo da terra, como quem dá de comer a alguém lá embaixo.',
+      'Derrube umas cinco no campo em volta da vila. Se a horta aguentar até a chuva, o quartel não passa fome este ano.',
+    ],
+    thanks: ['A horta brotou de novo do lado de lá da cerca. Pouco, mas brotou. Leve isso — tropeiro que passou aqui deixou de pagamento, e você merece mais que eu.'],
+  },
+  mage: {
+    name: 'Aprendiz Lúcia',
+    appearance: { gender: 'feminino', hairStyle: 'medio', hairColor: 0x1c1712, bodyType: 'esbelto', primaryColor: 0x3a5fb3 },
+    dialogue: [
+      '(Uma moça de vestes azuis, com terra até os cotovelos, anota alguma coisa num caderno sujo.) Sálvia-azul. É a única erva que acalma o poço de mana da vila.',
+      'A Arquimaga Selene acha que estudo é só livro. O livro não brota se ninguém plantar a erva.',
+    ],
+    briefing: [
+      'As saúvas ressequidas estão cortando a sálvia-azul e levando pra debaixo da terra. Formiga que não come o que corta — só carrega. Pra quem?',
+      'Cinco delas, no campo em volta da vila. Eu cuido do canteiro; você cuida das formigas.',
+    ],
+    thanks: ['A sálvia-azul voltou a soltar folha. O poço de mana dormiu quieto ontem pela primeira vez em semanas. Fique com isso — é pouco, mas é o que a vila tem.'],
+  },
+  archer: {
+    name: 'Aprendiz Caio',
+    appearance: { hairStyle: 'topete', hairColor: 0x4a2f20, bodyType: 'atletico', primaryColor: 0x3fae5b },
+    dialogue: [
+      '(Um garoto de arco nas costas replanta mudas uma a uma.) Cada árvore que a Sede derruba, a Folhagem planta duas. É a regra mais velha da vila.',
+      'O Mestre Ilan diz que quem planta aprende a esperar. Eu só aprendi a ficar com as costas doendo.',
+    ],
+    briefing: [
+      'As saúvas ressequidas cortaram metade das mudas novas numa noite só. Não comem nada — carregam tudo pra baixo da terra.',
+      'Cinco delas, no campo em volta da vila. Mira no corpo, que a cabeça é pequena demais até pra mim.',
+    ],
+    thanks: ['As mudas que sobraram já estão de pé de novo. Quando virarem árvore, vou dizer que foi você que segurou o mato. Toma — pra estrada.'],
+  },
+  cleric: {
+    name: 'Aprendiz Benedita',
+    appearance: { gender: 'feminino', hairStyle: 'coque', hairColor: 0x2e2620, skinTone: 0x74492f, bodyType: 'robusto', primaryColor: 0xe0c34a },
+    dialogue: [
+      '(Uma moça de lenço amarelo amarra bambu novo numa cerca.) Plantamos este bambuzal para a festa da colheita. Se não tiver colheita, ao menos que tenha festa.',
+      'A Irmã Yara diz que cuidar da terra também é rezar. Eu rezo de enxada na mão.',
+    ],
+    briefing: [
+      'O bambuzal novo está sendo roído até a raiz — saúvas ressequidas, que cortam e levam pra baixo da terra como oferenda pra alguém que não é a Aurora.',
+      'Cinco delas, no campo em volta da vila. Eu rezo por você enquanto isso — de enxada na mão, claro.',
+    ],
+    thanks: ['O bambuzal aguentou. Vai ter festa — pequena, mas vai. Leve isso, e volte pra dançar quando a colheita vier.'],
+  },
+  paladin: {
+    name: 'Aprendiz Otávio',
+    appearance: { hairStyle: 'curto', hairColor: 0xd9b464, bodyType: 'atletico', primaryColor: 0xcfd6dc },
+    dialogue: [
+      '(Um rapaz de túnica branca troca as flores de um canteiro, todas murchas.) Cada flor deste canteiro vai pro memorial dos escudos. Uma por nome.',
+      'O Ancião Berthold diz que um juramento começa nas coisas pequenas. Flor é coisa pequena.',
+    ],
+    briefing: [
+      'As flores do memorial não duram mais uma noite. Saúvas ressequidas cortam tudo e levam pra debaixo da terra.',
+      'Cinco delas, no campo em volta da vila. Os nomes do memorial merecem flor fresca — todos eles.',
+    ],
+    thanks: ['O memorial amanheceu florido hoje. Pela primeira vez desde a seca, nenhum nome ficou sem flor. Tome — é o que a vila pode dar.'],
+  },
+  assassin: {
+    name: 'Aprendiz Rosa',
+    appearance: { gender: 'feminino', hairStyle: 'rabocavalo', hairColor: 0x1c1712, bodyType: 'esbelto', headAccessory: 'capuz', primaryColor: 0x2a2a35 },
+    dialogue: [
+      '(Uma moça de capuz fala sem levantar os olhos do canteiro.) Erva-de-sombra. Cresce onde nada cresce, e a vila usa pra tudo — de chá a veneno.',
+      'A Mestra Nyx diz que silêncio se treina. Eu treino com a enxada: ela não faz barulho se você souber bater.',
+    ],
+    briefing: [
+      'Até a erva-de-sombra está sumindo. Saúvas ressequidas — cortam, carregam pra baixo da terra e não deixam rastro.',
+      'Cinco delas, no campo em volta da vila. Sem ser vista, de preferência. Elas também não fazem barulho.',
+    ],
+    thanks: ['A erva-de-sombra voltou a crescer no canto do canteiro. Ninguém viu você fazendo nada — do jeito que a Mestra gosta. Toma.'],
+  },
+  necromancer: {
+    name: 'Aprendiz Joana',
+    appearance: { gender: 'feminino', hairStyle: 'longo', hairColor: 0x2f1f3a, bodyType: 'magro', primaryColor: 0x2f1f3a },
+    dialogue: [
+      '(Uma moça pálida cuida de uma horta plantada, sem cerimônia, entre as covas.) Terra de cemitério é a mais funda que tem. Dá a melhor batata da vila.',
+      'O Ancião Morwen diz que quem lida com os mortos tem que lidar primeiro com a terra deles.',
+    ],
+    briefing: [
+      'As saúvas ressequidas cavam justamente entre as covas, onde a terra é mais funda. Cortam a horta e levam pra baixo — e eu não sei até onde vão.',
+      'Cinco delas, no campo em volta da vila. Os mortos daqui já têm sede demais sem formiga cavando o caminho até eles.',
+    ],
+    thanks: ['As covas estão quietas, e a horta também. (Ela sorri, sem jeito.) Coisa rara, as duas ao mesmo tempo. Fica com isso.'],
+  },
+  monk: {
+    name: 'Aprendiz Mei',
+    appearance: { gender: 'feminino', hairStyle: 'coque', hairColor: 0x1c1712, bodyType: 'atletico', primaryColor: 0xd97a2e },
+    dialogue: [
+      '(Uma noviça de faixa laranja rega um canteiro de chá com uma cabaça.) Os noviços bebem este chá antes do primeiro golpe da manhã. É o único silêncio que o pátio tem.',
+      'O Mestre Feng diz que disciplina é fazer a mesma coisa todo dia. Regar é disciplina.',
+    ],
+    briefing: [
+      'O chá não brota mais. Saúvas ressequidas cortam cada folha e levam pra debaixo da terra, num ritmo tão certo que parece treino.',
+      'Cinco delas, no campo em volta da vila. Punho limpo, mente limpa — o Mestre diria isso. Eu só digo: rápido, antes que levem o resto.',
+    ],
+    thanks: ['O chá voltou a brotar, e o pátio voltou a ter silêncio de manhã. Obrigada. Leve isso — o Mestre não vai sentir falta.'],
+  },
+};
+
+/** NPC id of a class's roça apprentice — the giver of `${classId}_s1_formigueiro` (see data/quests.ts's buildRocaSideQuests). */
+export function rocaApprenticeNpcId(classId: string): string {
+  return `${classId}_aprendiz_roca`;
+}
+
+for (const theme of CLASS_ZONE_THEMES) {
+  const spec = ROCA_APPRENTICES[theme.classId];
+  if (!spec) throw new Error(`Sem aprendiz de roça definido para a classe: ${theme.classId}`);
+  const questId = `${theme.classId}_s1_formigueiro`;
+  NPC_DEFINITIONS.push({
+    id: rocaApprenticeNpcId(theme.classId),
+    name: spec.name,
+    role: `Cuida da roça de ${theme.startVillageName}`,
+    // An apprentice of this village's own calling — the same class loadout as its elder.
+    classAnalogId: theme.classId,
+    zoneId: theme.startVillageId,
+    mapX: startBounds.cx - 4,
+    mapY: startBounds.cy + 3,
+    appearance: npcAppearance({ secondaryColor: 0x8a6a3f, ...spec.appearance }),
+    dialogue: spec.dialogue,
+    questDialogue: [
+      { questId, lines: spec.briefing },
+      { questId, when: 'completed', lines: spec.thanks },
+    ],
+  });
+}
+
+// 2) Pedravale: a tropeiro on the west road toward the Ancoradouro do Vau,
+//    an old fisherman on the north shore of the Verdegal's shrinking pond,
+//    and a bounty-board recruiter in the Praça do Mercado. Tiles checked by
+//    MapGenerator.test.ts (walkable, off every building, reachable, spread
+//    out) and by data/contentExpansion.test.ts.
+NPC_DEFINITIONS.push(
+  {
+    id: 'tropeiro_amaro',
+    name: 'Tropeiro Amaro',
+    role: 'Tropeiro do Verdegal',
+    // A muleteer who walks every road in Ipêra — the travel-worn archer rig.
+    classAnalogId: 'archer',
+    zoneId: MAIN_CITY_ID,
+    // Out in the Verdegal, beside the west road to the Ancoradouro do Vau.
+    mapX: 12,
+    mapY: 54,
+    appearance: npcAppearance({
+      hairStyle: 'entradas',
+      hairColor: 0x4a2f20,
+      facialHair: 'bigode',
+      skinTone: 0xb8875a,
+      primaryColor: 0x8a6a3f,
+      secondaryColor: 0xe0c34a,
+      bodyType: 'robusto',
+      headAccessory: 'chapeu',
+    }),
+    dialogue: [
+      'Tropa de doze mulas: de Pedravale ao Vau, do Vau à serra. Hoje tenho três — e nenhuma estrada que valha o casco delas.',
+      'Tropeiro não tem casa, tem caminho. Quando o caminho seca, a gente seca junto.',
+    ],
+    questDialogue: [
+      {
+        questId: 'tropeiro_r2_racao',
+        lines: [
+          'Voltaram todas — magras, assustadas, mas inteiras. Agora precisam de ração, e o capim daqui não sustenta nem cabrito.',
+          'A Curandeira Mira, lá na Rua dos Ofícios, sabe misturar ração que segura bicho na estrada. Leve meu recado a ela.',
+        ],
+      },
+      {
+        questId: 'tropeiro_r1_tropa_dispersa',
+        lines: [
+          'Capivaras do brejo seco — bicho manso a vida inteira — avançaram na tropa ontem, no rumo do Vau. As mulas desembestaram pelo Verdegal.',
+          'Derrube umas cinco dessas capivaras e as mulas voltam sozinhas: elas conhecem o meu berrante melhor que o meu nome. Rondam por aqui, pelo Forte de Ferro e pelo Mosteiro da Serra.',
+        ],
+      },
+      {
+        questId: 'tropeiro_r2_racao',
+        when: 'completed',
+        lines: [
+          'A tropa anda de novo. Fique com o berrante — eu tenho outro, e você vai precisar mais que eu de chamar alguma coisa de volta.',
+          'Se um dia tiver montaria, lembre: bicho bem tratado leva a gente até onde a estrada acaba. E um pouco além.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'pescador_tiao',
+    name: 'Pescador Tião',
+    role: 'Pescador da Lagoa do Verdegal',
+    // An old fisherman with nothing but a pole and patience — the unarmed monk rig, same civilian choice as Lavadeira Zefa.
+    classAnalogId: 'monk',
+    zoneId: MAIN_CITY_ID,
+    // On the pond's north shore, facing the water (and the fixed north-side camera).
+    mapX: 58,
+    mapY: 9,
+    appearance: npcAppearance({
+      hairStyle: 'careca',
+      facialHair: 'completa',
+      hairColor: 0xcfd6dc,
+      skinTone: 0x93643f,
+      primaryColor: 0x2ea89a,
+      secondaryColor: 0xe8e0d0,
+      bodyType: 'magro',
+      headAccessory: 'chapeu',
+    }),
+    dialogue: [
+      'A lagoa encolhe um palmo por semana. Pescava traíra aqui; hoje pesco lembrança.',
+      'Meu pai dizia que água parada também tem raiz. Acho que é verdade — e acho que alguém está puxando ela por baixo.',
+    ],
+    questDialogue: [
+      {
+        questId: 'tiao_r1_lagoa',
+        lines: [
+          'De noite a lagoa se enche de luz — não de lua: de vagalumes de brasa. Pousam na água, e a água ferve e some.',
+          'Apague uns cinco desses bichos. Rondam o Verdegal, a Torre dos Arcanos e o Posto da Trilha Verde. Se a lagoa durar até a chuva, faço um colar das escamas do primeiro peixe pra você.',
+        ],
+      },
+      {
+        questId: 'tiao_r1_lagoa',
+        when: 'completed',
+        lines: ['Ontem tirei uma traíra do tamanho do meu braço. Magra, mas viva. O colar é seu — prometido é devido.'],
+      },
+    ],
+  },
+  {
+    id: 'recrutadora_celeste',
+    name: 'Recrutadora Celeste',
+    role: 'Mural de Contratos de Pedravale',
+    // Keeps the bounty board and checks every hunter's work — a lean archer-scout rig.
+    classAnalogId: 'archer',
+    zoneId: MAIN_CITY_ID,
+    // In the south half of the Praça do Mercado, between the stalls and the fountain.
+    mapX: 21,
+    mapY: 29,
+    appearance: npcAppearance({
+      gender: 'feminino',
+      hairStyle: 'rabocavalo',
+      hairColor: 0x8a3a2a,
+      skinTone: 0xd2a679,
+      primaryColor: 0x5a626b,
+      secondaryColor: 0xb33a3a,
+      bodyType: 'atletico',
+      scarStyle: 'bochecha',
+    }),
+    dialogue: [
+      'Mural de contratos de Pedravale: caça paga por cabeça, sem pergunta sobre de onde veio quem caça.',
+      'Ainda não tenho serviço pra quem acabou de chegar. Treine um pouco — o Ancião Tobias sabe quando alguém está pronto. Depois volte aqui.',
+    ],
+    questDialogue: [
+      {
+        questId: 'contrato_cipo',
+        lines: [
+          'Último contrato da semana, e o mais estranho: guardiões de cipó fechando as trilhas do Santuário da Aurora, do Mosteiro da Serra e da Cripta Esquecida. Não atacam quem passa longe — só quem chega perto das mudas.',
+          'Não é maldade, é zelo virado do avesso. Mesmo assim, trilha fechada mata gente de fome. Cinco deles.',
+        ],
+      },
+      {
+        questId: 'contrato_lobo_guara',
+        lines: [
+          'Lobo-guará não anda em bando. Nunca andou. Agora tem quatro rondando o Posto da Trilha Verde e o Refúgio Silencioso, juntos, de rabo queimado.',
+          'Traga o fim desses quatro e o mural paga em poção, que ouro não fecha ferida.',
+        ],
+      },
+      {
+        questId: 'contrato_espantalhos',
+        lines: [
+          'Espantalhos andando nas roças — e espantando gente, não passarinho. Dizem que tem palha de ipê dentro, e uma Raiz faminta no meio da palha.',
+          'Cinco deles. Aparecem pelo Verdegal, mas a Torre dos Arcanos, o Bastião da Fé e o Refúgio Silencioso também mandaram aviso.',
+        ],
+      },
+      {
+        questId: 'contrato_cipo',
+        when: 'completed',
+        lines: ['Três contratos, três trilhas abertas. Pedravale come melhor esta semana por sua causa — e o mural já tem o seu nome escrito no alto.'],
+      },
+    ],
+  },
+);
+
+// 3) Santuário da Aurora (cleric_secondary): a rezadeira whose novena the
+//    mourner ancestors keep drowning out — a mid-game (post-q6_dragon) errand,
+//    standing in the square south-west of its center, like the aprendizes.
+NPC_DEFINITIONS.push({
+  id: 'rezadeira_socorro',
+  name: 'Rezadeira Socorro',
+  role: 'Rezadeira do Santuário da Aurora',
+  classAnalogId: 'cleric',
+  zoneId: 'cleric_secondary',
+  mapX: secondaryBounds.cx - 4,
+  mapY: secondaryBounds.cy + 3,
+  appearance: npcAppearance({
+    gender: 'feminino',
+    hairStyle: 'coque',
+    hairColor: 0xe8e4dc,
+    skinTone: 0x93643f,
+    primaryColor: 0xf2ede1,
+    secondaryColor: 0xe0c34a,
+    bodyType: 'robusto',
+    headAccessory: 'bandana',
+  }),
+  dialogue: [
+    'Rezo novena há quarenta anos. Nunca uma reza minha voltou sem resposta — até este ano.',
+    'Dizem que só a Aurora escuta aqui. Eu digo que escuta quem estiver perto o bastante.',
+  ],
+  questDialogue: [
+    {
+      questId: 'socorro_r1_novena',
+      lines: [
+        'Carpideiras. Vieram junto com os enterros que ninguém mais consegue fazer direito — gente que a Sede levou sem deixar corpo pra chorar.',
+        'Elas choram por cima da minha novena, e a novena se perde no choro. Cale seis delas, aqui em volta do Santuário, e eu termino a reza que comecei antes da seca.',
+      ],
+    },
+    {
+      questId: 'socorro_r1_novena',
+      when: 'completed',
+      lines: ['Terminei a novena. Na última conta do rosário senti a terra respirar — pouco, mas respirou. Fique com ele: reza boa não se guarda na gaveta.'],
+    },
+  ],
+});
 
 export function getNpcById(id: string): NpcDefinition {
   const found = NPC_DEFINITIONS.find((n) => n.id === id);

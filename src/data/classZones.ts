@@ -46,8 +46,8 @@ export const CLASS_ZONE_THEMES: ClassZoneTheme[] = [
       'Chegou longe para um recruta. O Forte forja quem sobrevive à Pedra Vermelha.',
       'Quando estiver pronto, a estrada ao sul leva a Pedravale — lá o Ancião Tobias tem respostas que nem eu tenho.',
     ],
-    startMonsters: ['slime', 'bat'],
-    secondaryMonsters: ['goblin', 'bandit', 'dark_wolf'],
+    startMonsters: ['slime', 'bat', 'sauva_ressequida'],
+    secondaryMonsters: ['goblin', 'bandit', 'dark_wolf', 'capivara_ressequida'],
   },
   {
     classId: 'mage',
@@ -68,8 +68,8 @@ export const CLASS_ZONE_THEMES: ClassZoneTheme[] = [
       'A Torre sente talento à distância. O seu já acende as pedras arcanas do saguão.',
       'Pedravale fica a sul. O Ancião Tobias vai querer saber de um Escolhido Verde capaz de manejar magia.',
     ],
-    startMonsters: ['slime', 'bat'],
-    secondaryMonsters: ['goblin', 'giant_spider', 'skeleton'],
+    startMonsters: ['slime', 'bat', 'sauva_ressequida'],
+    secondaryMonsters: ['goblin', 'giant_spider', 'skeleton', 'vagalume_brasa', 'espantalho_seca'],
   },
   {
     classId: 'archer',
@@ -90,8 +90,8 @@ export const CLASS_ZONE_THEMES: ClassZoneTheme[] = [
       'Poucos atiradores chegam ao Posto com a mira que você já tem.',
       'A trilha ao sul leva a Pedravale. Tobias vai gostar de ouvir sobre você.',
     ],
-    startMonsters: ['slime', 'bat'],
-    secondaryMonsters: ['goblin', 'bandit', 'giant_spider'],
+    startMonsters: ['slime', 'bat', 'sauva_ressequida'],
+    secondaryMonsters: ['goblin', 'bandit', 'giant_spider', 'vagalume_brasa', 'lobo_guara_sombrio'],
   },
   {
     classId: 'cleric',
@@ -112,8 +112,8 @@ export const CLASS_ZONE_THEMES: ClassZoneTheme[] = [
       'A Aurora reconhece um dom raro em você.',
       'Pedravale precisa de curandeiros como você. Tobias a sul vai querer conversar.',
     ],
-    startMonsters: ['slime', 'bat'],
-    secondaryMonsters: ['skeleton', 'goblin', 'giant_spider'],
+    startMonsters: ['slime', 'bat', 'sauva_ressequida'],
+    secondaryMonsters: ['skeleton', 'goblin', 'giant_spider', 'guardiao_cipo', 'carpideira_sedenta'],
   },
   {
     classId: 'paladin',
@@ -134,8 +134,8 @@ export const CLASS_ZONE_THEMES: ClassZoneTheme[] = [
       'O Bastião já ouviu falar do seu juramento na Vila do Escudo Branco.',
       'Siga a sul até Pedravale. Tobias tem um fardo que talvez você ajude a carregar.',
     ],
-    startMonsters: ['slime', 'bat'],
-    secondaryMonsters: ['orc', 'skeleton', 'dark_wolf'],
+    startMonsters: ['slime', 'bat', 'sauva_ressequida'],
+    secondaryMonsters: ['orc', 'skeleton', 'dark_wolf', 'espantalho_seca', 'carpideira_sedenta'],
   },
   {
     classId: 'assassin',
@@ -156,8 +156,8 @@ export const CLASS_ZONE_THEMES: ClassZoneTheme[] = [
       'Poucos chegam ao Refúgio sem serem notados. Você chegou.',
       'A sul fica Pedravale. Tobias não vai perguntar como você chegou tão rápido — melhor assim.',
     ],
-    startMonsters: ['slime', 'bat'],
-    secondaryMonsters: ['bandit', 'giant_spider', 'dark_wolf'],
+    startMonsters: ['slime', 'bat', 'sauva_ressequida'],
+    secondaryMonsters: ['bandit', 'giant_spider', 'dark_wolf', 'lobo_guara_sombrio', 'espantalho_seca'],
   },
   {
     classId: 'necromancer',
@@ -178,8 +178,8 @@ export const CLASS_ZONE_THEMES: ClassZoneTheme[] = [
       'A Cripta sussurra seu nome desde que você chegou à Vila dos Ossos.',
       'Pedravale é a sul. Tobias esconde mais sobre a Sede do que admite — cuidado.',
     ],
-    startMonsters: ['slime', 'bat'],
-    secondaryMonsters: ['skeleton', 'dark_wolf', 'goblin'],
+    startMonsters: ['slime', 'bat', 'sauva_ressequida'],
+    secondaryMonsters: ['skeleton', 'dark_wolf', 'goblin', 'carpideira_sedenta', 'guardiao_cipo'],
   },
   {
     classId: 'monk',
@@ -200,8 +200,8 @@ export const CLASS_ZONE_THEMES: ClassZoneTheme[] = [
       'O Mosteiro sente disciplina real quando ela chega. A sua chegou.',
       'A estrada ao sul leva a Pedravale. Tobias precisa de gente como você, com a cabeça no lugar.',
     ],
-    startMonsters: ['slime', 'bat'],
-    secondaryMonsters: ['orc', 'goblin', 'giant_spider'],
+    startMonsters: ['slime', 'bat', 'sauva_ressequida'],
+    secondaryMonsters: ['orc', 'goblin', 'giant_spider', 'capivara_ressequida', 'guardiao_cipo'],
   },
 ];
 

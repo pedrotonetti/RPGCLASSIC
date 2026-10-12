@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TILE_SIZE } from '../config/gameConfig';
 import type { TileType } from '../config/tiles';
+import { getItemById } from '../data/items';
 import type { NpcDefinition } from '../data/npcs';
 import { createItinerantMerchantNpc, getWorldEventById, type WorldEventDefinition } from '../data/worldEvents';
 import { monsterFreeAreas, type ZoneDefinition } from '../data/zones';
@@ -159,9 +160,10 @@ export class OverworldEvents {
   interactableNear(avatar: THREE.Vector3, range: number): EventInteractable | null {
     if (!this.tree || this.treePurified || !this.realized) return null;
     if (this.tree.group.position.distanceTo(avatar) > range) return null;
+    const prompt = getWorldEventById(this.realized.defId)?.interactPrompt;
     return {
-      keyPrompt: '[E] Purificar a Árvore Corrompida',
-      touchPrompt: 'Toque para purificar a Árvore Corrompida',
+      keyPrompt: prompt?.key ?? '[E] Purificar a Árvore Corrompida',
+      touchPrompt: prompt?.touch ?? 'Toque para purificar a Árvore Corrompida',
       activate: () => this.purifyTree(),
     };
   }
@@ -220,6 +222,7 @@ export class OverworldEvents {
     if (!done) return;
     const parts = [`+${done.xp} XP`];
     if (done.gold > 0) parts.push(`+${done.gold} ouro`);
+    for (const stack of done.def.reward?.grantItems ?? []) parts.push(`+${stack.qty} ${getItemById(stack.itemId).name}`);
     const levelUp = done.levelsGained > 0 ? ' Você subiu de nível!' : '';
     this.hud.showToast(`${done.def.successMessage ?? done.def.name}: ${parts.join(', ')}.${levelUp}`, 6);
     if (done.levelsGained > 0) audio.levelUp();
@@ -235,7 +238,8 @@ export class OverworldEvents {
     if (def.kind === 'invasao' && event.tile) {
       const [min, max] = def.enemyCount ?? [3, 3];
       const count = min + Math.floor(Math.random() * (max - min + 1));
-      const pickId = () => (zone.monsterIds ? zone.monsterIds[Math.floor(Math.random() * zone.monsterIds.length)] : pickEncounterEnemyIds(player.level)[0]);
+      const pool = def.enemyIds ?? zone.monsterIds;
+      const pickId = () => (pool ? pool[Math.floor(Math.random() * pool.length)] : pickEncounterEnemyIds(player.level)[0]);
       const lead = pickId();
       const ids = Array.from({ length: count }, (_, i) => (i === count - 1 && count > 2 ? pickId() : lead));
       this.bandGroupId = `evento:${def.id}`;
