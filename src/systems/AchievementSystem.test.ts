@@ -29,6 +29,9 @@ import {
   recordEnemyEngaged,
   recordItemAcquired,
   recordItemCrafted,
+  recordItemEnchanted,
+  recordItemsSalvaged,
+  recordItemUpgraded,
   recordLoreDiscovered,
   recordNpcTalkedTo,
   recordPlayerDefeated,
@@ -271,9 +274,20 @@ describe('defeat, NPCs, materials and crafting', () => {
 
   it('only a Raro-or-better craft unlocks "Mãos de Artesão"', () => {
     const player = freshPlayer();
-    expect(recordItemCrafted(player, 'verde')).toEqual([]);
+    expect(ids(recordItemCrafted(player, 'verde'))).toEqual(['primeira_receita']);
     expect(getAchievementCounter(player.achievements, 'itemsCrafted')).toBe(1);
     expect(ids(recordItemCrafted(player, 'azul'))).toEqual(['maos_de_artesao']);
+  });
+
+  it('counts enchants, upgrades and salvaged items for the workshop achievements', () => {
+    const player = freshPlayer();
+    expect(ids(recordItemEnchanted(player))).toEqual(['primeiro_encanto']);
+    expect(recordItemUpgraded(player)).toEqual([]);
+    expect(getAchievementCounter(player.achievements, 'itemsUpgraded')).toBe(1);
+    expect(recordItemsSalvaged(player, 19)).toEqual([]);
+    expect(recordItemsSalvaged(player, 0)).toEqual([]);
+    expect(ids(recordItemsSalvaged(player, 1))).toEqual(['desmanche']);
+    expect(getAchievementCounter(player.achievements, 'itemsSalvaged')).toBe(20);
   });
 });
 

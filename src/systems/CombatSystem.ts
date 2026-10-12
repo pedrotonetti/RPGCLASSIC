@@ -1,6 +1,6 @@
 import { ENEMY_BALANCE } from '../config/balance';
 import { generateLoot } from '../data/equipment';
-import { MATERIAL_DEFINITIONS, MATERIAL_DROP_CHANCE } from '../data/materials';
+import { MATERIAL_DROP_CHANCE, MONSTER_MATERIALS } from '../data/materials';
 import type { DamageElement, EquipmentInstance, SkillDefinition, SkillTarget, StatusEffectType, StatusInflict, Stats } from '../config/types';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
@@ -1086,7 +1086,7 @@ export class CombatEngine {
         if (this.player.addLoot(item)) loot.push(item);
       }
       if (Math.random() < materialDropChance(enemy.def.level)) {
-        const material = MATERIAL_DEFINITIONS[Math.floor(Math.random() * MATERIAL_DEFINITIONS.length)];
+        const material = MONSTER_MATERIALS[Math.floor(Math.random() * MONSTER_MATERIALS.length)];
         materialsGained[material.id] = (materialsGained[material.id] ?? 0) + 1;
         this.player.addItem(material.id, 1);
       }

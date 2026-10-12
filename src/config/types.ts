@@ -177,6 +177,12 @@ export interface EquipmentInstance {
   affixes?: ItemAffix[];
   /** Gem id socketed into this item, if any — adds its stat bonus and tints the item with a glow. */
   socketedGemId?: string;
+  /** Encantamentos já feitos neste item — cada um encarece o próximo (systems/EnchantSystem.ts). Ausente = 0. */
+  enchantCount?: number;
+  /** Índice em `affixes` do único afixo que pode ser reencantado — fixado no primeiro encantamento, os demais ficam travados. */
+  enchantedAffixIndex?: number;
+  /** Aprimoramentos (+1 de nível do item cada) já aplicados na bancada. Ausente = 0. */
+  upgradeLevel?: number;
 }
 
 export interface ItemDefinition {

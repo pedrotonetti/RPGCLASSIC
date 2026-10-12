@@ -11,8 +11,17 @@ import { Player } from '../entities/Player';
 import { buildPlayerCharacter } from '../render/characterModel';
 import { describeItem } from '../systems/ItemPassives';
 import { computePowerScore } from '../systems/PowerScore';
+import { recordItemsSalvaged } from '../systems/AchievementSystem';
+import { bulkSalvageCandidates, mergeYields, salvageFromBag, salvageNeedsConfirm, salvageYield } from '../systems/SalvageSystem';
 import { saveGame } from '../systems/SaveSystem';
+import type { MaterialStack } from '../data/recipes';
+import { confirmDialog } from '../ui/dialogs';
 import { el, goToLazy } from '../ui/dom';
+
+/** "3x Minério de Ferro, 1x Essência Sedenta" */
+function describeYield(stacks: MaterialStack[]): string {
+  return stacks.map((s) => `${s.qty}x ${getMaterialById(s.materialId).name}`).join(', ');
+}
 
 /** Resolves a player.inventory key (potion, gem, or material id) to a display name and optional swatch color. */
 function inventoryEntryInfo(id: string): { name: string; color?: number } {
@@ -173,6 +182,8 @@ export class InventoryScreen implements Screen {
   private bagEl!: HTMLElement;
   private suppliesEl!: HTMLElement;
   private powerScoreEl!: HTMLElement;
+  private salvageBarEl!: HTMLElement;
+  private salvageNotice: string | null = null;
 
   constructor(
     private game: Game,
@@ -214,6 +225,7 @@ export class InventoryScreen implements Screen {
     this.slotsEl = el('div', { className: 'equip-slots' });
     this.bagEl = el('div', { className: 'bag-list' });
     this.suppliesEl = el('div', { className: 'bag-list' });
+    this.salvageBarEl = el('div', { className: 'salvage-bar' });
 
     const backBtn = el('div', {
       className: 'btn primary',
@@ -234,6 +246,7 @@ export class InventoryScreen implements Screen {
         el('h3', { text: 'Equipado' }),
         this.slotsEl,
         el('h3', { text: 'Mochila' }),
+        this.salvageBarEl,
         this.bagEl,
         el('h3', { text: 'Poções, Gemas e Materiais' }),
         this.suppliesEl,
@@ -359,23 +372,76 @@ export class InventoryScreen implements Screen {
           this.comparisonBadge(instance),
         ]),
       ]),
-      el('div', {
-        className: 'btn small bag-card-equip',
-        text: 'Equipar',
-        onClick: () => {
-          this.player.equipFromBag(instance.uid);
-          saveGame(this.player);
-          this.rebuildShowcase();
-          this.render();
-        },
-      }),
+      el('div', { className: 'row bag-card-actions' }, [
+        el('div', {
+          className: 'btn small',
+          text: 'Desmontar',
+          attrs: { title: `Rende ${describeYield(salvageYield(instance))}` },
+          onClick: () => void this.salvage(instance),
+        }),
+        el('div', {
+          className: 'btn small bag-card-equip',
+          text: 'Equipar',
+          onClick: () => {
+            this.player.equipFromBag(instance.uid);
+            saveGame(this.player);
+            this.rebuildShowcase();
+            this.render();
+          },
+        }),
+      ]),
     ]);
     applyRarityBorder(card, instance.rarity);
     return card;
   }
 
+  /** Breaks a bag item into materials — Raro-or-better (or anything worked on at a bench) asks first. */
+  private async salvage(instance: EquipmentInstance): Promise<void> {
+    const yields = salvageYield(instance);
+    if (salvageNeedsConfirm(instance)) {
+      const ok = await confirmDialog(this.game.uiRoot, {
+        title: 'Desmontar item?',
+        message: `${itemDisplayName(instance)} (${RARITY_LABEL[instance.rarity]}) será destruído e renderá ${describeYield(yields)}.${instance.socketedGemId ? ' A gema encaixada volta para você.' : ''}`,
+        confirmLabel: 'Desmontar',
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    const result = salvageFromBag(this.player, instance.uid);
+    if (!result.ok) return;
+    recordItemsSalvaged(this.player, 1);
+    this.salvageNotice = `Desmontado: ${itemDisplayName(instance)} → ${describeYield(result.yields)}${result.gemReturned ? ' + gema devolvida' : ''}.`;
+    saveGame(this.player);
+    this.render();
+  }
+
+  private salvageAllCommons(): void {
+    const uids = bulkSalvageCandidates(this.player.bag);
+    const yields: MaterialStack[][] = [];
+    for (const uid of uids) {
+      const result = salvageFromBag(this.player, uid);
+      if (result.ok) yields.push(result.yields);
+    }
+    if (yields.length === 0) return;
+    recordItemsSalvaged(this.player, yields.length);
+    this.salvageNotice = `${yields.length} item(ns) Comum(ns) desmontado(s) → ${describeYield(mergeYields(yields))}.`;
+    saveGame(this.player);
+    this.render();
+  }
+
+  private renderSalvageBar(): void {
+    const commons = bulkSalvageCandidates(this.player.bag).length;
+    this.salvageBarEl.replaceChildren(
+      ...[
+        commons > 0 ? el('div', { className: 'btn small', text: `Desmontar todos os Comuns (${commons})`, onClick: () => this.salvageAllCommons() }) : null,
+        this.salvageNotice ? el('div', { className: 'workshop-notice', text: this.salvageNotice }) : null,
+      ].filter((n): n is HTMLDivElement => n !== null),
+    );
+  }
+
   private render(): void {
     this.powerScoreEl.textContent = `Power Score: ${computePowerScore(this.player).toLocaleString('pt-BR')}`;
+    this.renderSalvageBar();
 
     this.slotsEl.replaceChildren(...SLOT_ORDER.map((slot) => this.equipSlotCard(slot)));
 

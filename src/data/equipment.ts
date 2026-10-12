@@ -40,10 +40,12 @@ export function getEquipmentTemplate(id: string): EquipmentTemplate {
 /** Name shown to the player: uniques and set pieces keep their own name, a regular item borrows the title of its lead affix ("Espada Curta de Brasa"). */
 export function itemDisplayName(instance: EquipmentInstance): string {
   const template = getEquipmentTemplate(instance.templateId);
-  if (template.passiveId || template.setId) return template.name;
+  const steps = Math.floor(Number(instance.upgradeLevel) || 0);
+  const upgrade = steps > 0 ? ` +${steps}` : '';
+  if (template.passiveId || template.setId) return `${template.name}${upgrade}`;
   const lead = instance.affixes?.[0];
   const title = lead ? getAffixDefinition(lead.id)?.title : undefined;
-  return title ? `${template.name} ${title}` : template.name;
+  return `${title ? `${template.name} ${title}` : template.name}${upgrade}`;
 }
 
 function affixCountFor(template: EquipmentTemplate, rarity: ItemRarity): number {
