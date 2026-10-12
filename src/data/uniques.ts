@@ -121,6 +121,27 @@ export const ITEM_PASSIVES: ItemPassive[] = [
     effects: [{ mods: { mpCost: 0.2 } }],
     triggers: [{ on: 'crit', restoreMpPct: 0.05, label: 'Fome da Raiz' }],
   },
+  // --- Expansão de conteúdo (side-quest rewards in data/quests.ts; they also drop like any unique) ---
+  {
+    id: 'agua_corrente',
+    name: 'Água Corrente',
+    description: 'Regenera 0,5 de mana por segundo. Ao derrotar um inimigo, recupera 6% da vida e 6% da mana máximas.',
+    effects: [{ mods: { mpRegen: 0.5 } }],
+    triggers: [{ on: 'kill', healHpPct: 0.06, restoreMpPct: 0.06, label: 'Água Corrente' }],
+  },
+  {
+    id: 'golpe_de_cantaria',
+    name: 'Golpe de Cantaria',
+    description: 'Causa 25% a mais de dano a inimigos abaixo de 35% de vida, e cada golpe tem 15% de chance de deixar o alvo lento.',
+    effects: [{ when: { targetHpBelow: 0.35 }, mods: { damageDealt: 0.25 } }, { mods: { slowChance: 0.15 } }],
+  },
+  {
+    id: 'lingua_sem_raiz',
+    name: 'Língua Sem Raiz',
+    description: 'Recebe 12% menos dano. Abaixo de 50% de vida, ganha 8% de chance crítica. Golpes críticos restauram 4% da vida máxima.',
+    effects: [{ mods: { damageReduction: 0.12 } }, { when: { hpBelow: 0.5 }, mods: { critChance: 0.08 } }],
+    triggers: [{ on: 'crit', healHpPct: 0.04, label: 'Língua Sem Raiz' }],
+  },
 ];
 
 export const UNIQUE_TEMPLATES: EquipmentTemplate[] = [
@@ -206,6 +227,37 @@ export const UNIQUE_TEMPLATES: EquipmentTemplate[] = [
     passiveId: 'fome_da_raiz',
     iconTemplateId: 'grimorio_amaldicoado',
   },
+  // --- Expansão de conteúdo ----------------------------------------------
+  {
+    id: 'patua_do_vau',
+    name: 'Patuá do Vau',
+    slot: 'acessorio',
+    description: 'Costurado com fibra do último junco verde do rio. Anda leve quem carrega um pouco d\'água consigo.',
+    statWeights: { maxHp: 4, maxMp: 4, magicDefense: 1 },
+    fixedRarity: 'vermelho',
+    passiveId: 'agua_corrente',
+    iconTemplateId: 'amuleto_vitalidade',
+  },
+  {
+    id: 'marreta_do_pedreiro',
+    name: 'Marreta do Pedreiro Tomé',
+    slot: 'arma',
+    description: 'Assentou pedra do Baluarte por quarenta anos. Sabe exatamente onde uma coisa racha.',
+    statWeights: { attack: 4, defense: 1, maxHp: 2 },
+    fixedRarity: 'vermelho',
+    passiveId: 'golpe_de_cantaria',
+    iconTemplateId: 'martelo_sagrado',
+  },
+  {
+    id: 'coracao_sem_patria',
+    name: 'Coração Sem Pátria',
+    slot: 'acessorio',
+    description: 'Um nó de raiz trazido pela maré. Bate num ritmo que nenhum ipê de Ipêra conhece.',
+    statWeights: { maxHp: 5, luck: 2, defense: 1 },
+    fixedRarity: 'laranja',
+    passiveId: 'lingua_sem_raiz',
+    iconTemplateId: 'anel_sorte',
+  },
 ];
 
 export const SET_TEMPLATES: EquipmentTemplate[] = [
@@ -254,6 +306,33 @@ export const SET_TEMPLATES: EquipmentTemplate[] = [
     setId: 'brasas_da_pedra_vermelha',
     iconTemplateId: 'armadura_placas',
   },
+  {
+    id: 'aguilhada_do_tropeiro',
+    name: 'Aguilhada do Tropeiro',
+    slot: 'arma',
+    description: 'Vara de ponta de ferro que tocou tropa por todas as serras de Ipêra.',
+    statWeights: { attack: 3, speed: 1, maxHp: 2 },
+    setId: 'lida_do_tropeiro',
+    iconTemplateId: 'cajado_arcano',
+  },
+  {
+    id: 'gibao_do_tropeiro',
+    name: 'Gibão do Tropeiro',
+    slot: 'armadura',
+    description: 'Couro curtido no sal da estrada. Cheira a poeira e a chuva que não veio.',
+    statWeights: { defense: 3, maxHp: 5 },
+    setId: 'lida_do_tropeiro',
+    iconTemplateId: 'armadura_couro',
+  },
+  {
+    id: 'berrante_do_tropeiro',
+    name: 'Berrante do Tropeiro',
+    slot: 'acessorio',
+    description: 'Um toque e a tropa inteira sabe para onde ir — até a que já se perdeu.',
+    statWeights: { maxHp: 4, speed: 2 },
+    setId: 'lida_do_tropeiro',
+    iconTemplateId: 'talisma_velocidade',
+  },
 ];
 
 export const SET_DEFINITIONS: SetDefinition[] = [
@@ -286,6 +365,26 @@ export const SET_DEFINITIONS: SetDefinition[] = [
         description: '+6 de Ataque e +4 de Defesa. Abaixo de 50% de vida, +20% de Ataque e Ataque Mágico.',
         stats: { attack: 6, defense: 4 },
         effects: [{ when: { hpBelow: 0.5 }, statMult: { attack: 0.2, magicAttack: 0.2 } }],
+      },
+    ],
+  },
+  {
+    // The Tropeiro Amaro's own trade (data/npcs.ts), crafted at the weaver's
+    // and artisan's benches (data/recipes.ts) — a sturdy, travel-minded set.
+    id: 'lida_do_tropeiro',
+    name: 'Lida do Tropeiro',
+    pieces: ['aguilhada_do_tropeiro', 'gibao_do_tropeiro', 'berrante_do_tropeiro'],
+    bonuses: [
+      {
+        pieces: 2,
+        description: '+20 de Vida máxima e +3 de Velocidade.',
+        stats: { maxHp: 20, speed: 3 },
+      },
+      {
+        pieces: 3,
+        description: '+10% de ouro encontrado, e derrotar um inimigo restaura 6% da vida máxima.',
+        effects: [{ mods: { goldFind: 0.1 } }],
+        triggers: [{ on: 'kill', healHpPct: 0.06, label: 'Fôlego da Estrada' }],
       },
     ],
   },

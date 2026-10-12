@@ -210,6 +210,14 @@ function buildClassVillageZones(): Record<string, ZoneDefinition> {
  *    in total than Pedravale's own 65), so pairs and packs of three — the
  *    fights config/balance.ts measured as genuinely dangerous — are routine
  *    here instead of occasional.
+ *
+ * Each pool later gained its own two regional creatures (see the
+ * "Expansão de conteúdo" block in data/enemies.ts): the Vau its stranded
+ * caimans (jacare_leito, tier 9) and mourner ancestors (carpideira_sedenta,
+ * tier 8); the Baluarte its salt colossi (colosso_sal, tier 12) and the
+ * foreign roots the tide brings in (raiz_sem_patria, tier 13) — the first
+ * regular enemies above tier 11, so the hub finally fields something
+ * calibrated past the old regular curve.
  */
 export type RegionalSettlementKind = 'satellite' | 'hub';
 
@@ -251,7 +259,7 @@ export const REGIONAL_SETTLEMENTS: RegionalSettlement[] = [
     // Dry river-clay ochre: the ford this hamlet was built on has all but
     // dried up under the Sede (see its NPCs in data/npcs.ts).
     accentColor: 0xb3925a,
-    monsterIds: ['skeleton', 'giant_spider', 'orc', 'fire_elemental'],
+    monsterIds: ['skeleton', 'giant_spider', 'orc', 'fire_elemental', 'jacare_leito', 'carpideira_sedenta'],
     monsterCount: 24,
   },
   {
@@ -269,7 +277,7 @@ export const REGIONAL_SETTLEMENTS: RegionalSettlement[] = [
     development: 'developed',
     // A cold rose dawn — muted to a dusty, ashen green on the ground.
     accentColor: 0xc98bb0,
-    monsterIds: ['fire_elemental', 'troll', 'stone_golem'],
+    monsterIds: ['fire_elemental', 'troll', 'stone_golem', 'colosso_sal', 'raiz_sem_patria'],
     monsterCount: 60,
     // The densest, toughest field: bands are the norm here, solos the exception.
     packWeights: [0.15, 0.25, 0.25, 0.2, 0.15],

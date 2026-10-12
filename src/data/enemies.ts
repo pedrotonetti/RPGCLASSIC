@@ -242,6 +242,208 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     weaknesses: ['ice'],
     resistances: ['physical'],
   },
+
+  // --- Expansão de conteúdo: criaturas regionais ----------------------------
+  // Ten more regular enemies, each a piece of Ipêra's own fauna/folk life the
+  // Sede turned inside out — placed into specific zone pools (data/zones.ts,
+  // data/classZones.ts) and quests (data/quests.ts) instead of being generic
+  // filler. None has a bespoke 3D builder: each borrows an original enemy's
+  // silhouette through `modelId`/`modelScale` (see config/types.ts and
+  // render/characterModel.ts's buildBorrowedEnemyModel), tinted with its own
+  // color. Stats follow the same hand-authored scale as the originals at the
+  // same `level` — config/balance.ts layers the real difficulty curve on top.
+  {
+    id: 'sauva_ressequida',
+    // Leaf-cutter ants that still cut — but now carry the green DOWN, into the roots, to feed whatever drinks there.
+    name: 'Saúva Ressequida',
+    color: 0xa0522d,
+    stats: { maxHp: 15, maxMp: 0, attack: 5, magicAttack: 0, defense: 2, magicDefense: 1, speed: 7, luck: 3 },
+    xpReward: 11,
+    goldReward: 6,
+    actionInterval: 2.4,
+    skills: [
+      makeSkill({ id: 'sauva_mandibula', name: 'Mandíbula Cortante', description: 'Corta como corta folha — e deixa a ferida aberta.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 6, baseCost: 0, basePower: 1.3, inflicts: { type: 'bleed', chance: 0.25 } }),
+    ],
+    level: 2,
+    archetype: 'predator',
+    weaknesses: ['fire'],
+    modelId: 'giant_spider',
+    modelScale: 0.55,
+  },
+  {
+    id: 'vagalume_brasa',
+    // A firefly whose light the Sede turned into ember — it glows because it is burning from the inside.
+    name: 'Vagalume de Brasa',
+    color: 0xf2c14e,
+    stats: { maxHp: 16, maxMp: 8, attack: 2, magicAttack: 7, defense: 1, magicDefense: 4, speed: 9, luck: 5 },
+    xpReward: 13,
+    goldReward: 8,
+    actionInterval: 2.4,
+    skills: [
+      makeSkill({ id: 'vagalume_faisca', name: 'Faísca Errante', description: 'Uma fagulha que gruda na pele e continua queimando.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 6, baseCost: 0, basePower: 1.4, inflicts: { type: 'burn', chance: 0.3 } }),
+    ],
+    level: 3,
+    archetype: 'ambusher',
+    weaknesses: ['ice'],
+    resistances: ['fire'],
+    modelId: 'fire_elemental',
+    modelScale: 0.5,
+  },
+  {
+    id: 'capivara_ressequida',
+    // The calmest animal of the brejos, left with no water to sit in — the Sede made it stubborn, heavy and mean.
+    name: 'Capivara do Brejo Seco',
+    color: 0x8b6b4a,
+    stats: { maxHp: 34, maxMp: 0, attack: 6, magicAttack: 0, defense: 6, magicDefense: 2, speed: 3, luck: 2 },
+    xpReward: 18,
+    goldReward: 12,
+    actionInterval: 3.2,
+    skills: [
+      makeSkill({ id: 'capivara_investida', name: 'Investida Lamacenta', description: 'Avança com o peso todo e deixa o alvo atolado.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 8, baseCost: 0, basePower: 1.5, inflicts: { type: 'slow', chance: 0.3 } }),
+    ],
+    level: 4,
+    archetype: 'tank',
+    weaknesses: ['fire'],
+    modelId: 'dark_wolf',
+    modelScale: 0.9,
+  },
+  {
+    id: 'espantalho_seca',
+    // A roça scarecrow stuffed with dry Ipê straw — a hungry Raiz crawled into the straw and now it guards the field against the living.
+    name: 'Espantalho da Seca',
+    color: 0xc9a65a,
+    stats: { maxHp: 28, maxMp: 10, attack: 6, magicAttack: 6, defense: 4, magicDefense: 3, speed: 5, luck: 4 },
+    xpReward: 21,
+    goldReward: 15,
+    actionInterval: 2.8,
+    skills: [
+      makeSkill({ id: 'espantalho_palha', name: 'Palha Sufocante', description: 'Uma nuvem de palha seca que prende os movimentos.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.5, inflicts: { type: 'slow', chance: 0.45 } }),
+    ],
+    level: 5,
+    archetype: 'controller',
+    weaknesses: ['fire'],
+    resistances: ['dark'],
+    modelId: 'bandit',
+    modelScale: 1,
+  },
+  {
+    id: 'lobo_guara_sombrio',
+    // The long-legged, solitary wolf of the cerrado — never a pack hunter before the Sede gave it a hunger too big for one.
+    name: 'Lobo-Guará Sombrio',
+    color: 0xb5542c,
+    stats: { maxHp: 33, maxMp: 0, attack: 10, magicAttack: 0, defense: 4, magicDefense: 3, speed: 9, luck: 6 },
+    xpReward: 25,
+    goldReward: 19,
+    actionInterval: 2.3,
+    skills: [
+      makeSkill({ id: 'guara_rasgo', name: 'Rasgo Esguio', description: 'Uma mordida rápida, de passagem, que abre um corte fundo.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 6, baseCost: 0, basePower: 1.6, inflicts: { type: 'bleed', chance: 0.35 } }),
+    ],
+    level: 6,
+    archetype: 'predator',
+    weaknesses: ['holy'],
+    resistances: ['dark'],
+    modelId: 'dark_wolf',
+    modelScale: 1.15,
+  },
+  {
+    id: 'guardiao_cipo',
+    // A Raiz that wrapped itself in vines to shield the last saplings — it still shields them, from everyone.
+    name: 'Guardião de Cipó',
+    color: 0x4f7a3a,
+    stats: { maxHp: 36, maxMp: 14, attack: 7, magicAttack: 7, defense: 6, magicDefense: 6, speed: 4, luck: 4 },
+    xpReward: 28,
+    goldReward: 22,
+    actionInterval: 3.0,
+    skills: [
+      makeSkill({ id: 'cipo_laco', name: 'Laço de Cipó', description: 'Um cipó que se enrola nas pernas do alvo.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 1.4, inflicts: { type: 'slow', chance: 0.4 } }),
+      // Same support behavior as the skeleton's own Remendo Ancestral (see systems/enemyArchetypes.ts).
+      makeSkill({ id: 'cipo_seiva', name: 'Seiva Restauradora', description: 'Puxa seiva da terra para fechar as próprias rachaduras.', kind: 'heal', target: 'self', unlockLevel: 1, baseCooldown: 11, baseCost: 0, basePower: 1.6 }),
+    ],
+    level: 7,
+    archetype: 'support',
+    weaknesses: ['fire'],
+    resistances: ['ice'],
+    modelId: 'orc',
+    modelScale: 1,
+  },
+  {
+    id: 'carpideira_sedenta',
+    // A mourner ancestor, paid once to weep at funerals — the Sede left her the weeping and took the tears.
+    name: 'Carpideira Sedenta',
+    color: 0x5b4a6e,
+    stats: { maxHp: 30, maxMp: 20, attack: 3, magicAttack: 12, defense: 4, magicDefense: 8, speed: 6, luck: 5 },
+    xpReward: 33,
+    goldReward: 27,
+    actionInterval: 2.7,
+    skills: [
+      makeSkill({ id: 'carpideira_lamento', name: 'Lamento Seco', description: 'Um choro sem lágrimas que gela até o osso.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 8, baseCost: 0, basePower: 1.7, inflicts: { type: 'freeze', chance: 0.25 } }),
+    ],
+    level: 8,
+    archetype: 'controller',
+    weaknesses: ['holy'],
+    resistances: ['dark'],
+    modelId: 'skeleton',
+    modelScale: 0.95,
+  },
+  {
+    id: 'jacare_leito',
+    // Caimans stranded in the mud of the Vau's dried riverbed — they kept waiting for the water, and the Sede answered instead.
+    name: 'Jacaré do Leito Seco',
+    color: 0x4d5a3a,
+    stats: { maxHp: 52, maxMp: 0, attack: 12, magicAttack: 0, defense: 10, magicDefense: 4, speed: 4, luck: 3 },
+    xpReward: 40,
+    goldReward: 32,
+    actionInterval: 3.3,
+    skills: [
+      makeSkill({ id: 'jacare_bote', name: 'Bote do Leito', description: 'Uma bocada de surpresa, de dentro da lama.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 8, baseCost: 0, basePower: 1.9, inflicts: { type: 'bleed', chance: 0.35 } }),
+    ],
+    level: 9,
+    archetype: 'tank',
+    weaknesses: ['magical'],
+    resistances: ['physical'],
+    modelId: 'dark_wolf',
+    modelScale: 1.3,
+  },
+  {
+    id: 'colosso_sal',
+    // A Zeladores-era sentinel buried in the beach sand below the Baluarte, crusted in sea salt until the salt itself learned to walk.
+    name: 'Colosso de Sal',
+    color: 0xd9d4c7,
+    stats: { maxHp: 86, maxMp: 0, attack: 15, magicAttack: 0, defense: 15, magicDefense: 9, speed: 2, luck: 2 },
+    xpReward: 62,
+    goldReward: 50,
+    actionInterval: 3.8,
+    skills: [
+      makeSkill({ id: 'sal_estilhaco', name: 'Estilhaço de Sal', description: 'Bate o corpo no chão e espalha cristais cortantes que travam os passos.', kind: 'physical', target: 'allEnemies', unlockLevel: 1, baseCooldown: 12, baseCost: 0, basePower: 1.7, inflicts: { type: 'slow', chance: 0.4 } }),
+    ],
+    level: 12,
+    archetype: 'guardian',
+    weaknesses: ['magical'],
+    resistances: ['physical', 'ice'],
+    modelId: 'stone_golem',
+    modelScale: 1.1,
+  },
+  {
+    id: 'raiz_sem_patria',
+    // The roots the tide brings to the Baluarte's beach (see Batedora Inaê in data/npcs.ts): Ipê-shaped, but no Ipê of Ipêra — and it does not speak our language.
+    name: 'Raiz Sem Pátria',
+    color: 0x2e5a6a,
+    stats: { maxHp: 64, maxMp: 30, attack: 8, magicAttack: 17, defense: 8, magicDefense: 12, speed: 7, luck: 6 },
+    xpReward: 70,
+    goldReward: 55,
+    actionInterval: 2.6,
+    skills: [
+      makeSkill({ id: 'raiz_sussurro_estrangeiro', name: 'Sussurro Estrangeiro', description: 'Palavras numa língua sem raiz em Ipêra — e que envenenam quem as ouve.', kind: 'magical', target: 'enemy', unlockLevel: 1, baseCooldown: 7, baseCost: 0, basePower: 2.0, inflicts: { type: 'poison', chance: 0.45 } }),
+      makeSkill({ id: 'raiz_amarra_salgada', name: 'Amarra Salgada', description: 'Raízes molhadas de mar que prendem e gelam.', kind: 'physical', target: 'enemy', unlockLevel: 1, baseCooldown: 10, baseCost: 0, basePower: 1.5, inflicts: { type: 'freeze', chance: 0.3 } }),
+    ],
+    level: 13,
+    archetype: 'controller',
+    weaknesses: ['fire'],
+    // Ipêra's own ancestors (holy) and its own Sede (dark) both slide off something that was never theirs.
+    resistances: ['holy', 'dark'],
+    modelId: 'giant_spider',
+    modelScale: 1.4,
+  },
   {
     id: 'young_dragon',
     // Already lore-fitting as-is — see q6_dragon's own description in data/quests.ts ("um antigo guardião... corrompido pela Sede") — left unchanged.
@@ -279,6 +481,25 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
       },
     ],
   },
+];
+
+/**
+ * The enemy ids `render/characterModel.ts`'s `buildEnemyModel` has a bespoke
+ * builder for — the only valid values of `EnemyDefinition.modelId`.
+ */
+export const BESPOKE_ENEMY_MODEL_IDS: readonly string[] = [
+  'slime',
+  'bat',
+  'goblin',
+  'bandit',
+  'dark_wolf',
+  'skeleton',
+  'giant_spider',
+  'orc',
+  'fire_elemental',
+  'troll',
+  'stone_golem',
+  'young_dragon',
 ];
 
 export function getEnemyById(id: string): EnemyDefinition {

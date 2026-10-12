@@ -137,6 +137,59 @@ export const LORE_FRAGMENTS: LoreFragmentDefinition[] = [
       'Se é verdade que a Sede nasceu aqui, nenhuma raiz de Ipêra sabe dizer como. Esta, que veio do outro lado, talvez saiba. E talvez já tenha tentado nos contar.',
     ],
   },
+
+  // --- Expansão de conteúdo ----------------------------------------------------
+  {
+    id: 'frag_tropa_perdida',
+    title: 'A Tropa que Não Chegou',
+    zoneId: 'main_city',
+    atTile: { x: 40, y: 60 },
+    lines: [
+      '(Uma ferradura velha, cravada na raiz como se tivesse crescido ali.) Tocávamos sal do Vau para Pedravale no ano em que o brejo secou. As mulas pararam no meio da estrada e não quiseram mais andar.',
+      'Bicho sente antes da gente. Elas não tinham medo do caminho — tinham medo do que bebia por baixo dele. Deixamos a carga ali mesmo e voltamos a pé.',
+    ],
+  },
+  {
+    id: 'frag_choro_por_encomenda',
+    title: 'Choro por Encomenda',
+    zoneId: 'ancoradouro_vau',
+    atTile: { x: 20, y: 50 },
+    nightOnly: true,
+    lines: [
+      '(De noite, a raiz chora baixinho — um choro de ofício, ritmado, sem pressa.) Me pagavam um punhado de farinha por enterro. Eu chorava pelos mortos dos outros, para que a família pudesse ficar de pé.',
+      'Agora ninguém mais enterra ninguém direito, e eu não consigo parar. Não sobrou lágrima. Sobrou só o costume — e o costume, sem água, gela.',
+    ],
+  },
+  {
+    id: 'frag_flor_do_memorial',
+    title: 'Uma Flor por Nome',
+    zoneId: 'paladin_start',
+    atTile: { x: 75, y: 25 },
+    lines: [
+      '(Pétalas secas presas na casca, dezenas delas, cada uma de uma cor.) Quando os sete juraram guarda, alguém começou a deixar uma flor por cada nome que a guarda custasse.',
+      'O memorial dos escudos cresceu daquele costume. Ninguém lembra mais quem deixou a primeira flor — só que ela era amarela, como ipê, e que foi deixada antes de haver qualquer nome para chorar.',
+    ],
+  },
+  {
+    id: 'frag_sentinela_enterrada',
+    title: 'Sentinela de Sal',
+    zoneId: 'baluarte_amanhecer',
+    atTile: { x: 60, y: 95 },
+    lines: [
+      '(A raiz aqui é dura e branca de sal, quase pedra.) Enterramos as sentinelas na areia, viradas para o mar, com ordem de acordar se o mar voltasse a trazer gente com fome.',
+      'O mar trouxe raiz, não gente. As sentinelas não sabem a diferença. Talvez nem haja diferença — e talvez por isso tenham acordado.',
+    ],
+  },
+  {
+    id: 'frag_palha_de_ipe',
+    title: 'Palha de Ipê',
+    zoneId: 'assassin_secondary',
+    atTile: { x: 100, y: 80 },
+    lines: [
+      '(Fiapos de palha amarela enroscados na raiz, como cabelo.) Enchíamos os espantalhos com palha de ipê porque passarinho nenhum chega perto de flor de ancestral.',
+      'Era respeito, não superstição. Mas a Sede não respeita nada: achou a palha, achou o ancestral dentro dela — e o espantalho levantou sozinho do mourão.',
+    ],
+  },
 ];
 
 export function loreFragmentsInZone(zoneId: string): LoreFragmentDefinition[] {

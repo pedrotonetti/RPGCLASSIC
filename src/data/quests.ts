@@ -1,7 +1,8 @@
 import type { ItemRarity } from '../config/types';
 import type { ChoiceEffect, QuestChoice } from '../systems/ChoiceSystem';
-import { BRANCHING_QUESTS, BRANCHING_QUEST_STARTERS } from './branchingQuests';
+import { BRANCHING_QUESTS, BRANCHING_QUEST_STARTERS, VAU_FACTION_ID } from './branchingQuests';
 import { CLASS_ZONE_THEMES } from './classZones';
+import { rocaApprenticeNpcId } from './npcs';
 import { BALUARTE_AMANHECER_ID } from './zones';
 
 export type QuestObjectiveKind = 'talkTo' | 'defeat' | 'reachLevel';
@@ -669,6 +670,231 @@ export const ACT3_QUESTS: QuestDefinition[] = [
 ];
 
 /**
+ * "Formigueiro na Roça" — one tiny bounty per class's starting village,
+ * handed out by that village's roça apprentice (data/npcs.ts's
+ * ROCA_APPRENTICES) as soon as the class prelude's first beat
+ * (`${classId}_q0_arrival`) is done: the very first side quest a brand-new
+ * character can take, at level 1-3, against the starting village's own new
+ * tier-2 enemy (sauva_ressequida, in every start village's pool). Every
+ * class gets its own copy (a warrior never sees the mage's), so each
+ * character sees exactly one.
+ */
+function buildRocaSideQuests(): QuestDefinition[] {
+  const details: Record<string, string> = {
+    warrior: 'Sem a horta, o quartel da Pedra Vermelha passa a comer só farinha até a colheita.',
+    mage: 'As folhas que somem são de sálvia-azul — a única erva que acalma o poço de mana da vila.',
+    archer: 'Elas já cortaram metade das mudas que a Folhagem planta para repor cada árvore que a Sede derruba.',
+    cleric: 'O bambuzal novo, plantado para a festa da colheita, está sendo roído até a raiz.',
+    paladin: 'As flores que a vila deposita no memorial dos escudos não duram mais uma noite.',
+    assassin: 'Até a erva-de-sombra, que cresce onde nada cresce, está sumindo do canteiro.',
+    necromancer: 'Elas cavam justamente entre as covas, onde a terra é mais funda.',
+    monk: 'O chá do pátio de treino — o que os noviços bebem antes do primeiro golpe — não brota mais.',
+  };
+  return CLASS_ZONE_THEMES.map((theme) => ({
+    id: `${theme.classId}_s1_formigueiro`,
+    title: 'Formigueiro na Roça',
+    description: `Saúvas ressequidas — formigas que a Sede secou por dentro — cortam o pouco verde da roça de ${theme.startVillageName} e o carregam para debaixo da terra, como quem alimenta alguém lá embaixo. ${details[theme.classId] ?? ''}`.trim(),
+    giverNpcId: rocaApprenticeNpcId(theme.classId),
+    objective: { kind: 'defeat', targetId: 'sauva_ressequida', amount: 5 },
+    rewardXp: 45,
+    rewardGold: 30,
+    onCompleteEffect: {
+      worldStateDelta: { hope: 1 },
+      grantItems: [
+        { itemId: 'potion_hp', qty: 2 },
+        { itemId: 'racao_montaria', qty: 2 },
+      ],
+    },
+  }));
+}
+
+/**
+ * Expansão de conteúdo — side chains spread across levels 1-20, most of them
+ * reachable long BEFORE q6_dragon (the old side content was nearly all gated
+ * behind it). Each targets an enemy that actually spawns where its brief
+ * says (the new regional creatures in data/enemies.ts, placed in zone pools
+ * by data/zones.ts/data/classZones.ts; Pedravale's own field draws from
+ * every regular enemy, weighted by level) and is handed out by an NPC
+ * standing in a real zone (data/npcs.ts). Rewards climb with the level band:
+ * the class preludes pay 15-35 XP, the Vau's chain 180-240, the post-dragon
+ * lost NPCs 300-450, the Baluarte 420-1000.
+ */
+const EXPANSION_SIDE_QUESTS: QuestDefinition[] = [
+  // --- Tropeiro Amaro (Pedravale, estrada oeste) — níveis 3-6, after q1_awaken ---
+  {
+    id: 'tropeiro_r1_tropa_dispersa',
+    title: 'A Tropa Dispersa',
+    description:
+      'Capivaras do brejo seco — bicho manso a vida inteira, até a Sede secar o brejo — avançaram na tropa do Tropeiro Amaro no rumo do Vau, e as mulas desembestaram pelo Verdegal. Derrube cinco capivaras (rondam o Verdegal, o Forte de Ferro e o Mosteiro da Serra) e a tropa volta sozinha.',
+    giverNpcId: 'tropeiro_amaro',
+    objective: { kind: 'defeat', targetId: 'capivara_ressequida', amount: 5 },
+    rewardXp: 90,
+    rewardGold: 60,
+    rewardItem: { templateId: 'ferradura_sorte', rarity: 'azul' },
+    nextQuestId: 'tropeiro_r2_racao',
+  },
+  {
+    id: 'tropeiro_r2_racao',
+    title: 'Ração para a Estrada',
+    description:
+      'As mulas voltaram, magras e assustadas. O capim do Verdegal não sustenta nem cabrito — leve o recado do Amaro à Curandeira Mira, na Rua dos Ofícios: ela sabe misturar a ração que segura bicho na estrada.',
+    giverNpcId: 'tropeiro_amaro',
+    objective: { kind: 'talkTo', targetId: 'mira', amount: 1 },
+    rewardXp: 120,
+    rewardGold: 40,
+    rewardItem: { templateId: 'berrante_do_tropeiro', rarity: 'azul' },
+    onCompleteEffect: {
+      factionDelta: { factionId: 'pedravale', amount: 3 },
+      grantItems: [
+        { itemId: 'racao_montaria', qty: 4 },
+        { itemId: 'cha_capim_santo', qty: 2 },
+      ],
+    },
+  },
+
+  // --- Pescador Tião (lagoa do Verdegal, Pedravale) — níveis 4-7, after q2_first_steps ---
+  {
+    id: 'tiao_r1_lagoa',
+    title: 'A Lagoa que Encolhe',
+    description:
+      'De noite, a lagoa do Verdegal se enche de vagalumes de brasa: pousam na água, e a água ferve e some. O Pescador Tião pede que você apague cinco deles — rondam o Verdegal, a Torre dos Arcanos e o Posto da Trilha Verde — antes que a lagoa vire poça.',
+    giverNpcId: 'pescador_tiao',
+    objective: { kind: 'defeat', targetId: 'vagalume_brasa', amount: 5 },
+    rewardXp: 140,
+    rewardGold: 90,
+    rewardItem: { templateId: 'colar_escamas', rarity: 'azul' },
+    onCompleteEffect: { worldStateDelta: { natureBalance: 2, hope: 1 }, grantItems: [{ itemId: 'cha_capim_santo', qty: 2 }] },
+  },
+
+  // --- Recrutadora Celeste (Mural de Contratos, Praça do Mercado) — níveis 5-9, after q3_new_blood ---
+  {
+    id: 'contrato_espantalhos',
+    title: 'Contrato: Espantalhos da Seca',
+    description:
+      'Espantalhos andando nas roças — e espantando gente, não passarinho. Dizem que têm palha de ipê por dentro e uma Raiz faminta no meio da palha. O mural paga por cinco deles: aparecem no Verdegal, na Torre dos Arcanos, no Bastião da Fé e no Refúgio Silencioso.',
+    giverNpcId: 'recrutadora_celeste',
+    objective: { kind: 'defeat', targetId: 'espantalho_seca', amount: 5 },
+    rewardXp: 160,
+    rewardGold: 100,
+    rewardItem: { templateId: 'gibao_couro_cru', rarity: 'azul' },
+    nextQuestId: 'contrato_lobo_guara',
+  },
+  {
+    id: 'contrato_lobo_guara',
+    title: 'Contrato: Os Guarás de Rabo Queimado',
+    description:
+      'Lobo-guará nunca andou em bando. Agora quatro deles rondam juntos o Posto da Trilha Verde e o Refúgio Silencioso, de rabo queimado e fome grande demais para um bicho só. A Recrutadora Celeste paga em poção — ouro não fecha ferida.',
+    giverNpcId: 'recrutadora_celeste',
+    objective: { kind: 'defeat', targetId: 'lobo_guara_sombrio', amount: 4 },
+    rewardXp: 200,
+    rewardGold: 130,
+    onCompleteEffect: { grantItems: [{ itemId: 'potion_hp_major', qty: 2 }] },
+    nextQuestId: 'contrato_cipo',
+  },
+  {
+    id: 'contrato_cipo',
+    title: 'Contrato: Cipó nas Trilhas',
+    description:
+      'Guardiões de cipó — Raízes que se enrolaram em cipó para proteger as últimas mudas — fecham as trilhas do Santuário da Aurora, do Mosteiro da Serra e da Cripta Esquecida. Não é maldade, é zelo virado do avesso; mesmo assim, trilha fechada mata gente de fome. Cinco deles.',
+    giverNpcId: 'recrutadora_celeste',
+    objective: { kind: 'defeat', targetId: 'guardiao_cipo', amount: 5 },
+    rewardXp: 260,
+    rewardGold: 170,
+    rewardItem: { templateId: 'facao_de_mato', rarity: 'amarelo' },
+    onCompleteEffect: { worldStateDelta: { corruption: -3, hope: 2 }, factionDelta: { factionId: 'pedravale', amount: 5 } },
+  },
+
+  // --- Benzedeira Quitéria (Ancoradouro do Vau) — níveis 8-11, after vau_r2_benzedura ---
+  {
+    id: 'quiteria_r1_jacares',
+    title: 'O Bote no Lodo',
+    description:
+      'Quando o rio baixou, jacarés ficaram presos na lama do leito, esperando a água voltar. A água voltou pouca — e eles voltaram outra coisa: dão o bote em quem desce para encher o balde. A Benzedeira Quitéria pede quatro deles, para o Vau voltar a descer até o rio.',
+    giverNpcId: 'quiteria_benzedeira',
+    objective: { kind: 'defeat', targetId: 'jacare_leito', amount: 4 },
+    rewardXp: 280,
+    rewardGold: 170,
+    onCompleteEffect: {
+      worldStateDelta: { natureBalance: 2 },
+      factionDelta: { factionId: VAU_FACTION_ID, amount: 5 },
+      grantItems: [{ itemId: 'agua_do_vau', qty: 2 }],
+    },
+    nextQuestId: 'quiteria_r2_carpideiras',
+  },
+  {
+    id: 'quiteria_r2_carpideiras',
+    title: 'Lamento na Beira',
+    description:
+      'De noite, a beira do Vau se enche de choro: carpideiras, ancestrais que um dia choravam por encomenda nos enterros, e que a Sede deixou com o choro e sem as lágrimas. O lamento delas gela quem escuta. Cale quatro, e a Quitéria benze o resto.',
+    giverNpcId: 'quiteria_benzedeira',
+    objective: { kind: 'defeat', targetId: 'carpideira_sedenta', amount: 4 },
+    rewardXp: 340,
+    rewardGold: 210,
+    rewardItem: { templateId: 'patua_do_vau', rarity: 'vermelho' },
+    onCompleteEffect: {
+      worldStateDelta: { corruption: -3, hope: 3 },
+      factionDelta: { factionId: VAU_FACTION_ID, amount: 5 },
+      grantItems: [{ itemId: 'agua_do_vau', qty: 2 }],
+    },
+  },
+
+  // --- Rezadeira Socorro (Santuário da Aurora) — níveis 10-13, after q6_dragon ---
+  {
+    id: 'socorro_r1_novena',
+    title: 'A Novena Interrompida',
+    description:
+      'Carpideiras vieram ao Santuário da Aurora junto com os enterros que ninguém consegue mais fazer direito — gente que a Sede levou sem deixar corpo para chorar. Elas choram por cima da novena da Rezadeira Socorro, e a reza se perde no choro. Cale seis delas em volta do Santuário.',
+    giverNpcId: 'rezadeira_socorro',
+    objective: { kind: 'defeat', targetId: 'carpideira_sedenta', amount: 6 },
+    rewardXp: 450,
+    rewardGold: 280,
+    rewardItem: { templateId: 'rosario_sementes', rarity: 'laranja' },
+    onCompleteEffect: { worldStateDelta: { hope: 3, corruption: -2 } },
+  },
+
+  // --- Baluarte do Amanhecer — nível 20+, after baluarte_r3_cisterna ---
+  {
+    id: 'inae_r1_raizes_na_praia',
+    title: 'Raízes na Praia',
+    description:
+      'As raízes que a maré trouxe não ficaram paradas na praia: sobem a mata na direção do Baluarte, devagar, como quem procura alguém. A Batedora Inaê quer seis delas cortadas antes que alcancem a muralha — e um pedaço guardado para alguém que leia mais do que ela.',
+    giverNpcId: 'inae_batedora',
+    objective: { kind: 'defeat', targetId: 'raiz_sem_patria', amount: 6 },
+    rewardXp: 800,
+    rewardGold: 480,
+    nextQuestId: 'inae_r2_lingua_sem_raiz',
+  },
+  {
+    id: 'inae_r2_lingua_sem_raiz',
+    title: 'Uma Língua Sem Raiz',
+    description:
+      'Leve o nó de raiz estrangeira ao Escrivão Aldo, nos arquivos de Pedravale. Se alguém em Ipêra sabe ler língua de raiz, está enterrado no que os Zeladores deixaram escrito.',
+    giverNpcId: 'inae_batedora',
+    objective: { kind: 'talkTo', targetId: 'escrivao_aldo', amount: 1 },
+    rewardXp: 520,
+    rewardGold: 320,
+    rewardItem: { templateId: 'coracao_sem_patria', rarity: 'laranja' },
+    onCompleteEffect: { worldStateDelta: { hope: 2 }, markEventId: 'raiz_estrangeira_catalogada' },
+  },
+  {
+    id: 'tome_r1_muralha_de_sal',
+    title: 'Muralha de Sal',
+    description:
+      'Colossos de sal sobem da areia da praia — sentinelas dos Zeladores, enterradas ali antes de o Mestre-de-Obras Tomé nascer, que o mar comeu até sobrar só o sal. Cada pancada deles arranca um bloco inteiro da muralha. Derrube cinco.',
+    giverNpcId: 'tome_pedreiro',
+    objective: { kind: 'defeat', targetId: 'colosso_sal', amount: 5 },
+    rewardXp: 820,
+    rewardGold: 500,
+    rewardItem: { templateId: 'marreta_do_pedreiro', rarity: 'vermelho' },
+    onCompleteEffect: { worldStateDelta: { hope: 2, corruption: -2 } },
+  },
+];
+
+export const ROCA_SIDE_QUESTS: QuestDefinition[] = buildRocaSideQuests();
+/** Every quest added by the content expansion, in one list — what data/contentExpansion.test.ts validates. All of them are side quests (they count toward the ground-mount unlocks). */
+export const EXPANSION_QUESTS: QuestDefinition[] = [...ROCA_SIDE_QUESTS, ...EXPANSION_SIDE_QUESTS];
+
+/**
  * Side content: "lost" NPCs tucked away in remote corners (a dungeon
  * chamber, the far edge of a village), plus a couple of bounty-style hunts
  * against a specific higher-tier enemy. None of this gets its own
@@ -680,9 +906,11 @@ export const ACT3_QUESTS: QuestDefinition[] = [
  * QuestSystem's QuestSlot), separate from the main chain's activeQuestId, so
  * it runs ALONGSIDE whatever the main chain currently has active instead of
  * only ever while that's idle — only that side slot itself needs to be free.
- * Gated on q6_dragon so none of it competes with early-game pacing — except
- * the regional settlements' own chains at the end, each gated on the story
- * beat that matches its settlement's level band instead (see their comments).
+ * The original lost-NPC wave is gated on q6_dragon — except the regional
+ * settlements' own chains, each gated on the story beat that matches its
+ * settlement's level band instead (see their comments), and the content
+ * expansion (EXPANSION_QUESTS, above), which deliberately opens most of its
+ * chains from the first village onward.
  * Two-quest chains lean on the exact same generic nextQuestId/notifyTalkedTo/
  * notifyEnemyDefeated machinery as the main chain for their own second leg —
  * only the FIRST quest of each chain needs the special "offer" path.
@@ -1068,6 +1296,9 @@ export const SIDE_QUESTS: QuestDefinition[] = [
       zoneState: { zoneId: BALUARTE_AMANHECER_ID, state: 'reerguido' },
     },
   },
+
+  // Expansão de conteúdo — see EXPANSION_QUESTS above.
+  ...EXPANSION_QUESTS,
 ];
 
 /**
@@ -1103,6 +1334,16 @@ export const SIDE_QUEST_STARTERS: Array<{ questId: string; prerequisiteQuestId: 
   { questId: 'vau_r1_teias', prerequisiteQuestId: 'q1_awaken' },
   { questId: 'baluarte_r1_muralha', prerequisiteQuestId: 'act3_q2_confront' },
   ...BRANCHING_QUEST_STARTERS,
+  // Expansão de conteúdo — most of it opens long before q6_dragon, on
+  // purpose: each prerequisite is the main-story beat matching its level band.
+  ...CLASS_ZONE_THEMES.map((t) => ({ questId: `${t.classId}_s1_formigueiro`, prerequisiteQuestId: firstQuestIdForClass(t.classId) })),
+  { questId: 'tropeiro_r1_tropa_dispersa', prerequisiteQuestId: 'q1_awaken' },
+  { questId: 'tiao_r1_lagoa', prerequisiteQuestId: 'q2_first_steps' },
+  { questId: 'contrato_espantalhos', prerequisiteQuestId: 'q3_new_blood' },
+  { questId: 'quiteria_r1_jacares', prerequisiteQuestId: 'vau_r2_benzedura' },
+  { questId: 'socorro_r1_novena', prerequisiteQuestId: 'q6_dragon' },
+  { questId: 'inae_r1_raizes_na_praia', prerequisiteQuestId: 'baluarte_r3_cisterna' },
+  { questId: 'tome_r1_muralha_de_sal', prerequisiteQuestId: 'baluarte_r3_cisterna' },
 ];
 
 const ALL_QUESTS: QuestDefinition[] = [

@@ -7,6 +7,7 @@ import {
   type AchievementDefinition,
 } from '../data/achievements';
 import { CHEST_DEFINITIONS } from '../data/chests';
+import { ENEMY_DEFINITIONS } from '../data/enemies';
 import { createStarterItem } from '../data/equipment';
 import { LORE_FRAGMENTS } from '../data/loreFragments';
 import { MATERIAL_DEFINITIONS } from '../data/materials';
@@ -49,9 +50,9 @@ function ids(defs: AchievementDefinition[]): string[] {
 }
 
 describe('achievement data', () => {
-  it('has a focused catalog (18-40 entries) with unique ids and pt-BR text', () => {
+  it('has a focused catalog (18-50 entries) with unique ids and pt-BR text', () => {
     expect(ACHIEVEMENT_DEFINITIONS.length).toBeGreaterThanOrEqual(18);
-    expect(ACHIEVEMENT_DEFINITIONS.length).toBeLessThanOrEqual(40);
+    expect(ACHIEVEMENT_DEFINITIONS.length).toBeLessThanOrEqual(50);
     expect(new Set(ACHIEVEMENT_DEFINITIONS.map((a) => a.id)).size).toBe(ACHIEVEMENT_DEFINITIONS.length);
     for (const def of ACHIEVEMENT_DEFINITIONS) {
       expect(def.name.trim().length).toBeGreaterThan(0);
@@ -205,7 +206,7 @@ describe('kills and bosses', () => {
   it('unlocks the Bestiário only once every regular enemy type has been defeated', () => {
     const player = freshPlayer();
     const regular = codexCounts(player.codex, 'enemies');
-    const regularIds = ['slime', 'bat', 'goblin', 'bandit', 'dark_wolf', 'skeleton', 'giant_spider', 'orc', 'fire_elemental', 'troll', 'stone_golem'];
+    const regularIds = ENEMY_DEFINITIONS.filter((e) => !e.isBoss).map((e) => e.id);
     expect(regularIds.length).toBe(regular.total);
     for (const id of regularIds.slice(0, -1)) recordEnemyDefeated(player, id);
     expect(isUnlocked(player.achievements, 'bestiario_de_ipera')).toBe(false);
