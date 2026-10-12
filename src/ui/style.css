@@ -2894,3 +2894,552 @@ body {
   color: var(--accent);
   margin-top: 6px;
 }
+
+/* ======================================================================
+   Fase 7 — UX/UI de RPG e mobile
+   Appended as one self-contained section (later in the file, so it wins
+   ties against the base rules above without editing them). Covers:
+   touch hygiene, ≥44px hit targets, hotkey hints, "Tamanho da interface"
+   (--ui-scale), item comparison tooltip/sheet, hotbar cooldown readout,
+   low-HP vignette, collapsible quest tracker, and phone layouts for the
+   full-screen menus.
+   ====================================================================== */
+
+:root {
+  /* Set from GameSettings.uiScale by ui/mobile.ts applyUiScale. */
+  --ui-scale: 1;
+}
+
+/* --- Touch hygiene ---------------------------------------------------- */
+/* No double-tap zoom / tap flash / long-press callout anywhere in the game
+   UI; the canvas keeps its own stricter touch-action: none. */
+html,
+body {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+.is-touch #ui-root {
+  -webkit-touch-callout: none;
+}
+/* Scrollable menu bodies scroll vertically on their own, without dragging
+   the page or chaining the overscroll into it. */
+.inventory-panel,
+.questlog-panel,
+.skilltree-panel,
+.ranking-panel,
+.settings-panel,
+.achv-panel,
+.shop-overlay,
+.pause-overlay {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+/* iOS zooms the page on focusing any input under 16px. */
+.is-touch input,
+.is-touch select,
+.is-touch textarea {
+  font-size: max(16px, 1em);
+}
+
+/* --- ≥44px hit targets on touch --------------------------------------- */
+.is-touch .btn {
+  min-height: 44px;
+}
+.is-touch .btn.small,
+.is-touch .settings-segment {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.is-touch .menu-btn,
+.is-touch .camera-angle-btn {
+  width: 44px;
+  height: 44px;
+}
+.is-touch .tier-picker-row,
+.is-touch .dialogue-skip {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.is-touch .achv-tab {
+  min-height: 44px;
+}
+/* The minimap's 20px corner badges keep their look; an invisible ::after
+   grows the actual tap area to 44px. */
+.is-touch .minimap-expand-btn::after,
+.is-touch .worldmap-open-btn::after,
+.is-touch .minimap-close-btn::after {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+@media (max-height: 480px) and (orientation: landscape) {
+  .is-touch .item-hotbar .hotbar-slot.item {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* --- Hotkey hints (desktop only) -------------------------------------- */
+.hotkey-hint {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 5px;
+  font-family: 'VT323', monospace;
+  font-size: 0.7em;
+  line-height: 1.35;
+  color: var(--text-dim);
+  border: 1px solid var(--panel-border);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  vertical-align: middle;
+  pointer-events: none;
+}
+.is-touch .hotkey-hint {
+  display: none;
+}
+.hotbar-slot > .hotkey-hint {
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  margin: 0;
+  padding: 0 3px;
+  font-size: 11px;
+  line-height: 1.2;
+  z-index: 3;
+}
+.hud-hint {
+  white-space: pre-line;
+  text-align: right;
+}
+
+/* --- "Tamanho da interface" ------------------------------------------- */
+/* CSS zoom on the HUD widgets (corner/centre-anchored, so their offsets
+   scale together and keep their stacking), and on the CONTENTS of the
+   full-screen menus — never on a box sized in vw (zoom would scale the vw
+   too and push it off a phone screen). World-anchored labels are not
+   listed: they're positioned in screen pixels from JS. */
+.hud-panel,
+.quest-tracker,
+.quest-zone-hint,
+.world-event-banner,
+.dungeon-progress,
+.hotbar,
+.item-hotbar,
+.interact-prompt,
+.battle-message-bar,
+.inventory-screen > .top-bar,
+.inventory-screen > .bottom-bar,
+.inventory-panel > *,
+.questlog-screen > .top-bar,
+.questlog-screen > .bottom-bar,
+.questlog-panel > *,
+.skilltree-screen > .top-bar,
+.skilltree-screen > .bottom-bar,
+.skilltree-panel > *,
+.ranking-screen > .top-bar,
+.ranking-screen > .bottom-bar,
+.ranking-panel > *,
+.settings-screen > .top-bar,
+.settings-screen > .bottom-bar,
+.settings-panel > *,
+.achievements-screen > .top-bar,
+.achievements-screen > .bottom-bar,
+.achv-tabs > *,
+.achv-panel > *,
+.pause-overlay > *,
+.shop-overlay > *,
+.dialogue-box > *,
+.item-compare-sheet > *,
+.item-compare-tooltip > * {
+  zoom: var(--ui-scale);
+}
+.hotbar {
+  max-width: calc(96vw / var(--ui-scale));
+}
+.battle-message-bar {
+  max-width: calc(90vw / var(--ui-scale));
+}
+
+/* --- Item comparison (ui/itemComparePanel.ts) -------------------------- */
+.cmp-badge-clickable {
+  pointer-events: auto;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.cmp-badge-more {
+  color: var(--text-dim);
+}
+.item-compare-tooltip {
+  position: fixed;
+  z-index: 40;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  padding: 10px 12px;
+  pointer-events: none;
+  background: rgba(18, 13, 25, 0.96);
+  border-color: var(--accent);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.6);
+}
+.item-compare-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(12px + var(--safe-t)) calc(12px + var(--safe-r)) calc(12px + var(--safe-b)) calc(12px + var(--safe-l));
+  background: rgba(6, 4, 10, 0.6);
+  pointer-events: auto;
+}
+.item-compare-sheet {
+  width: min(420px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 16px;
+  background: rgba(22, 16, 30, 0.98);
+  border-color: var(--accent);
+}
+.item-compare-sheet h3 {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-weight: normal;
+  font-size: 20px;
+}
+.item-compare-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.cmp-body {
+  font-size: 15px;
+  line-height: 1.3;
+}
+.cmp-items {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cmp-item {
+  flex: 1;
+  min-width: 0;
+}
+.cmp-caption {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.cmp-name {
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.cmp-name.dim,
+.cmp-meta {
+  color: var(--text-dim);
+}
+.cmp-meta {
+  font-size: 13px;
+}
+.cmp-arrow {
+  color: var(--text-dim);
+  font-size: 20px;
+}
+.cmp-verdict {
+  margin: 8px 0 6px;
+  font-size: 16px;
+}
+.cmp-stats {
+  display: grid;
+  gap: 1px;
+  margin-bottom: 4px;
+}
+.cmp-stat {
+  display: grid;
+  grid-template-columns: 3.2em 1fr auto;
+  gap: 8px;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.cmp-stat:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.03);
+}
+.cmp-stat-label {
+  color: var(--text-dim);
+}
+.cmp-stat-delta {
+  text-align: right;
+  min-width: 3em;
+}
+.cmp-stat.gain .cmp-stat-delta,
+.cmp-line.gain,
+.cmp-verdict.gain {
+  color: var(--heal);
+}
+.cmp-stat.loss .cmp-stat-delta,
+.cmp-line.loss,
+.cmp-verdict.loss {
+  color: var(--hp);
+}
+.cmp-stat.same .cmp-stat-delta,
+.cmp-verdict.neutral {
+  color: var(--text-dim);
+}
+.cmp-section {
+  margin-top: 6px;
+}
+.cmp-section-title {
+  font-size: 12px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.cmp-passive-desc {
+  color: var(--text);
+  font-size: 13px;
+  padding-left: 14px;
+}
+/* Phones: the sheet docks to the bottom edge, thumb-reachable. */
+@media (max-width: 560px) {
+  .item-compare-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .item-compare-sheet {
+    width: 100%;
+    max-height: 80%;
+    border-radius: 10px 10px 0 0;
+    padding: 14px calc(14px + var(--safe-r)) calc(14px + var(--safe-b)) calc(14px + var(--safe-l));
+  }
+}
+
+/* --- Hotbar cooldown readout (ui/hudPolish.ts paintCooldown) ----------- */
+.hotbar-slot .cd-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  color: #fff;
+  text-shadow: 2px 2px 0 #000, 0 0 6px #000;
+  z-index: 2;
+  pointer-events: none;
+}
+.hotbar-slot .cd-text:empty {
+  display: none;
+}
+.hotbar-slot.on-cd .hotbar-name,
+.hotbar-slot.on-cd .hotbar-level,
+.hotbar-slot.on-cd .hotbar-cost {
+  opacity: 0.4;
+}
+.hotbar-slot.cd-ready {
+  animation: cd-ready-flash 0.45s ease-out;
+}
+@keyframes cd-ready-flash {
+  from {
+    box-shadow: 0 0 0 3px var(--accent), 0 0 18px var(--accent);
+  }
+  to {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.item-hotbar .hotbar-slot .cd-text {
+  font-size: 22px;
+}
+@media (max-width: 560px) {
+  .hotbar-slot .cd-text {
+    font-size: 22px;
+  }
+}
+@media (max-height: 480px) and (orientation: landscape) {
+  .hotbar-slot .cd-text {
+    font-size: 18px;
+  }
+}
+
+/* --- Low-HP vignette (ui/hudPolish.ts) --------------------------------- */
+.low-hp-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+  background: radial-gradient(ellipse at center, transparent 52%, rgba(150, 8, 8, 0.38) 78%, rgba(190, 12, 12, 0.7) 100%);
+}
+.low-hp-vignette.low {
+  opacity: 0.75;
+}
+.low-hp-vignette.critical {
+  opacity: 1;
+  animation: low-hp-pulse 0.85s ease-in-out infinite alternate;
+}
+@keyframes low-hp-pulse {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .low-hp-vignette.critical,
+  .hotbar-slot.cd-ready {
+    animation: none;
+  }
+}
+
+/* --- Collapsible quest tracker (phones only) --------------------------- */
+@media (max-width: 560px), (max-height: 480px) and (orientation: landscape) {
+  .quest-tracker.collapsible {
+    pointer-events: auto;
+    cursor: pointer;
+    padding-left: 22px;
+  }
+  .quest-tracker.collapsible::before {
+    content: '▾';
+    position: absolute;
+    left: 7px;
+    top: 4px;
+    color: var(--text-dim);
+  }
+  /* Invisible tap-area extension — the tracker itself can be one short line. */
+  .quest-tracker.collapsible::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+  .quest-tracker.collapsible.collapsed {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 44vw;
+    min-height: 44px;
+    line-height: 44px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .quest-tracker.collapsible.collapsed::before {
+    content: '▸';
+    top: 0;
+  }
+  .hud-panel {
+    max-width: calc(60vw / var(--ui-scale));
+  }
+}
+
+/* --- Full-screen menus on phones --------------------------------------- */
+/* Bottom "Voltar" bars sat flush on the screen edge (only Conquistas
+   cleared the home indicator) — give every menu the same safe-area gap. */
+.inventory-screen > .bottom-bar,
+.questlog-screen > .bottom-bar,
+.skilltree-screen > .bottom-bar,
+.ranking-screen > .bottom-bar {
+  padding-bottom: calc(12px + var(--safe-b));
+}
+@media (max-width: 560px) {
+  .inventory-screen,
+  .questlog-screen,
+  .skilltree-screen,
+  .ranking-screen,
+  .settings-screen,
+  .achievements-screen {
+    padding-left: calc(8px + var(--safe-l));
+    padding-right: calc(8px + var(--safe-r));
+  }
+  .inventory-screen h1,
+  .questlog-screen h1,
+  .skilltree-screen h1,
+  .ranking-screen h1,
+  .settings-screen h1,
+  .achievements-screen h1 {
+    font-size: 26px;
+    margin: 4px 0;
+  }
+  .inventory-panel,
+  .questlog-panel,
+  .skilltree-panel,
+  .ranking-panel,
+  .settings-panel,
+  .achv-panel,
+  .achv-tabs {
+    width: 100%;
+  }
+  .inventory-panel,
+  .questlog-panel,
+  .skilltree-panel,
+  .ranking-panel,
+  .achv-panel {
+    padding: 8px 10px 12px;
+  }
+  .equip-slot {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .bag-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-row {
+    flex-wrap: wrap;
+  }
+  .settings-label {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .item-stats,
+  .item-extras,
+  .item-name {
+    overflow-wrap: anywhere;
+  }
+}
+/* Landscape phones: only ~390px of height — slim the title/bottom bars so
+   the scrolling list keeps most of it. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .inventory-screen,
+  .questlog-screen,
+  .skilltree-screen,
+  .ranking-screen,
+  .settings-screen,
+  .achievements-screen {
+    padding-top: calc(6px + var(--safe-t));
+  }
+  .inventory-screen h1,
+  .questlog-screen h1,
+  .skilltree-screen h1,
+  .ranking-screen h1,
+  .settings-screen h1,
+  .achievements-screen h1 {
+    font-size: 22px;
+    margin: 0;
+  }
+  .inventory-screen .top-bar,
+  .questlog-screen .top-bar,
+  .skilltree-screen .top-bar,
+  .ranking-screen .top-bar,
+  .settings-screen .top-bar,
+  .achievements-screen .top-bar {
+    margin-bottom: 4px;
+  }
+  .inventory-panel,
+  .questlog-panel,
+  .skilltree-panel,
+  .ranking-panel,
+  .settings-panel,
+  .achv-panel {
+    margin-bottom: 6px;
+  }
+  .inventory-screen > .bottom-bar,
+  .questlog-screen > .bottom-bar,
+  .skilltree-screen > .bottom-bar,
+  .ranking-screen > .bottom-bar,
+  .achievements-screen > .bottom-bar {
+    padding-bottom: calc(6px + var(--safe-b));
+  }
+}

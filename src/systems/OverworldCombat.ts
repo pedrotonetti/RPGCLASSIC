@@ -37,6 +37,8 @@ import {
 import { incrementCounter } from './WorldStateSystem';
 import { saveGame } from './SaveSystem';
 import { el } from '../ui/dom';
+import { paintCooldown } from '../ui/hudPolish';
+import { addHotkeyHint } from '../ui/menuKeys';
 
 /**
  * Monsters now live physically in the overworld — wandering near their spawn
@@ -880,6 +882,7 @@ export class OverworldCombat {
         { className: `hotbar-slot ${skill.isUltimate ? 'ultimate' : ''}`, onClick: () => this.onHotbarClicked(skill.id) },
         [el('div', { className: 'hotbar-name', text: skill.name }), el('div', { className: 'hotbar-level', text: keyLabel }), costEl, fillEl],
       );
+      if (i < 9) addHotkeyHint(slotEl, String(i + 1)); // number keys 1-9, see handleKeyDown
       slotEls.push(slotEl);
       this.hotbar.push({ skill, totalCooldown: stats.cooldown, cost, el: slotEl, fillEl });
     });
@@ -1433,16 +1436,20 @@ export class OverworldCombat {
       const fraction = slot.totalCooldown > 0 ? Math.min(1, remaining / slot.totalCooldown) : 0;
       slot.fillEl.style.height = `${fraction * 100}%`;
       slot.el.classList.toggle('no-mana', this.player.currentMp < slot.cost && remaining <= 0.05);
+      paintCooldown(slot.el, remaining);
     }
     for (const slot of this.itemHotbar) {
       const remaining = this.engine.cooldownRemaining(`item_${slot.itemId}`);
       const fraction = Math.min(1, remaining / ITEM_COOLDOWN);
       slot.fillEl.style.height = `${fraction * 100}%`;
+      paintCooldown(slot.el, remaining);
     }
     const blockRemaining = this.engine.blockCooldownRemaining();
     this.blockFillEl.style.height = `${Math.min(1, blockRemaining / BLOCK_COOLDOWN) * 100}%`;
     const dodgeRemaining = this.engine.dodgeCooldownRemaining();
     this.dodgeFillEl.style.height = `${Math.min(1, dodgeRemaining / DODGE_COOLDOWN) * 100}%`;
+    if (this.blockFillEl.parentElement) paintCooldown(this.blockFillEl.parentElement, blockRemaining);
+    if (this.dodgeFillEl.parentElement) paintCooldown(this.dodgeFillEl.parentElement, dodgeRemaining);
   }
 
   /** Every class sees "Combo xN"; the monk sees the same counter as its named Fluxo levels instead (see classMechanics.ts's `comboLabel`). */

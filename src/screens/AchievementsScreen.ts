@@ -8,6 +8,7 @@ import { achievementProgress, checkAchievements, describeReward, earnedTitles, i
 import { codexCompletion, codexCounts, codexEntryViews, loreCounts, loreEntryViews, UNDISCOVERED_NAME, type CodexEntryView, type CodexSection } from '../systems/CodexSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { el } from '../ui/dom';
+import { addHotkeyHint, bindBackKey } from '../ui/menuKeys';
 
 type TabId = 'achievements' | 'enemies' | 'bosses' | 'npcs' | 'items' | 'lore';
 
@@ -78,7 +79,12 @@ export class AchievementsScreen implements Screen {
     this.buildUi();
   }
 
-  unmount(): void {}
+  /** Escape (and this menu's own open hotkey, if any) presses the back button — see ui/menuKeys.ts. */
+  private unbindBackKey: (() => void) | null = null;
+
+  unmount(): void {
+    this.unbindBackKey?.();
+  }
 
   onResize(width: number, height: number): void {
     this.camera.aspect = width / height;
@@ -194,6 +200,8 @@ export class AchievementsScreen implements Screen {
         this.onBack();
       },
     });
+    addHotkeyHint(backBtn, 'Esc');
+    this.unbindBackKey = bindBackKey(backBtn);
 
     this.tabsEl = el('div', { className: 'achv-tabs' });
     this.panelEl = el('div', { className: 'achv-panel panel' });

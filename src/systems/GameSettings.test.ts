@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadSettings, saveSettings } from './GameSettings';
+import { loadSettings, saveSettings, uiScaleFactor, uiScaleOf } from './GameSettings';
 
 /** No jsdom in this project's unit-test environment (vitest runs in plain
  * Node — see SaveSystem, which has the same localStorage dependency and no
@@ -53,5 +53,28 @@ describe('saveSettings', () => {
   it('round-trips whatever was saved', () => {
     saveSettings({ musicVolume: 0.3, sfxVolume: 0.9, lowPowerOverride: false });
     expect(loadSettings()).toEqual({ musicVolume: 0.3, sfxVolume: 0.9, lowPowerOverride: false });
+  });
+});
+
+describe('uiScale ("Tamanho da interface")', () => {
+  it('defaults to médio (factor 1) when never saved, including on old settings blobs', () => {
+    expect(uiScaleOf(loadSettings())).toBe('medio');
+    localStorage.setItem('rpgclassic:settings:v1', JSON.stringify({ musicVolume: 0.5, sfxVolume: 1, lowPowerOverride: null }));
+    expect(uiScaleOf(loadSettings())).toBe('medio');
+    expect(uiScaleFactor('medio')).toBe(1);
+  });
+
+  it('persists the chosen size (and the quest-tracker collapse) and keeps pequeno < médio < grande', () => {
+    saveSettings({ ...loadSettings(), uiScale: 'grande', questTrackerCollapsed: true });
+    const loaded = loadSettings();
+    expect(uiScaleOf(loaded)).toBe('grande');
+    expect(loaded.questTrackerCollapsed).toBe(true);
+    expect(uiScaleFactor('pequeno')).toBeLessThan(uiScaleFactor('medio'));
+    expect(uiScaleFactor('grande')).toBeGreaterThan(uiScaleFactor('medio'));
+  });
+
+  it('ignores an unrecognized stored value', () => {
+    localStorage.setItem('rpgclassic:settings:v1', JSON.stringify({ uiScale: 'gigante' }));
+    expect(uiScaleOf(loadSettings())).toBe('medio');
   });
 });

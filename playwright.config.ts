@@ -57,8 +57,11 @@
  *     are not.
  *   - Skill tree spending/leveling, mounts, gem socketing, crafting, and the
  *     ranking screen have no coverage at all.
- *   - No mobile/touch input (on-screen joystick, tap-to-interact) coverage —
- *     everything drives keyboard + mouse clicks, matching a desktop player.
+ *   - Mobile/touch coverage is limited to layout + menus (mobile-ui.spec.ts:
+ *     phone viewports in portrait/landscape, touch emulation, ☰ menu,
+ *     inventory tap-and-hold) — the on-screen joystick, tap-to-interact and
+ *     touch combat are still not driven; everything else uses keyboard +
+ *     mouse, matching a desktop player.
  *   - No visual/pixel-regression coverage — assertions are on DOM text,
  *     element visibility, and saved-game state, never screenshots.
  *   - No cross-browser coverage (Chromium only, matching this environment's

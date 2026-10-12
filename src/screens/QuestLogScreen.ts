@@ -10,6 +10,7 @@ import { getZoneById } from '../data/zones';
 import { currentQuest } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { el, goToLazy } from '../ui/dom';
+import { addHotkeyHint, bindBackKey } from '../ui/menuKeys';
 
 /** Name of a `defeat` objective's enemy (regular or boss id — see Enemy.def's own fallback), or a generic label when the objective accepts any enemy. */
 function enemyLabel(targetId: string | undefined): string {
@@ -56,7 +57,12 @@ export class QuestLogScreen implements Screen {
     this.buildUi();
   }
 
-  unmount(): void {}
+  /** Escape (and this menu's own open hotkey, if any) presses the back button — see ui/menuKeys.ts. */
+  private unbindBackKey: (() => void) | null = null;
+
+  unmount(): void {
+    this.unbindBackKey?.();
+  }
 
   onResize(width: number, height: number): void {
     this.camera.aspect = width / height;
@@ -118,6 +124,8 @@ export class QuestLogScreen implements Screen {
         });
       },
     });
+    addHotkeyHint(backBtn, 'Esc / J');
+    this.unbindBackKey = bindBackKey(backBtn, ['j']);
 
     const screen = el('div', { className: 'questlog-screen screen' }, [
       el('div', { className: 'top-bar' }, [

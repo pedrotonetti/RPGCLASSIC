@@ -3,8 +3,10 @@ import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import type { Player } from '../entities/Player';
 import { audio } from '../systems/AudioSystem';
-import { loadSettings, saveSettings, type GameSettings } from '../systems/GameSettings';
+import { loadSettings, saveSettings, UI_SCALE_OPTIONS, uiScaleOf, type GameSettings } from '../systems/GameSettings';
 import { el } from '../ui/dom';
+import { addHotkeyHint, bindBackKey } from '../ui/menuKeys';
+import { applyUiScale } from '../ui/mobile';
 import { buildDevPanel } from './DevPanel';
 
 /**
@@ -43,7 +45,11 @@ export class SettingsScreen implements Screen {
     this.buildUi();
   }
 
-  unmount(): void {}
+  private unbindBackKey: (() => void) | null = null;
+
+  unmount(): void {
+    this.unbindBackKey?.();
+  }
 
   onResize(width: number, height: number): void {
     this.camera.aspect = width / height;
@@ -101,6 +107,31 @@ export class SettingsScreen implements Screen {
     ]);
   }
 
+  /** "Tamanho da interface" — Pequeno/Médio/Grande, applied live (ui/mobile.ts applyUiScale) so the player sees this very screen resize as they pick. */
+  private uiScaleRow(): HTMLElement {
+    const container = el('div', { className: 'settings-segmented' });
+    const render = () => {
+      const current = uiScaleOf(this.settings);
+      container.replaceChildren(
+        ...UI_SCALE_OPTIONS.map((opt) =>
+          el('div', {
+            className: `btn settings-segment${current === opt.value ? ' active' : ''}`,
+            text: opt.label,
+            attrs: { 'data-ui-scale': opt.value },
+            onClick: () => {
+              this.settings.uiScale = opt.value;
+              applyUiScale(opt.value);
+              this.persist();
+              render();
+            },
+          }),
+        ),
+      );
+    };
+    render();
+    return el('div', { className: 'settings-row settings-ui-scale' }, [el('div', { className: 'settings-label', text: 'Tamanho da interface' }), container]);
+  }
+
   /**
    * Tapping the screen's own title 7 times within 2.5s reveals the dev
    * panel — same undiscoverable-on-purpose gesture MainMenuScreen's own
@@ -124,6 +155,8 @@ export class SettingsScreen implements Screen {
 
   private buildUi(): void {
     const backBtn = el('div', { className: 'btn primary', text: '< Voltar', onClick: () => this.onBack() });
+    addHotkeyHint(backBtn, 'Esc');
+    this.unbindBackKey = bindBackKey(backBtn);
 
     const title = el('h1', { text: 'Configurações', onClick: () => this.onTitleTap() });
     title.style.cursor = 'default';
@@ -154,6 +187,7 @@ export class SettingsScreen implements Screen {
         },
       ),
       this.lowPowerRow(),
+      this.uiScaleRow(),
       el('div', {
         className: 'settings-hint',
         text: 'O Modo Economia reduz sombra, anti-serrilhado e resolução de brilho para telas mais fracas — o ajuste manual vale a partir do próximo carregamento do jogo.',

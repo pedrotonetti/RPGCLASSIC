@@ -13,6 +13,9 @@ import { describeItem } from '../systems/ItemPassives';
 import { computePowerScore } from '../systems/PowerScore';
 import { saveGame } from '../systems/SaveSystem';
 import { el, goToLazy } from '../ui/dom';
+import { ItemCompareController } from '../ui/itemComparePanel';
+import { addHotkeyHint, bindBackKey } from '../ui/menuKeys';
+import { compareItems } from '../systems/ItemComparison';
 
 /** Resolves a player.inventory key (potion, gem, or material id) to a display name and optional swatch color. */
 function inventoryEntryInfo(id: string): { name: string; color?: number } {
@@ -173,6 +176,8 @@ export class InventoryScreen implements Screen {
   private bagEl!: HTMLElement;
   private suppliesEl!: HTMLElement;
   private powerScoreEl!: HTMLElement;
+  /** Hover tooltip / tap-and-hold sheet comparing a bag item with the equipped one — see ui/itemComparePanel.ts. */
+  private compareCtl: ItemCompareController | null = null;
 
   constructor(
     private game: Game,
@@ -197,7 +202,13 @@ export class InventoryScreen implements Screen {
     this.buildUi();
   }
 
-  unmount(): void {}
+  /** Escape (and this menu's own open hotkey, if any) presses the back button — see ui/menuKeys.ts. */
+  private unbindBackKey: (() => void) | null = null;
+
+  unmount(): void {
+    this.unbindBackKey?.();
+    this.compareCtl?.dispose();
+  }
 
   onResize(width: number, height: number): void {
     this.camera.aspect = width / height;
@@ -210,6 +221,11 @@ export class InventoryScreen implements Screen {
   }
 
   private buildUi(): void {
+    this.compareCtl = new ItemCompareController(
+      this.game.uiRoot,
+      (candidate) => compareItems(candidate, this.player.equipment),
+      (candidate) => this.equipBagItem(candidate.uid),
+    );
     this.powerScoreEl = el('div', { className: 'subtitle', text: '' });
     this.slotsEl = el('div', { className: 'equip-slots' });
     this.bagEl = el('div', { className: 'bag-list' });
@@ -227,6 +243,8 @@ export class InventoryScreen implements Screen {
         });
       },
     });
+    addHotkeyHint(backBtn, 'Esc / I');
+    this.unbindBackKey = bindBackKey(backBtn, ['i']);
 
     const screen = el('div', { className: 'inventory-screen screen' }, [
       el('div', { className: 'top-bar' }, [el('h1', { text: 'Inventário e Equipamento' }), this.powerScoreEl]),
@@ -371,10 +389,20 @@ export class InventoryScreen implements Screen {
       }),
     ]);
     applyRarityBorder(card, instance.rarity);
+    this.compareCtl?.attach(card, instance);
     return card;
   }
 
+  /** Equip path shared with the comparison sheet's own Equipar button. */
+  private equipBagItem(uid: string): void {
+    if (!this.player.equipFromBag(uid)) return;
+    saveGame(this.player);
+    this.rebuildShowcase();
+    this.render();
+  }
+
   private render(): void {
+    this.compareCtl?.detachAll();
     this.powerScoreEl.textContent = `Power Score: ${computePowerScore(this.player).toLocaleString('pt-BR')}`;
 
     this.slotsEl.replaceChildren(...SLOT_ORDER.map((slot) => this.equipSlotCard(slot)));
