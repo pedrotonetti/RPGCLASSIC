@@ -37,12 +37,17 @@ import { WildlifeManager } from '../render/wildlife';
 import { pickWildlifeLayout } from '../systems/wildlifePlacement';
 import { applyWeaponGem, type PlayerAvatar } from '../render/playerAvatar';
 import { animateWaterMaterial, buildOverworldMeshes, tileCenterWorld, type BuildingCollider, type TreeCollider } from '../render/worldBuilder';
-import { recordItemCrafted, recordLoreDiscovered, recordPlayerDefeated } from '../systems/AchievementSystem';
+import { checkAchievements, recordItemCrafted, recordLoreDiscovered, recordPlayerDefeated } from '../systems/AchievementSystem';
 import { OverworldCombat } from '../systems/OverworldCombat';
 import { OverworldEvents, type EventInteractable } from './OverworldEvents';
 import { buildWalkabilityGrid, findNearestWalkable, pathfindToClick } from '../systems/Pathfinding';
-import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
-import { DUNGEON_TIER_CAP, dungeonTierStatMultiplier, selectableDungeonTiers } from '../systems/DungeonTierSystem';
+import { addRunBlessing, completeDungeon, encounterProgressText, recordEncounterCleared, runPlayerModifiers, startDungeonRun, type DungeonRunState } from '../systems/DungeonSystem';
+import { dungeonTierStatMultiplier } from '../systems/DungeonTierSystem';
+import { combineDungeonModifiers, dayIndex, planDungeonRun, type DungeonRunPlan } from '../systems/DungeonModifierSystem';
+import { formatClearTime } from '../systems/DungeonRecordSystem';
+import { ELITE_STAT_MULT, type RoomOutcomeResult } from '../systems/DungeonRoomSystem';
+import { DungeonRunLayer } from './DungeonRunLayer';
+import { buildDungeonBriefingPanel } from './dungeonBriefing';
 import {
   activeQuests,
   ensureAct3Started,
@@ -346,6 +351,9 @@ export class OverworldScreen implements Screen {
   /** Set only when the CURRENT zone is a dungeon instance (see mount()) — null in any open-world zone, including one that hosts other dungeons' portals. */
   private activeDungeon: DungeonDefinition | null = null;
   private dungeonRunState: DungeonRunState | null = null;
+  /** Dungeons 2.0 — shrine/trap rooms, Distorções HUD and run timer (see DungeonRunLayer). Null outside a dungeon. */
+  private dungeonLayer: DungeonRunLayer | null = null;
+  private nearbyShrine: { index: number; name: string } | null = null;
   private dungeonProgressEl: HTMLElement | null = null;
   private dungeonCompleteEl: HTMLElement | null = null;
   private dungeonCompleteMessageEl: HTMLElement | null = null;
@@ -562,7 +570,15 @@ export class OverworldScreen implements Screen {
       // which sets it fresh.
       const tier = this.player.pendingDungeonTier;
       this.player.pendingDungeonTier = 1;
-      this.dungeonRunState = startDungeonRun(dungeon, tier);
+      // Dungeons 2.0: the plan the player saw at the portal, or (e.g. a save
+      // loaded inside the dungeon) today's deterministic plan for this tier.
+      const pending = this.player.pendingDungeonPlan;
+      this.player.pendingDungeonPlan = null;
+      const plan: DungeonRunPlan = pending && pending.dungeonId === dungeon.id && pending.tier === tier ? pending : planDungeonRun(dungeon, tier, dayIndex(new Date()));
+      this.dungeonRunState = startDungeonRun(dungeon, tier, plan);
+      const distortions = combineDungeonModifiers(plan.modifierIds);
+      this.player.dungeonHealingMult = distortions.healingMult;
+      this.player.dungeonRunMods = runPlayerModifiers(this.dungeonRunState);
       this.combat.spawnDungeonEncounters(
         dungeon.encounters,
         { atTile: dungeon.bossTile, enemyId: dungeon.boss.enemyId, visualId: dungeon.boss.visualId },
@@ -571,8 +587,19 @@ export class OverworldScreen implements Screen {
           onBossDefeated: () => this.onDungeonBossDefeated(),
         },
         dungeonTierStatMultiplier(tier),
+        {
+          roomKinds: this.dungeonRunState.rooms.map((r) => r.kind),
+          eliteStatMult: ELITE_STAT_MULT,
+          enemyStatMult: distortions.enemyStatMult,
+          enemyActionIntervalMult: distortions.enemyActionIntervalMult,
+          enemyChaseSpeedMult: distortions.enemyChaseSpeedMult,
+          deathBurst: distortions.deathBurst,
+        },
       );
     } else {
+      // Outside a dungeon no run rules ever apply (they're session-only on Player).
+      this.player.dungeonRunMods = null;
+      this.player.dungeonHealingMult = 1;
       this.combat.spawnMonsters(tiles, playerStart, {
         count: effectiveMonsterCount(this.zoneDef, getZoneState(this.player.worldState, this.zoneDef.id)),
         enemyIds: this.zoneDef.monsterIds,
@@ -603,6 +630,7 @@ export class OverworldScreen implements Screen {
     if (this.activeDungeon) {
       this.buildDungeonHud();
       this.buildDungeonCompleteOverlay();
+      this.buildDungeonRunLayer();
     }
     this.buildTutorialOverlay();
 
@@ -633,6 +661,7 @@ export class OverworldScreen implements Screen {
     for (const p of this.dungeonPortals) disposeGroup(p.group);
     for (const c of this.chestSlots) disposeGroup(c.mesh.group);
     this.loreLayer?.dispose();
+    this.dungeonLayer?.dispose();
   }
 
   onResize(width: number, height: number): void {
@@ -643,8 +672,9 @@ export class OverworldScreen implements Screen {
   update(dt: number): void {
     this.time += dt;
 
-    if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial && !this.minimapExpanded && !this.worldMapOpen && !this.questChoiceOverlay.isOpen) {
+    if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial && !this.minimapExpanded && !this.worldMapOpen && !this.questChoiceOverlay.isOpen && !this.dungeonLayer?.isChoiceOpen) {
       advanceGameClock(this.player.gameClock, dt);
+      this.dungeonLayer?.tick(dt);
       this.worldEvents.tick(dt);
       this.updateMovement(dt);
       this.updateInteraction();
@@ -672,6 +702,7 @@ export class OverworldScreen implements Screen {
     this.updateChests();
     this.worldEvents.update(dt);
     this.loreLayer?.update(this.time, this.avatar.position, this.camera, isNight(this.player.gameClock), INTERACT_RANGE * 2.5);
+    this.dungeonLayer?.update(this.time, this.avatar.position, this.camera, INTERACT_RANGE * 3);
     this.updateMinimap();
     this.updateQuestIndicator();
     this.refreshHud();
@@ -785,8 +816,9 @@ export class OverworldScreen implements Screen {
 
   /** Shared by the [E] key and the on-screen interact-prompt tap — the only two ways to talk to an NPC or enter a dungeon, on keyboard and touch respectively. */
   private tryInteract(): void {
-    if (this.shopNpc || this.dialogueNpc || this.paused || this.showingTutorial || this.questChoiceOverlay.isOpen) return;
+    if (this.shopNpc || this.dialogueNpc || this.paused || this.showingTutorial || this.questChoiceOverlay.isOpen || this.dungeonLayer?.isChoiceOpen) return;
     if (this.nearbyNpc) this.openDialogue(this.nearbyNpc);
+    else if (this.nearbyShrine) this.dungeonLayer?.openRoom(this.nearbyShrine.index);
     else if (this.nearbyDungeon) this.interactWithDungeonPortal(this.nearbyDungeon);
     else if (this.nearbyChest) this.openChest(this.nearbyChest);
     else if (this.nearbyEventSpot) this.nearbyEventSpot.activate();
@@ -1352,16 +1384,18 @@ export class OverworldScreen implements Screen {
     this.nearbyChest = foundChest?.def ?? null;
     this.nearbyEventSpot = this.worldEvents.interactableNear(this.avatar.position, INTERACT_RANGE);
     this.nearbyLore = this.loreLayer?.nearest(this.avatar.position, INTERACT_RANGE, isNight(this.player.gameClock)) ?? null;
+    this.nearbyShrine = this.dungeonLayer?.nearestShrine(this.avatar.position, INTERACT_RANGE) ?? null;
 
     const touch = isTouchDevice();
     if (this.nearbyNpc) {
       this.promptEl.hidden = false;
       this.promptEl.textContent = touch ? `Toque para falar com ${this.nearbyNpc.name}` : `[E] Falar com ${this.nearbyNpc.name}`;
-    } else if (this.nearbyDungeon) {
-      const alreadyCleared = (this.player.dungeonTiers[this.nearbyDungeon.id] ?? 0) > 0;
-      const verb = alreadyCleared ? 'escolher o tier de' : 'entrar em';
+    } else if (this.nearbyShrine) {
       this.promptEl.hidden = false;
-      this.promptEl.textContent = touch ? `Toque para ${verb} ${this.nearbyDungeon.name}` : `[E] ${alreadyCleared ? 'Escolher tier de' : 'Entrar em'} ${this.nearbyDungeon.name}`;
+      this.promptEl.textContent = touch ? `Toque para examinar ${this.nearbyShrine.name}` : `[E] Examinar ${this.nearbyShrine.name}`;
+    } else if (this.nearbyDungeon) {
+      this.promptEl.hidden = false;
+      this.promptEl.textContent = touch ? `Toque para preparar ${this.nearbyDungeon.name}` : `[E] Preparar incursão: ${this.nearbyDungeon.name}`;
     } else if (this.nearbyChest) {
       this.promptEl.hidden = false;
       this.promptEl.textContent = touch ? `Toque para abrir ${this.nearbyChest.name}` : `[E] Abrir ${this.nearbyChest.name}`;
@@ -1577,7 +1611,11 @@ export class OverworldScreen implements Screen {
             if (this.nearbyDungeon === dungeon) this.interactWithDungeonPortal(dungeon);
           },
         },
-        [el('div', { className: 'dname', text: dungeon.name }), el('div', { className: 'dlevel', text: `Nv. recomendado ${dungeon.recommendedLevel}` })],
+        [
+          el('div', { className: 'dname', text: dungeon.name }),
+          el('div', { className: 'dlevel', text: `Nv. recomendado ${dungeon.recommendedLevel}` }),
+          this.dungeonRecordCaption(dungeon),
+        ],
       );
       this.game.uiRoot.append(labelEl);
 
@@ -1611,12 +1649,24 @@ export class OverworldScreen implements Screen {
    * offers the tier picker instead.
    */
   private interactWithDungeonPortal(dungeon: DungeonDefinition): void {
-    const bestTier = this.player.dungeonTiers[dungeon.id] ?? 0;
-    if (bestTier <= 0) {
-      this.enterDungeon(dungeon, 1);
+    // Dungeons 2.0: every run now has Distorções that must be shown BEFORE
+    // entering, so even a never-cleared dungeon opens the briefing panel
+    // (with just its tier 1 row) instead of walking straight in. A second
+    // [E]/tap while it's open confirms the selected tier.
+    if (this.dungeonTierPickerDungeon === dungeon && this.dungeonTierPickerEl) {
+      this.dungeonTierPickerEl.querySelector<HTMLElement>('.btn.primary')?.click();
       return;
     }
-    this.openDungeonTierPicker(dungeon, bestTier);
+    this.openDungeonTierPicker(dungeon, this.player.dungeonTiers[dungeon.id] ?? 0);
+  }
+
+  /** "Recorde: Tier 3 · 4:07" under a portal's name — null until the dungeon has been cleared. */
+  private dungeonRecordCaption(dungeon: DungeonDefinition): HTMLElement | null {
+    const bestTier = this.player.dungeonTiers[dungeon.id] ?? 0;
+    if (bestTier <= 0) return null;
+    const fastest = this.player.dungeonRecords[dungeon.id]?.fastestSeconds;
+    const text = fastest ? `Recorde: Tier ${bestTier} · ${formatClearTime(fastest)}` : `Recorde: Tier ${bestTier}`;
+    return el('div', { className: 'drecord', text });
   }
 
   // --- hidden treasure chests (map secrets) -------------------------------
@@ -1694,9 +1744,10 @@ export class OverworldScreen implements Screen {
   }
 
   /** Walks the player into a dungeon's own instance zone — same "arrive at a fixed tile" mechanics as any other zone transition, just triggered by an interact prompt instead of stepping on an exit tile. */
-  private enterDungeon(dungeon: DungeonDefinition, tier: number): void {
+  private enterDungeon(dungeon: DungeonDefinition, tier: number, plan: DungeonRunPlan | null = null): void {
     this.closeDungeonTierPicker();
     this.player.pendingDungeonTier = tier;
+    this.player.pendingDungeonPlan = plan;
     this.player.zoneId = dungeon.zoneId;
     const arrive = arriveWorldPosition(dungeon.playerStart);
     this.player.mapX = arrive.x;
@@ -1715,22 +1766,14 @@ export class OverworldScreen implements Screen {
    */
   private openDungeonTierPicker(dungeon: DungeonDefinition, bestTier: number): void {
     this.closeDungeonTierPicker();
-    const rows = selectableDungeonTiers(bestTier).map((tier) => {
-      const cleared = tier <= bestTier;
-      const label = cleared ? `Tier ${tier} (concluído)` : `Tier ${tier} (novo)`;
-      return el('div', { className: 'tier-picker-row', text: label, onClick: () => this.enterDungeon(dungeon, tier) });
+    this.dungeonTierPickerEl = buildDungeonBriefingPanel({
+      dungeon,
+      bestTier,
+      record: this.player.dungeonRecords[dungeon.id],
+      day: dayIndex(new Date()),
+      onEnter: (plan) => this.enterDungeon(dungeon, plan.tier, plan),
+      onCancel: () => this.closeDungeonTierPicker(),
     });
-    const capNote =
-      bestTier >= DUNGEON_TIER_CAP
-        ? el('div', { className: 'tier-picker-cap', text: 'Tier máximo alcançado.' })
-        : null;
-    const closeBtn = el('div', { className: 'tier-picker-row tier-picker-close', text: 'Cancelar', onClick: () => this.closeDungeonTierPicker() });
-    this.dungeonTierPickerEl = el('div', { className: 'panel dungeon-tier-picker' }, [
-      el('div', { className: 'dname', text: dungeon.name }),
-      ...rows,
-      capNote,
-      closeBtn,
-    ]);
     this.dungeonTierPickerDungeon = dungeon;
     this.game.uiRoot.append(this.dungeonTierPickerEl);
   }
@@ -1755,17 +1798,45 @@ export class OverworldScreen implements Screen {
 
   private onDungeonEncounterCleared(index: number): void {
     if (!this.dungeonRunState) return;
-    void index;
-    this.dungeonRunState = recordEncounterCleared(this.dungeonRunState);
+    const elite = this.dungeonRunState.rooms[index]?.kind === 'elite';
+    this.dungeonRunState = recordEncounterCleared(this.dungeonRunState, index);
     this.refreshDungeonProgress();
-    this.combat.showBanner('Emboscada eliminada!', 1600);
+    this.dungeonLayer?.refreshHud();
+    this.combat.showBanner(elite ? 'Sala de elite vencida! A recompensa da incursão aumentou.' : 'Emboscada eliminada!', 1600);
+  }
+
+  /** Dungeons 2.0 — builds the shrine/trap rooms + Distorções HUD for this run (see DungeonRunLayer). */
+  private buildDungeonRunLayer(): void {
+    const dungeon = this.activeDungeon;
+    if (!dungeon || !this.dungeonRunState) return;
+    this.dungeonLayer = new DungeonRunLayer({
+      scene: this.scene,
+      uiRoot: this.game.uiRoot,
+      dungeon,
+      player: this.player,
+      grid: this.currentWalkabilityGrid(),
+      getState: () => this.dungeonRunState,
+      onRoomResolved: (index, result) => this.onDungeonRoomResolved(index, result),
+    });
+  }
+
+  private onDungeonRoomResolved(index: number, result: RoomOutcomeResult): void {
+    if (!this.dungeonRunState) return;
+    let state = this.dungeonRunState;
+    if (result.blessing) state = addRunBlessing(state, result.blessing);
+    this.dungeonRunState = recordEncounterCleared(state, index);
+    this.player.dungeonRunMods = runPlayerModifiers(this.dungeonRunState);
+    this.refreshDungeonProgress();
+    this.combat.showBanner(result.message, 3000);
+    saveGame(this.player);
   }
 
   private onDungeonBossDefeated(): void {
     const dungeon = this.activeDungeon;
     if (!dungeon || !this.dungeonRunState || this.dungeonRunState.bossDefeated) return;
-    const { state, reward } = completeDungeon(this.player, dungeon, this.dungeonRunState);
+    const { state, reward } = completeDungeon(this.player, dungeon, this.dungeonRunState, { elapsedSeconds: this.dungeonLayer?.elapsedSeconds });
     this.dungeonRunState = state;
+    checkAchievements(this.player);
     saveGame(this.player);
     this.combat.showBanner(reward.message, 3200);
     if (this.dungeonCompleteMessageEl) this.dungeonCompleteMessageEl.textContent = reward.message;

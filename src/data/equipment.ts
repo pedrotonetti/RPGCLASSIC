@@ -1,4 +1,4 @@
-import { RARITY_ORDER, RARITY_STAT_MULTIPLIER } from '../config/rarity';
+import { RARITY_ORDER, RARITY_STAT_MULTIPLIER, rarityTier } from '../config/rarity';
 import type { EquipmentInstance, EquipmentTemplate, ItemRarity, Stats } from '../config/types';
 import { pityFloor, recordDrop, type LootPityState } from '../systems/LootPity';
 import { AFFIX_COUNT_BY_RARITY, affixStatBonus, getAffixDefinition, rollAffixes } from './affixes';
@@ -147,6 +147,8 @@ export interface LootOptions {
   rng?: () => number;
   /** The player's pity counters: read for a guaranteed rarity floor, then updated in place with this drop. */
   pity?: LootPityState;
+  /** Guaranteed minimum rarity (e.g. a dungeon's end-of-run chest) — combined with the pity floor, whichever is higher wins. */
+  minRarity?: ItemRarity;
 }
 
 /** Rarity bias a drop rolls with — the player's luck plus the defeated enemy's own tier. */
@@ -157,7 +159,9 @@ export function lootRarityBias(enemyLevel: number, luckBias = 0): number {
 /** Rolls a random equipment drop for defeating the given enemy (by its own difficulty tier), with the player's own level and luck as secondary factors. */
 export function generateLoot(enemyLevel: number, characterLevel: number, luckBias = 0, opts: LootOptions = {}): EquipmentInstance {
   const rng = opts.rng ?? Math.random;
-  const rarity = pickWeightedRarity(lootRarityBias(enemyLevel, luckBias), rng, opts.pity ? pityFloor(opts.pity) : null);
+  const pity = opts.pity ? pityFloor(opts.pity) : null;
+  const floor = opts.minRarity && (!pity || rarityTier(opts.minRarity) > rarityTier(pity)) ? opts.minRarity : pity;
+  const rarity = pickWeightedRarity(lootRarityBias(enemyLevel, luckBias), rng, floor);
   if (opts.pity) recordDrop(opts.pity, rarity);
   const template = pickTemplate(rarity, rng);
   const anchor = enemyLevel * ENEMY_LEVEL_WEIGHT + characterLevel * PLAYER_LEVEL_WEIGHT;

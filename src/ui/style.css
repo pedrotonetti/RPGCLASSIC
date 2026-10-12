@@ -2894,3 +2894,168 @@ body {
   color: var(--accent);
   margin-top: 6px;
 }
+
+/* --- Dungeons 2.0: Distorções, salas variadas e recordes ----------------- */
+
+/* Record caption under a cleared dungeon's portal name. */
+.dungeon-portal-label .drecord {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+/* Portal briefing panel (extends .dungeon-tier-picker). */
+.dungeon-briefing {
+  max-height: 86vh;
+  overflow-y: auto;
+  width: 360px;
+}
+.dungeon-briefing .briefing-record {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.dungeon-briefing .briefing-featured {
+  font-size: 13px;
+  color: #c9a6ff;
+  margin-bottom: 8px;
+}
+.tier-picker-row.selected {
+  border-color: var(--accent);
+  background: rgba(242, 193, 78, 0.16);
+}
+.briefing-details {
+  text-align: left;
+  margin: 10px 0;
+}
+.briefing-heading {
+  font-weight: bold;
+  color: #c9a6ff;
+  margin-bottom: 4px;
+}
+.briefing-mod {
+  padding: 4px 8px;
+  margin: 4px 0;
+  border-left: 3px solid #8a5cf5;
+  background: rgba(138, 92, 245, 0.1);
+}
+.briefing-mod.featured {
+  border-left-color: var(--accent);
+}
+.briefing-mod .mod-name {
+  font-weight: bold;
+}
+.briefing-mod .mod-desc {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.briefing-reward {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+/* In-run HUD: timer + active Distorções chips, under .dungeon-progress. */
+.dungeon-run-hud {
+  position: absolute;
+  top: calc(184px + var(--safe-t));
+  left: calc(8px + var(--safe-l));
+  max-width: min(320px, 60vw);
+  pointer-events: auto;
+}
+.dungeon-run-timer {
+  display: inline-block;
+  padding: 3px 8px;
+  font-size: 14px;
+  color: #d9c8f2;
+  background: rgba(26, 20, 35, 0.7);
+  border-radius: 4px;
+}
+.dungeon-run-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.dungeon-mod-chip {
+  padding: 2px 7px;
+  font-size: 13px;
+  color: #e7dcff;
+  background: rgba(88, 52, 150, 0.75);
+  border: 1px solid #8a5cf5;
+  border-radius: 10px;
+  cursor: help;
+}
+.dungeon-mod-chip.featured {
+  border-color: var(--accent);
+}
+.dungeon-mod-chip.blessing {
+  background: rgba(40, 110, 96, 0.75);
+  border-color: #7fe3d0;
+}
+.dungeon-mod-chip.reward {
+  color: var(--accent);
+  background: rgba(26, 20, 35, 0.75);
+  border-color: var(--accent);
+}
+
+/* Shrine/trap room caption (same world-anchored idiom as .chest-label). */
+.dungeon-room-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  text-align: center;
+  font-size: 13px;
+  text-shadow: 2px 2px 0 #000;
+  pointer-events: none;
+}
+.dungeon-room-label.shrine {
+  color: #7fe3d0;
+}
+.dungeon-room-label.trap {
+  color: #ff8a80;
+}
+
+/* Shrine/trap choice overlay. */
+.dungeon-room-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 20px 26px;
+  text-align: center;
+  width: 380px;
+  max-width: 92vw;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.dungeon-room-overlay h2 {
+  margin: 0 0 8px;
+  color: #7fe3d0;
+}
+.dungeon-room-overlay.trap h2 {
+  color: #ff8a80;
+}
+.dungeon-room-overlay p {
+  margin: 0 0 14px;
+  font-size: 16px;
+}
+.dungeon-room-choice .choice-hint {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+/* Elite-room monsters: violet nameplate. */
+.enemy-label.elite .ename {
+  color: #c9a6ff;
+  font-size: 17px;
+  text-shadow: 0 0 6px rgba(138, 92, 245, 0.8), 2px 2px 0 #000;
+}
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .dungeon-run-hud {
+    top: calc(128px + var(--safe-t));
+  }
+  .dungeon-run-timer,
+  .dungeon-mod-chip {
+    font-size: 11px;
+  }
+}

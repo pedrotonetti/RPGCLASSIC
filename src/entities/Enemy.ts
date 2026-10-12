@@ -25,6 +25,8 @@ export class Enemy implements StatusEffectHolder {
   private readonly tierMultiplier: number;
   /** Title prepended to the name for a rare variant (systems/RareEncounterSystem.ts); empty otherwise. */
   private readonly namePrefix: string;
+  /** Multiplies `def.actionInterval` (<1 = acts more often) — 1 except inside a dungeon run with a speed Distorção (see data/dungeonModifiers.ts). */
+  private readonly actionIntervalMult: number;
   /**
    * This instance's full runtime stat sheet, resolved once at construction
    * (the source definitions are static data) instead of rebuilt on every
@@ -37,10 +39,11 @@ export class Enemy implements StatusEffectHolder {
   /** Which of `def.phases` (a scripted boss fight only — see `systems/BossPhaseSystem.ts`) is currently active. Always 0 (and never read) for an enemy with no `phases`. Advanced by `CombatEngine.tick`. */
   phaseIndex = 0;
 
-  constructor(definitionId: string, tierMultiplier = 1, namePrefix = '') {
+  constructor(definitionId: string, tierMultiplier = 1, namePrefix = '', actionIntervalMult = 1) {
     this.definitionId = definitionId;
     this.tierMultiplier = tierMultiplier;
     this.namePrefix = namePrefix;
+    this.actionIntervalMult = actionIntervalMult;
     this.resolvedDef = this.resolveDef();
     this.currentHp = this.stats.maxHp;
     this.currentMp = this.stats.maxMp;
@@ -64,7 +67,7 @@ export class Enemy implements StatusEffectHolder {
     // difficulty curve (config/balance.ts) applies to both lists alike,
     // before any repeat-dungeon tier multiplier below stacks on top of it.
     const base = applyEnemyBalance(getBossById(this.definitionId) ?? getEnemyById(this.definitionId));
-    if (this.tierMultiplier === 1 && !this.namePrefix) return base;
+    if (this.tierMultiplier === 1 && !this.namePrefix && this.actionIntervalMult === 1) return base;
     const mult = this.tierMultiplier;
     // A stat that's genuinely 0 (e.g. a melee-only enemy's magicAttack) stays
     // 0 — only a positive stat gets floored at 1 so scaling never rounds a
@@ -89,6 +92,7 @@ export class Enemy implements StatusEffectHolder {
       // read this straight off `.def`, so a scaled-up dungeon mob correctly
       // rolls loot as if it were the harder enemy it now plays as.
       level: Math.round(base.level * mult),
+      actionInterval: base.actionInterval * this.actionIntervalMult,
     };
   }
 

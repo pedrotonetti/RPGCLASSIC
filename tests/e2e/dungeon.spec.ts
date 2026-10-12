@@ -53,6 +53,13 @@ test('walking up to the Root Hollow portal and entering it switches zones and sh
   await page.locator('.interact-prompt', { hasText: 'Toca das Raízes' }).waitFor({ state: 'visible', timeout: 10_000 });
   await page.keyboard.press('e');
 
+  // Dungeons 2.0: [E] opens the briefing panel (records, Distorções of the
+  // run) — entering is an explicit confirmation.
+  const briefing = page.locator('.dungeon-briefing');
+  await briefing.waitFor({ state: 'visible', timeout: 5_000 });
+  await expect(briefing).toContainText('Distorção do dia');
+  await briefing.getByText('Entrar (Tier 1)').click();
+
   await waitForOverworld(page);
   const afterEnter = await pauseSnapshot(page, 0);
   expect(afterEnter.zoneId).toBe(ROOT_HOLLOW_ZONE_ID);

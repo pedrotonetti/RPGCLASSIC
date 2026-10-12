@@ -242,6 +242,31 @@ export const ACHIEVEMENT_DEFINITIONS: AchievementDefinition[] = [
     condition: { kind: 'dungeonsCleared', target: 1 },
     reward: { gold: 80, xp: 80 },
   },
+  // Dungeons 2.0 — counters bumped by DungeonSystem.completeDungeon.
+  {
+    id: 'avesso_do_avesso',
+    name: 'Avesso do Avesso',
+    description: 'Conclua 10 masmorras sob alguma Distorção.',
+    category: 'exploracao',
+    condition: { kind: 'worldCounter', key: 'dungeon_distorted_clears', target: 10 },
+    reward: { gold: 150, xp: 150 },
+  },
+  {
+    id: 'tripla_distorcao',
+    name: 'Tripla Distorção',
+    description: 'Conclua uma masmorra com três Distorções ativas ao mesmo tempo.',
+    category: 'exploracao',
+    condition: { kind: 'worldCounter', key: 'dungeon_three_distortion_clears', target: 1 },
+    reward: { gold: 250, xp: 250, title: 'Senhor das Distorções' },
+  },
+  {
+    id: 'cacador_de_elites',
+    name: 'Caçador de Elites',
+    description: 'Vença 5 salas de elite dentro de masmorras concluídas.',
+    category: 'combate',
+    condition: { kind: 'worldCounter', key: 'dungeon_elites_slain', target: 5 },
+    reward: { gold: 120, xp: 120 },
+  },
 
   // --- Progressão --------------------------------------------------------
   {
