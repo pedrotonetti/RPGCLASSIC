@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { audio } from './AudioSystem';
+import { emptyAmbientGains } from './ambientAudio';
 
 /** No real AudioContext in this test environment — that's fine, these tests
  * only cover the getter/setter/clamping contract the settings screen relies
@@ -28,5 +29,26 @@ describe('AudioSystem volume', () => {
   it('clamps negative volume up to 0', () => {
     audio.setSfxVolume(-2);
     expect(audio.getSfxVolume()).toBe(0);
+  });
+});
+
+describe('AudioSystem ambient bed (Fase 7)', () => {
+  it('stores and clamps the ambient volume', () => {
+    audio.setAmbientVolume(0.3);
+    expect(audio.getAmbientVolume()).toBe(0.3);
+    audio.setAmbientVolume(5);
+    expect(audio.getAmbientVolume()).toBe(1);
+  });
+
+  it('records the target mix (clamped) even with no AudioContext, and fades back to silence', () => {
+    const targets = emptyAmbientGains();
+    targets.wind = 0.5;
+    targets.birds = 3;
+    audio.setAmbientTargets(targets, 1);
+    expect(audio.getAmbientTargets().wind).toBe(0.5);
+    expect(audio.getAmbientTargets().birds).toBe(1);
+    audio.fadeOutAmbient();
+    expect(audio.getAmbientTargets().wind).toBe(0);
+    expect(audio.isAmbientActive()).toBe(false);
   });
 });

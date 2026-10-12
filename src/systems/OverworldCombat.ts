@@ -17,6 +17,7 @@ import { adaptiveModifiers, recordFight, shiftPackWeights, type AdaptiveModifier
 import { recordEnemyDefeated, recordEnemyEngaged } from './AchievementSystem';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from './CombatSystem';
 import { audio } from './AudioSystem';
+import { combatFeel, damagePopupStyle, hitSeverity } from './combatFeel';
 import { CLASS_METER_MAX, FLOW_MAX_LEVEL, comboLabel } from './classMechanics';
 import { archetypeProfileFor, chaseSpeedMultiplierFor } from './enemyArchetypes';
 import { computeSkillLevelStats } from './skillMath';
@@ -76,7 +77,30 @@ interface WorldMonster {
   variant?: 'rare';
   nameEl: HTMLElement;
   restoreLook?: () => void;
+  /** Fase 7 hit flash: seconds left of the white silhouette (see beginHitFlash). 0 / undefined = not flashing. */
+  hitFlashTime?: number;
+  /** The meshes swapped to HIT_FLASH_MATERIAL and their real materials, reused between flashes so a hit doesn't allocate fresh arrays. */
+  flashMeshes?: THREE.Mesh[];
+  flashOriginals?: Array<THREE.Material | THREE.Material[]>;
+  /** Fase 7 knockback: a short spring-back nudge away from the player, applied as a temporary offset (never a permanent displacement). */
+  knockbackTime?: number;
+  knockbackDirX?: number;
+  knockbackDirZ?: number;
+  knockbackAmp?: number;
+  knockbackOffX?: number;
+  knockbackOffZ?: number;
 }
+
+/**
+ * One shared unlit material every hit-flashing enemy borrows for a couple of
+ * frames — module-level and never disposed on purpose: it is a single
+ * constant material reused for the whole session (like a palette), so
+ * there's nothing per-zone to leak, and creating/disposing one per flash
+ * would mean a shader recompile on every hit.
+ */
+const HIT_FLASH_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xfff4e0 });
+const HIT_FLASH_DURATION = 0.07;
+const KNOCKBACK_DURATION = 0.2;
 
 /** One fixed-position monster pod along a dungeon's corridor — see spawnDungeonEncounters. */
 export interface DungeonEncounterSpawn {
@@ -231,6 +255,9 @@ export class OverworldCombat {
   private vfx: VfxManager;
   /** A floating anchor (no visible mesh of its own) tracking the player's world position every frame — lets bleed/burn/slow show on the PLAYER too (see `render/vfx.ts`'s own doc comment on reciprocated afflictions) without this module needing a reference to the player's actual avatar model. */
   private playerVfxAnchor: THREE.Object3D;
+  /** The camera passed to the latest update() — lets event-driven popups over the player project to screen space without threading it through processEvents. */
+  private lastCamera: THREE.Camera | null = null;
+  private scratchPopupPos = new THREE.Vector3();
   private playerWorldPos = new THREE.Vector3();
 
   constructor(
@@ -322,6 +349,7 @@ export class OverworldCombat {
   }
 
   private applyRareVariant(m: WorldMonster): void {
+    this.endHitFlash(m);
     const id = m.enemy.definitionId;
     m.variant = 'rare';
     m.enemy = new Enemy(id, RARE_TIER_MULTIPLIER, rarePrefixFor(id));
@@ -334,6 +362,7 @@ export class OverworldCombat {
   }
 
   private clearRareVariant(m: WorldMonster): void {
+    this.endHitFlash(m);
     m.variant = undefined;
     m.baseScale /= RARE_MODEL_SCALE;
     m.model.scale.setScalar(m.baseScale);
@@ -567,6 +596,7 @@ export class OverworldCombat {
   /** Advances monster AI, the active fight (if any), and refreshes all combat HUD elements. Call every frame. */
   update(dt: number, playerPos: THREE.Vector3, camera: THREE.Camera): void {
     this.clock += dt;
+    this.lastCamera = camera;
     this.playerWorldPos.copy(playerPos);
     this.playerVfxAnchor.position.set(playerPos.x, playerPos.y + 1.1, playerPos.z);
 
@@ -626,6 +656,11 @@ export class OverworldCombat {
       m.flashTime = Math.max(0, m.flashTime - dt);
       m.model.scale.setScalar(m.baseScale * (1 + 0.15 * (m.flashTime / FLASH_DURATION)));
     }
+    if (m.hitFlashTime && m.hitFlashTime > 0) {
+      m.hitFlashTime = Math.max(0, m.hitFlashTime - dt);
+      if (m.hitFlashTime === 0) this.endHitFlash(m);
+    }
+    if (m.knockbackTime && m.knockbackTime > 0) this.updateKnockback(m, dt);
 
     const dx = playerPos.x - m.model.position.x;
     const dz = playerPos.z - m.model.position.z;
@@ -687,6 +722,73 @@ export class OverworldCombat {
     m.model.position.x += (tx / td) * WANDER_SPEED * dt;
     m.model.position.z += (tz / td) * WANDER_SPEED * dt;
     m.model.rotation.y = Math.atan2(tx, tz);
+  }
+
+  // --- Fase 7: hit flash / knockback -------------------------------------
+
+  /** Swaps every mesh of `m` to the shared white flash material for HIT_FLASH_DURATION — the classic "it got hit" silhouette blink. Restored by endHitFlash. */
+  private beginHitFlash(m: WorldMonster): void {
+    if (m.state === 'dead') return;
+    if (m.hitFlashTime && m.hitFlashTime > 0) {
+      m.hitFlashTime = HIT_FLASH_DURATION;
+      return;
+    }
+    const meshes = (m.flashMeshes ??= []);
+    const originals = (m.flashOriginals ??= []);
+    meshes.length = 0;
+    originals.length = 0;
+    m.model.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      meshes.push(mesh);
+      originals.push(mesh.material);
+      mesh.material = HIT_FLASH_MATERIAL;
+    });
+    m.hitFlashTime = HIT_FLASH_DURATION;
+  }
+
+  /** Puts every mesh's real material back — safe to call when not flashing. Must run before anything else swaps materials (applyRareLook / its restore). */
+  private endHitFlash(m: WorldMonster): void {
+    m.hitFlashTime = 0;
+    const meshes = m.flashMeshes;
+    const originals = m.flashOriginals;
+    if (!meshes || !originals || meshes.length === 0) return;
+    for (let i = 0; i < meshes.length; i++) meshes[i].material = originals[i];
+    meshes.length = 0;
+    originals.length = 0;
+  }
+
+  /** Starts a small spring-back shove away from the player, scaled by how heavy the hit was. Skipped under "Reduzir movimento". */
+  private beginKnockback(m: WorldMonster, severity: number, crit: boolean): void {
+    if (combatFeel.settings.reduceMotion || m.state === 'dead') return;
+    if (severity < 0.12 && !crit) return;
+    // Settle any shove still in flight first so its offset is never orphaned.
+    if (m.knockbackTime && m.knockbackTime > 0) this.updateKnockback(m, m.knockbackTime);
+    const dx = m.model.position.x - this.playerWorldPos.x;
+    const dz = m.model.position.z - this.playerWorldPos.z;
+    const d = Math.hypot(dx, dz) || 1;
+    m.knockbackDirX = dx / d;
+    m.knockbackDirZ = dz / d;
+    m.knockbackAmp = Math.min(0.32, 0.12 + severity * 0.5 + (crit ? 0.06 : 0)) / Math.max(1, m.baseScale);
+    m.knockbackOffX = 0;
+    m.knockbackOffZ = 0;
+    m.knockbackTime = KNOCKBACK_DURATION;
+  }
+
+  /** Applies this frame's knockback offset as a delta from the last one, so the monster ends exactly where it would have been without the shove. */
+  private updateKnockback(m: WorldMonster, dt: number): void {
+    const t = Math.max(0, (m.knockbackTime ?? 0) - dt);
+    m.knockbackTime = t;
+    const progress = 1 - t / KNOCKBACK_DURATION; // 0..1
+    // Fast out, eased back: peaks 30% in, back to exactly 0 at the end.
+    const env = t === 0 ? 0 : progress < 0.3 ? progress / 0.3 : 1 - (progress - 0.3) / 0.7;
+    const amp = (m.knockbackAmp ?? 0) * Math.max(0, env);
+    const nx = (m.knockbackDirX ?? 0) * amp;
+    const nz = (m.knockbackDirZ ?? 0) * amp;
+    m.model.position.x += nx - (m.knockbackOffX ?? 0);
+    m.model.position.z += nz - (m.knockbackOffZ ?? 0);
+    m.knockbackOffX = nx;
+    m.knockbackOffZ = nz;
   }
 
   private respawnMonster(m: WorldMonster): void {
@@ -1270,6 +1372,10 @@ export class OverworldCombat {
           setTimeout(() => this.bossBannerEl?.classList.remove('phase-flash'), 900);
         }
         audio.bossPhaseChange();
+        // Fase 7: a heavier beat on top — freeze + big shake + a screen pulse.
+        audio.bossPhaseStinger();
+        combatFeel.onBossPhase();
+        this.flashBossPhaseScreen();
       }
       if (event.kind === 'miss') audio.miss();
       if (event.kind === 'heal' || event.kind === 'buff') audio.itemUse();
@@ -1283,6 +1389,12 @@ export class OverworldCombat {
         if (m) {
           if (event.targetHpAfter !== undefined) this.setMonsterHp(m, event.targetHpAfter);
           this.triggerFlash(enemy);
+          if (event.kind === 'damage' && (event.amount ?? 0) > 0) {
+            const severity = hitSeverity(event.amount ?? 0, enemy.stats.maxHp);
+            combatFeel.onHit({ amount: event.amount ?? 0, targetMaxHp: enemy.stats.maxHp, crit: event.crit, killed: (event.targetHpAfter ?? 1) <= 0 });
+            this.beginHitFlash(m);
+            this.beginKnockback(m, severity, !!event.crit);
+          }
           const revealImpact = () => {
             this.popupForEvent(event, this.labelAnchor(m));
             if (event.kind === 'damage' || event.kind === 'statusApplied' || event.kind === 'statusTick') {
@@ -1316,6 +1428,8 @@ export class OverworldCombat {
       } else if (event.targetIsPlayer) {
         if (event.kind === 'damage') {
           this.animator.play('hit');
+          combatFeel.onHit({ amount: event.amount ?? 0, targetMaxHp: this.player.stats.maxHp, crit: event.crit, targetIsPlayer: true, mitigation: event.mitigation });
+          if (event.mitigation !== 'dodge') this.popupForPlayerEvent(event);
           if (event.mitigation === 'block' || event.mitigation === 'perfectBlock') {
             audio.block(event.mitigation === 'perfectBlock');
           } else if (event.mitigation !== 'dodge') {
@@ -1370,6 +1484,10 @@ export class OverworldCombat {
   }
 
   private killMonster(m: WorldMonster): void {
+    this.endHitFlash(m);
+    m.knockbackTime = 0;
+    m.knockbackOffX = 0;
+    m.knockbackOffZ = 0;
     m.state = 'dead';
     m.model.visible = false;
     m.labelEl.hidden = true;
@@ -1389,41 +1507,53 @@ export class OverworldCombat {
     }
   }
 
+  /**
+   * Fase 7: wording/colour now come from combatFeel.damagePopupStyle (same
+   * texts as before) and each popup gets a variant class (crit/weak/resist/
+   * heal/elemental/player) so style.css can size/animate them differently.
+   * "Números de dano" off hides them entirely.
+   */
   private popupForEvent(event: CombatEvent, anchor: { x: number; y: number }): void {
-    let text = '';
-    let color = '#ffffff';
-    if (event.kind === 'miss') {
-      text = 'Errou!';
-      color = '#cccccc';
-    } else if (event.kind === 'damage' && event.amount) {
-      text = `-${event.amount}`;
-      color = event.crit ? '#ffcf4e' : '#ffffff';
-      if (event.affinity === 'weak') {
-        text += ' Fraco!';
-        color = '#ff7a3d';
-      } else if (event.affinity === 'resist') {
-        text += ' Resistiu';
-        color = '#9aa7b5';
-      }
-    } else if (event.kind === 'heal' && event.amount) {
-      text = `+${event.amount}`;
-      color = '#6bff8e';
-    } else {
-      return;
-    }
+    if (!combatFeel.settings.damageNumbers) return;
+    const style = damagePopupStyle(event);
+    if (!style) return;
 
     const jitterX = (Math.random() - 0.5) * 20;
+    const variantClass = ` floating-text--${style.variant}${style.element ? ` floating-text--${style.element}` : ''}`;
     const popup = el('div', {
-      className: 'floating-text',
-      text,
-      style: { left: `${anchor.x + jitterX}px`, top: `${anchor.y}px`, color, opacity: '1' },
+      className: `floating-text${variantClass}`,
+      text: style.text,
+      style: { left: `${anchor.x + jitterX}px`, top: `${anchor.y}px`, color: style.color, opacity: '1' },
     });
     this.game.uiRoot.append(popup);
+    const rise = style.variant === 'crit' || style.variant === 'weak' ? 44 : 30;
     requestAnimationFrame(() => {
-      popup.style.transform = 'translate(-50%, calc(-50% - 30px))';
+      popup.style.transform = `translate(-50%, calc(-50% - ${rise}px))`;
       popup.style.opacity = '0';
     });
     setTimeout(() => popup.remove(), 750);
+  }
+
+  /** Damage the PLAYER takes — a red number over the hero (only enemies got popups before). */
+  private popupForPlayerEvent(event: CombatEvent): void {
+    if (!combatFeel.settings.damageNumbers || !this.lastCamera || !(event.amount && event.amount > 0)) return;
+    this.scratchPopupPos.set(this.playerWorldPos.x, this.playerWorldPos.y + 1.9, this.playerWorldPos.z);
+    const anchor = this.projectToScreen(this.scratchPopupPos, this.lastCamera);
+    if (anchor.behind) return;
+    this.popupForEvent(event, anchor);
+  }
+
+  /** A brief full-screen pulse for a boss phase change — skipped under "Reduzir movimento" (a flashing screen is exactly what that option is for avoiding). */
+  private flashBossPhaseScreen(): void {
+    if (combatFeel.settings.reduceMotion) return;
+    const pulse = el('div', { className: 'boss-phase-pulse' });
+    this.game.uiRoot.append(pulse);
+    setTimeout(() => pulse.remove(), 900);
+  }
+
+  /** How many monsters are in the current fight — drives the camera's combat zoom (see OverworldScreen.updateCamera). */
+  engagedCount(): number {
+    return this.engine ? this.engagedMonsters.length : 0;
   }
 
   private refreshHotbarCooldowns(): void {

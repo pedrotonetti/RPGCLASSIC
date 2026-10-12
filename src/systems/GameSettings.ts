@@ -22,6 +22,14 @@ export interface GameSettings {
    * WebGLRenderer itself is constructed.
    */
   lowPowerOverride: boolean | null;
+  /** 0..1 — Fase 7's procedural ambient beds (wind, birds, crickets, cave drips...); see AudioSystem.setAmbientVolume. */
+  ambientVolume: number;
+  /** 0 = off, 0.5 = suave, 1 = normal — camera shake strength on heavy hits; see systems/combatFeel.ts. */
+  screenShake: number;
+  /** Floating damage/heal numbers over enemies in combat. */
+  damageNumbers: boolean;
+  /** Accessibility: disables camera shake, hit-stop freeze frames and the combat zoom-out regardless of `screenShake`. */
+  reduceMotion: boolean;
 }
 
 const SETTINGS_KEY = 'rpgclassic:settings:v1';
@@ -29,7 +37,23 @@ const SETTINGS_KEY = 'rpgclassic:settings:v1';
 const LEGACY_MUSIC_KEY = 'rpgclassic:musicOn';
 
 function defaultSettings(): GameSettings {
-  return { musicVolume: 1, sfxVolume: 1, lowPowerOverride: null };
+  return { musicVolume: 1, sfxVolume: 1, lowPowerOverride: null, ...defaultFeelSettings() };
+}
+
+/** Fase 7's additions, split out so their defaults (and sanitizing, below) live in one place. */
+function defaultFeelSettings(): Pick<GameSettings, 'ambientVolume' | 'screenShake' | 'damageNumbers' | 'reduceMotion'> {
+  return { ambientVolume: 1, screenShake: 1, damageNumbers: true, reduceMotion: false };
+}
+
+/** A hand-edited or partially-written blob shouldn't be able to put a string where a number goes — any Fase 7 field of the wrong type falls back to its default. */
+function sanitizeFeelSettings(settings: GameSettings): GameSettings {
+  const d = defaultFeelSettings();
+  const unit = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : fallback);
+  settings.ambientVolume = unit(settings.ambientVolume, d.ambientVolume);
+  settings.screenShake = unit(settings.screenShake, d.screenShake);
+  if (typeof settings.damageNumbers !== 'boolean') settings.damageNumbers = d.damageNumbers;
+  if (typeof settings.reduceMotion !== 'boolean') settings.reduceMotion = d.reduceMotion;
+  return settings;
 }
 
 export function loadSettings(): GameSettings {
@@ -37,7 +61,7 @@ export function loadSettings(): GameSettings {
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as Partial<GameSettings>;
-      return { ...defaultSettings(), ...parsed };
+      return sanitizeFeelSettings({ ...defaultSettings(), ...parsed });
     } catch {
       return defaultSettings();
     }

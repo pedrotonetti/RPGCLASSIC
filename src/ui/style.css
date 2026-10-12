@@ -2894,3 +2894,65 @@ body {
   color: var(--accent);
   margin-top: 6px;
 }
+
+/* --- Fase 7: números de dano por tipo e pulso de fase de chefe ----------- */
+.floating-text--crit {
+  font-size: 30px;
+  letter-spacing: 0.5px;
+  text-shadow: 2px 2px 0 #000, 0 0 10px rgba(255, 190, 60, 0.75);
+}
+.floating-text--weak {
+  font-size: 27px;
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(255, 110, 40, 0.6);
+}
+.floating-text--resist {
+  font-size: 18px;
+  opacity: 0.85;
+}
+.floating-text--heal {
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(80, 255, 140, 0.5);
+}
+.floating-text--miss {
+  font-size: 18px;
+  font-style: italic;
+}
+.floating-text--player {
+  font-size: 20px;
+}
+.floating-text--elemental.floating-text--fire,
+.floating-text--fire {
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(255, 120, 40, 0.65);
+}
+.floating-text--ice {
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(120, 210, 255, 0.65);
+}
+.floating-text--holy {
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(255, 240, 150, 0.7);
+}
+.floating-text--dark {
+  text-shadow: 2px 2px 0 #000, 0 0 8px rgba(180, 120, 255, 0.65);
+}
+.boss-phase-pulse {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 14;
+  background: radial-gradient(ellipse at center, rgba(120, 20, 40, 0) 35%, rgba(150, 20, 50, 0.55) 100%);
+  animation: boss-phase-pulse 0.9s ease-out forwards;
+}
+@keyframes boss-phase-pulse {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boss-phase-pulse {
+    display: none;
+  }
+}

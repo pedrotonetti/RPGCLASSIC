@@ -55,11 +55,21 @@ import {
   questTrackerText,
   resolveQuestChoice,
 } from '../systems/QuestSystem';
-import { advanceGameClock, dayNightFactor, formatTimeOfDay, isNight } from '../systems/GameClock';
+import { advanceGameClock, dayNightFactor, formatTimeOfDay, hourOfDay, isNight } from '../systems/GameClock';
 import { adjustWorldState, getZoneState, worldMoodFactor } from '../systems/WorldStateSystem';
 import type { QuestDefinition } from '../data/quests';
 import { saveGame } from '../systems/SaveSystem';
 import { audio } from '../systems/AudioSystem';
+import {
+  AMBIENT_DRIFT_FADE_TAU,
+  AMBIENT_ZONE_FADE_TAU,
+  ambientBiomeForZone,
+  ambientGainsChanged,
+  ambientLayerGains,
+  emptyAmbientGains,
+  type AmbientBiome,
+} from '../systems/ambientAudio';
+import { combatFeel, combatZoomFactor } from '../systems/combatFeel';
 import { el, goToLazy } from '../ui/dom';
 import { isTouchDevice } from '../ui/device';
 import { buildAchievementToast, type AchievementToastHandle } from '../ui/achievementToast';
@@ -413,6 +423,19 @@ export class OverworldScreen implements Screen {
   /** Shared by updateNpcLabels/updateDungeonPortals/updateChests — all three run sequentially in update(), each fully finishing (reading the projected x/y into a label's CSS position) before the next entity or method reuses it. */
   private scratchLabelAnchor = new THREE.Vector3();
 
+  // --- Fase 7: ambient bed + combat feel ---------------------------------
+  private ambientBiome: AmbientBiome = 'village';
+  /** Reused targets record (see updateAmbient) and the last one actually sent to AudioSystem — two fixed objects, never reallocated. */
+  private ambientScratch = emptyAmbientGains();
+  private ambientSent = emptyAmbientGains();
+  /** Seconds until the next ambient re-evaluation — the mix only drifts with the clock/events, so twice a second is plenty. */
+  private ambientPollIn = 0;
+  /** Camera-shake offset added on top of camera.position last frame (see updateCamera) — removed again before the next frame's follow math, so shake never feeds back into the follow/collision logic. */
+  private appliedShake = new THREE.Vector3();
+  private scratchShake = { x: 0, y: 0, z: 0 };
+  /** Eased multiplier on the rig's distance/height while fighting (see combatFeel.combatZoomFactor) — 1 outside combat. */
+  private combatZoom = 1;
+
   private paused = false;
   private dialogueNpc: NpcDefinition | null = null;
   private dialogueLineIndex = 0;
@@ -592,6 +615,7 @@ export class OverworldScreen implements Screen {
 
     this.buildHud();
     this.buildWorldEvents();
+    this.startAmbient();
     this.buildJoystick();
     this.buildDialogueOverlay();
     this.buildShopOverlay();
@@ -628,6 +652,11 @@ export class OverworldScreen implements Screen {
     // long session on a weaker/mobile GPU. NPCs/wildlife/the player avatar
     // are deliberately left alone — see disposeGroup's own doc comment.
     disposeGroup(this.terrainGroup);
+    // Fase 7: fade the bed out (the next zone's mount retargets it straight
+    // away — that retarget IS the crossfade) and drop any shake/freeze so it
+    // can't carry over into the next screen.
+    audio.fadeOutAmbient();
+    combatFeel.reset();
     this.wildlife?.dispose();
     this.worldEvents.dispose();
     for (const p of this.dungeonPortals) disposeGroup(p.group);
@@ -642,13 +671,17 @@ export class OverworldScreen implements Screen {
 
   update(dt: number): void {
     this.time += dt;
+    // Fase 7 hit-stop: the combat simulation (engine, monster AI, VFX) and
+    // the avatar's animation run on `simDt`, which is ~0 for the few frames
+    // after a heavy hit; movement, camera and HUD keep real time.
+    const simDt = combatFeel.tick(dt);
 
     if (!this.paused && !this.dialogueNpc && !this.shopNpc && !this.showingTutorial && !this.minimapExpanded && !this.worldMapOpen && !this.questChoiceOverlay.isOpen) {
       advanceGameClock(this.player.gameClock, dt);
       this.worldEvents.tick(dt);
       this.updateMovement(dt);
       this.updateInteraction();
-      this.combat.update(dt, this.avatar.position, this.camera);
+      this.combat.update(simDt, this.avatar.position, this.camera);
       // Mana already regens mid-fight too (CombatEngine.tick calls
       // regenMp on its own), but outside of combat nothing was ticking
       // either stat at all — walking around never restored HP or MP no
@@ -660,7 +693,7 @@ export class OverworldScreen implements Screen {
     }
 
     this.animator.setMoving(this.isMoving);
-    this.animator.update(dt);
+    this.animator.update(simDt);
     this.animateMount(dt);
     this.animateWater();
     this.wildlife?.update(dt, this.avatar.position, isNight(this.player.gameClock));
@@ -684,6 +717,38 @@ export class OverworldScreen implements Screen {
     this.refreshQuestTracker();
     this.applyWorldMood();
     this.achievementToast.update(dt);
+    this.updateAmbient(dt);
+  }
+
+  /** Fase 7: picks this zone's ambient palette and sets the bed straight away (a zone-change crossfade from whatever the last zone left playing). */
+  private startAmbient(): void {
+    this.ambientBiome = ambientBiomeForZone(this.zoneDef);
+    this.ambientPollIn = 0;
+    this.pushAmbient(AMBIENT_ZONE_FADE_TAU, true);
+  }
+
+  /** Re-evaluates the bed twice a second — hour of day, the active world event, world mood and combat all shift it; nothing is sent unless the mix really moved. */
+  private updateAmbient(dt: number): void {
+    this.ambientPollIn -= dt;
+    if (this.ambientPollIn > 0) return;
+    this.ambientPollIn = 0.5;
+    this.pushAmbient(AMBIENT_DRIFT_FADE_TAU, false);
+  }
+
+  private pushAmbient(tau: number, force: boolean): void {
+    ambientLayerGains(
+      this.ambientBiome,
+      {
+        hour: hourOfDay(this.player.gameClock),
+        eventKind: this.worldEvents?.activeEventKind() ?? null,
+        mood: worldMoodFactor(this.player.worldState),
+        inCombat: this.combat?.isEngaged() ?? false,
+      },
+      this.ambientScratch,
+    );
+    if (!force && !ambientGainsChanged(this.ambientSent, this.ambientScratch)) return;
+    Object.assign(this.ambientSent, this.ambientScratch);
+    audio.setAmbientTargets(this.ambientScratch, tau);
   }
 
   /**
@@ -2290,6 +2355,7 @@ export class OverworldScreen implements Screen {
   }
 
   private positionCameraImmediate(): void {
+    this.appliedShake.set(0, 0, 0);
     this.desiredCameraPosition(this.camera.position);
     // No previous frame to ease the lift blend from at mount time — resolve
     // once and snap it straight to its correct value instead of easing in.
@@ -2301,6 +2367,10 @@ export class OverworldScreen implements Screen {
   }
 
   private updateCamera(dt: number): void {
+    // Fase 7: undo last frame's shake first so every bit of follow/collision
+    // math below sees the camera's real, unshaken position.
+    this.camera.position.sub(this.appliedShake);
+    this.appliedShake.set(0, 0, 0);
     // Eases camDistance/camHeight/camLookHeight toward whichever preset
     // cameraAngleIndex currently points at (see cycleCameraAngle) — a
     // no-op most frames, since the target only actually moves the instant
@@ -2309,8 +2379,14 @@ export class OverworldScreen implements Screen {
     // however far the ease has gotten.
     const rigTarget = CAMERA_RIG_PRESETS[this.cameraAngleIndex];
     const rigLerp = 1 - Math.exp(-dt * 5);
-    this.camDistance += (rigTarget.distance - this.camDistance) * rigLerp;
-    this.camHeight += (rigTarget.height - this.camHeight) * rigLerp;
+    // Fase 7: pull back a little while fighting (more with more enemies
+    // engaged) so the whole band stays in frame — eased slower than the
+    // preset ease so it reads as a drift, not a cut. Off under "Reduzir
+    // movimento". Same obstacle resolution applies at the wider distance.
+    const zoomTarget = combatFeel.zoomEnabled() ? combatZoomFactor(this.combat.isEngaged(), this.combat.engagedCount()) : 1;
+    this.combatZoom += (zoomTarget - this.combatZoom) * (1 - Math.exp(-dt * 1.8));
+    this.camDistance += (rigTarget.distance * this.combatZoom - this.camDistance) * rigLerp;
+    this.camHeight += (rigTarget.height * this.combatZoom - this.camHeight) * rigLerp;
     this.camLookHeight += (rigTarget.lookHeight - this.camLookHeight) * rigLerp;
 
     const desired = this.desiredCameraPosition();
@@ -2372,6 +2448,15 @@ export class OverworldScreen implements Screen {
     this.scratchLookAt.y += this.camLookHeight;
     this.camLookAt.lerp(this.scratchLookAt, followLerp);
     this.camera.lookAt(this.camLookAt);
+
+    // Fase 7 camera shake: a pure translation added AFTER lookAt (so the
+    // view jolts without the aim swinging) and removed again at the top of
+    // the next call. Zero (and skipped) whenever there's no trauma.
+    const shake = combatFeel.shakeOffset(this.scratchShake);
+    if (shake.x !== 0 || shake.y !== 0 || shake.z !== 0) {
+      this.appliedShake.set(shake.x, shake.y, shake.z);
+      this.camera.position.add(this.appliedShake);
+    }
 
     this.dirLight.position.copy(this.avatar.position).add(this.scratchDirLightOffset);
     this.dirLight.target.position.copy(this.avatar.position);
