@@ -40,7 +40,24 @@ this commit — intended to replace/extend the procedural player model in
 Knight → warrior/paladin, Mage → mage/necromancer/cleric, Rogue →
 archer/assassin/monk, Barbarian as an alternate/heavier build).
 
-## mounts/goat.glb, mounts/pterodactylus.glb
+## mounts/horse_white.glb, mounts/wolf.glb, mounts/stag.glb
+
+Source: [Quaternius — Ultimate Animated Animal Pack](https://quaternius.com/packs/ultimateanimatedanimals.html)
+by Quaternius ([quaternius.com](https://quaternius.com)), `Horse_White.gltf`,
+`Wolf.gltf` and `Stag.gltf` from the pack's official Google Drive folder,
+converted to binary .glb and keyframe-resampled/deduplicated with
+`@gltf-transform/cli` (no geometry or animation changes).
+
+- [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/legalcode)
+  — public domain (per the pack's own `License.txt`).
+
+Ground mounts in `data/mounts.ts` (driven by `render/mountModel.ts`): white
+horse → Corcel de Prata and, with a procedural horn/tint, the Unicórnio; wolf
+→ Lobo Cinzento and, re-coated with procedural rosettes, the Leopardo; stag →
+Cervo Real. Clips used: `Idle`, `Walk`, `Gallop`, `Attack`/`Attack_Headbutt`,
+`Idle_HitReact1`.
+
+## mounts/pterodactylus.glb (goat.glb removed — replaced by the Quaternius mounts above)
 
 Source: [Gobkit Free Animal Pack Vol. 2](https://gobkit.itch.io/gobkit-free-animal-pack-vol-2)
 (`Goat.glb`) and [Gobkit Free Dinosaur Pack](https://gobkit.itch.io/gobkit-free-dinosaur-pack)

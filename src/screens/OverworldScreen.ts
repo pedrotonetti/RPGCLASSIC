@@ -28,7 +28,7 @@ import type { EquipmentSlot, ItemRarity } from '../config/types';
 import { Player, type Act3Ending } from '../entities/Player';
 import type { CharacterAnimatorLike } from '../render/animation';
 import { GltfCharacterAnimator } from '../render/gltfCharacterAnimator';
-import { allMountModelFiles, loadMountVisual } from '../render/mountModel';
+import { allMountModelFiles, loadMountVisual, MountAnimator } from '../render/mountModel';
 import { animateDungeonPortal, buildDungeonPortalMesh } from '../render/dungeonPortal';
 import { animateChestGlow, buildTreasureChestMesh, setChestOpened, type TreasureChestMesh } from '../render/treasureChest';
 import { GltfActor, loadSkinnedInstance } from '../render/gltfModel';
@@ -332,7 +332,7 @@ export class OverworldScreen implements Screen {
   private playerModel!: THREE.Group;
   private mountModel: THREE.Group | null = null;
   /** Drives the currently-mounted creature's own idle/walk clip (see animateMount) — null whenever unmounted. */
-  private mountActor: GltfActor | null = null;
+  private mountActor: MountAnimator | null = null;
   /** Bumped on every setMounted(...) call that starts a mount load — see attachMountVisual's own comment on why a stale load must be able to tell it lost the race. */
   private mountLoadToken = 0;
   /** Whichever object currently moves through the world — the rider alone, or the mount carrying them. */
@@ -594,6 +594,8 @@ export class OverworldScreen implements Screen {
     this.positionCameraImmediate();
 
     this.combat = new OverworldCombat(this.game, this.player, this.scene, this.animator, () => this.handleDefeat(), this.playerModel);
+    // Mounted combat: the mount strikes alongside the rider and flinches when they're hit.
+    this.combat.mountHooks = { attack: () => this.mountActor?.attack(), hit: () => this.mountActor?.hit() };
     if (this.activeDungeon) {
       const dungeon = this.activeDungeon;
       // Consumed immediately (reset to 1) so it can only ever apply to THIS
@@ -826,9 +828,7 @@ export class OverworldScreen implements Screen {
 
   /** Drives the mounted creature's own baked idle/walk clip — real animation from its glTF (see render/mountModel.ts), not the old hand-coded wing-flap sine wave. */
   private animateMount(dt: number): void {
-    if (!this.mountActor) return;
-    this.mountActor.play(this.isMoving ? 'walk' : 'idle');
-    this.mountActor.update(dt);
+    this.mountActor?.update(dt, this.isMoving);
   }
 
   // --- input -----------------------------------------------------------
@@ -1030,6 +1030,7 @@ export class OverworldScreen implements Screen {
       if (this.mountModel) {
         const worldPos = new THREE.Vector3();
         this.mountModel.getWorldPosition(worldPos);
+        const mountYaw = this.mountModel.rotation.y;
         this.mountModel.remove(this.playerModel);
         this.scene.remove(this.mountModel);
         disposeGroup(this.mountModel);
@@ -1037,6 +1038,8 @@ export class OverworldScreen implements Screen {
         this.mountActor = null;
         this.playerModel.position.copy(worldPos);
         this.playerModel.position.y = 0;
+        // Keep facing the way the mount was (the rider's own local yaw was 0 on the saddle).
+        this.playerModel.rotation.y = mountYaw;
         this.scene.add(this.playerModel);
         this.avatar = this.playerModel;
       }
@@ -1096,7 +1099,7 @@ export class OverworldScreen implements Screen {
 
     this.scene.add(mountGroup);
     this.mountModel = mountGroup;
-    this.mountActor = visual.actor;
+    this.mountActor = new MountAnimator(visual.actor, visual.config.clips);
     this.avatar = mountGroup;
     if (instant) this.animator.setMounted(true);
     else this.animator.play('mount', () => this.animator.setMounted(true));
@@ -3330,12 +3333,15 @@ export class OverworldScreen implements Screen {
     for (const mountId of this.player.unlockedMounts) {
       const def = getMountById(mountId);
       const active = this.player.activeMountId === mountId;
+      const perk = def.combat ? `${def.combat.perkName}: ${def.combat.perkText}` : 'Voa sobre rios e desfiladeiros.';
       buttons.push(
         el('div', {
-          className: `btn ${active ? 'primary' : ''}`,
-          text: active ? `Montado: ${def.name}` : `Montar ${def.name} (${def.kind})`,
+          className: `btn mount-option ${active ? 'primary' : ''}`,
           onClick: () => this.setMounted(active ? null : mountId),
-        }),
+        }, [
+          el('span', { text: active ? `Montado: ${def.name}` : `Montar ${def.name}` }),
+          el('span', { className: 'mount-perk', text: perk }),
+        ]),
       );
     }
     if (this.player.activeMountId) {

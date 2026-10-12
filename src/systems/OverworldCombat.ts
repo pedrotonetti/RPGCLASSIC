@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getClassById } from '../config/classes';
 import { TILE_SIZE } from '../config/gameConfig';
 import { TileType } from '../config/tiles';
+import { getMountById } from '../data/mounts';
 import type { ClassMechanicDefinition, SkillDefinition, SkillTarget } from '../config/types';
 import type { Game } from '../engine/Game';
 import { Enemy } from '../entities/Enemy';
@@ -269,6 +270,8 @@ export class OverworldCombat {
 
   /** Set only inside a dungeon zone (see OverworldScreen.mount) — lets encounter/boss defeats drive that dungeon's own run-state tracking (DungeonSystem.ts) without OverworldCombat needing to know anything about dungeons itself. */
   private dungeonHooks: DungeonCombatHooks | null = null;
+  /** Set by OverworldScreen: lets the ridden mount strike alongside the rider and flinch when they're hit (render/mountModel.ts MountAnimator). */
+  mountHooks: { attack(): void; hit(): void } | null = null;
   /** Set alongside `dungeonHooks` for a distorted run — see DungeonSpawnRules.deathBurst. */
   private dungeonDeathBurst: { maxHpPct: number; burn: boolean } | null = null;
 
@@ -910,6 +913,10 @@ export class OverworldCombat {
       this.engine = new CombatEngine(this.player, []);
       this.buildHotbar();
       this.buildItemBar();
+      // Riding into a fight arms the mount's Investida: the first blow hits harder (see Player.itemEffects).
+      const mountCombat = this.player.activeMountId ? getMountById(this.player.activeMountId).combat : undefined;
+      this.player.mountChargeReady = Boolean(mountCombat);
+      if (mountCombat) this.showMessage(`Investida! Primeiro golpe +${Math.round(mountCombat.chargeBonus * 100)}% de dano · ${mountCombat.perkName}`, 1800);
     }
     this.engine.enemies.push(m.enemy);
     this.engagedMonsters.push(m);
@@ -967,6 +974,7 @@ export class OverworldCombat {
       this.vfx.syncStatusOverlay(m.model, []);
     }
     this.engagedMonsters = [];
+    this.player.mountChargeReady = false;
     this.player.statusEffects = [];
     this.vfx.syncStatusOverlay(this.playerVfxAnchor, []);
     this.engine = null;
@@ -1160,6 +1168,9 @@ export class OverworldCombat {
     // this a ranged skill's projectile could visibly launch sideways from
     // wherever the avatar last happened to be facing.
     if (skill && (skill.target === 'enemy' || skill.target === 'allEnemies')) this.faceCurrentTarget(targetIndex);
+    // The Investida only empowers the first blow (the damage above was already resolved with it).
+    this.player.mountChargeReady = false;
+    if (this.player.activeMountId) this.mountHooks?.attack();
 
     const action = this.actionForSkill(skillId);
     this.animator.play(action, undefined, { isUltimate: skill?.isUltimate });
@@ -1191,12 +1202,24 @@ export class OverworldCombat {
     if (enemy) this.faceTarget(enemy);
   }
 
+  /**
+   * What actually turns to face a target: the avatar itself on foot, or —
+   * while mounted — the mount group carrying it. The rider is a CHILD of the
+   * mount there, so writing a world-space yaw into the rider's own (local)
+   * rotation used to add the mount's heading on top and spin the rider
+   * sideways/backwards on the saddle whenever a skill was used.
+   */
+  private facingRoot(): THREE.Object3D {
+    const parent = this.avatarModel.parent;
+    return parent && !(parent instanceof THREE.Scene) ? parent : this.avatarModel;
+  }
+
   private faceTarget(enemy: Enemy): void {
     const m = this.monsterForEnemy(enemy);
     if (!m) return;
     const dx = m.model.position.x - this.playerWorldPos.x;
     const dz = m.model.position.z - this.playerWorldPos.z;
-    if (Math.hypot(dx, dz) > 0.001) this.avatarModel.rotation.y = Math.atan2(dx, dz);
+    if (Math.hypot(dx, dz) > 0.001) this.facingRoot().rotation.y = Math.atan2(dx, dz);
     this.vfx.spawnTargetLock(m.model.position);
   }
 
@@ -1398,6 +1421,7 @@ export class OverworldCombat {
       if (event.kind === 'damage' && event.targetIsPlayer && (event.amount ?? 0) > 0) {
         this.tookDamageThisFight = true;
         this.fightDamageTaken += event.amount ?? 0;
+        if (this.player.activeMountId) this.mountHooks?.hit();
       }
       if (event.text) this.showMessage(event.text, 2600);
       if (event.kind === 'telegraph') {

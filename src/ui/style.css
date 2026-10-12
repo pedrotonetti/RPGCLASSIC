@@ -3708,3 +3708,16 @@ body {
     padding-bottom: calc(6px + var(--safe-b));
   }
 }
+
+/* --- Montarias: perk de combate em cada opção do menu de pausa ------------ */
+.btn.mount-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.25;
+}
+.btn.mount-option .mount-perk {
+  font-size: 0.78em;
+  opacity: 0.8;
+  font-weight: normal;
+}

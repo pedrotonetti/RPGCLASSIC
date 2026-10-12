@@ -4,6 +4,7 @@ import { XP_TO_LEVEL } from '../config/gameConfig';
 import type { CharacterClassDefinition, EquipmentInstance, EquipmentSlot, SkillDefinition, SkillLevelStats, Stats } from '../config/types';
 import { computeEquipmentBonus, createStarterItem, getEquipmentTemplate } from '../data/equipment';
 import { getItemById } from '../data/items';
+import { getMountById, normalizeMountId, normalizeUnlockedMounts } from '../data/mounts';
 import { computeSkillLevelStats, skillPointsForLevel, ultimateLevelForCharacter } from '../systems/skillMath';
 import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder } from '../systems/statusEffects';
 import { cloneAdaptiveState, createInitialAdaptiveState, normalizeAdaptiveState, type AdaptiveState } from '../systems/AdaptiveDifficulty';
@@ -161,6 +162,8 @@ export class Player implements StatusEffectHolder {
   pendingDungeonPlan: DungeonRunPlan | null = null;
   /** Session-only: the current dungeon run's own player modifiers (Distorções + shrine blessings), folded into `itemEffects`. Null outside a dungeon. */
   dungeonRunMods: Partial<ItemModifiers> | null = null;
+  /** Session-only: armed when a fight starts while mounted (OverworldCombat.beginEngagement), consumed by the first skill — the mount's "Investida" bonus damage. Never saved. */
+  mountChargeReady = false;
   /** Session-only: multiplies every heal while inside a distorted dungeon (Seiva Amarga). 1 everywhere else. */
   dungeonHealingMult = 1;
   /** Active bleed/burn/slow afflictions — never persisted (battle-scoped only; `OverworldCombat` clears it when a fight ends). */
@@ -190,9 +193,9 @@ export class Player implements StatusEffectHolder {
     this.activeQuestId = data?.activeQuestId ?? null;
     this.sideQuestId = data?.sideQuestId ?? null;
     this.questProgress = data?.questProgress ?? {};
-    // Both mounts are unlocked by default in this build (see data/mounts.ts).
-    this.unlockedMounts = data?.unlockedMounts ?? ['llama', 'condor'];
-    this.activeMountId = data?.activeMountId ?? null;
+    // Every mount is unlocked by default in this build; old ids (the goat "llama") migrate — see data/mounts.ts.
+    this.unlockedMounts = normalizeUnlockedMounts(data?.unlockedMounts);
+    this.activeMountId = normalizeMountId(data?.activeMountId);
     this.act3Ending = data?.act3Ending ?? null;
     this.hasSeenTutorial = data?.hasSeenTutorial ?? false;
     this.dungeonTiers = data?.dungeonTiers ?? {};
@@ -267,6 +270,12 @@ export class Player implements StatusEffectHolder {
     const resolved = resolveItemEffects(this.equipment, this.passiveContext(combat));
     // A dungeon run's Distorções/blessings stack AFTER the gear caps on purpose — they're the run's own rules, not gear.
     if (this.dungeonRunMods) addModifiers(resolved.mods, this.dungeonRunMods);
+    // The active mount's combat perk (data/mounts.ts) — like a blessing, on top of the gear caps.
+    const mountCombat = this.activeMountId ? getMountById(this.activeMountId).combat : undefined;
+    if (mountCombat) {
+      addModifiers(resolved.mods, mountCombat.mods);
+      if (this.mountChargeReady) addModifiers(resolved.mods, { damageDealt: mountCombat.chargeBonus });
+    }
     return resolved;
   }
 
