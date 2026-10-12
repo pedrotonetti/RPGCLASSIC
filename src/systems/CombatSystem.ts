@@ -5,6 +5,8 @@ import type { DamageElement, EquipmentInstance, SkillDefinition, SkillTarget, St
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
 import { rewardMultiplier } from './AdaptiveDifficulty';
+import { shouldAutoSalvage } from './gameplayOptions';
+import { salvageFromBag } from './SalvageSystem';
 import {
   CLASS_METER_MAX,
   FAITH_PER_BLOCK,
@@ -1082,11 +1084,21 @@ export class CombatEngine {
     const goldGained = Math.round(this.enemies.reduce((s, e) => s + e.def.goldReward, 0) * (1 + fx.mods.goldFind) * rewardMult);
     const loot: EquipmentInstance[] = [];
     const materialsGained: Record<string, number> = {};
+    let autoSalvaged = 0;
     for (let i = 0; i < this.enemies.length; i++) {
       const enemy = this.enemies[i];
       if (Math.random() < lootDropChance(enemy.def.level, enemy.def.isBoss)) {
         const item = generateLoot(enemy.def.level, this.player.level, this.player.stats.luck + fx.mods.lootBias, { pity: this.player.lootPity });
-        if (this.player.addLoot(item)) loot.push(item);
+        if (this.player.addLoot(item)) {
+          // Configurações → Jogabilidade → "Saque automático: desmontar comuns".
+          const salvaged = shouldAutoSalvage(item) ? salvageFromBag(this.player, item.uid) : null;
+          if (salvaged?.ok) {
+            autoSalvaged += 1;
+            for (const s of salvaged.yields) materialsGained[s.materialId] = (materialsGained[s.materialId] ?? 0) + s.qty;
+          } else {
+            loot.push(item);
+          }
+        }
       }
       if (Math.random() < materialDropChance(enemy.def.level)) {
         const material = MONSTER_MATERIALS[Math.floor(Math.random() * MONSTER_MATERIALS.length)];
@@ -1100,7 +1112,7 @@ export class CombatEngine {
     const materialsText = Object.keys(materialsGained).length > 0 ? ', materiais encontrados' : '';
     events.push({
       kind: 'victory',
-      text: `Vitória! +${xpGained} XP, +${goldGained} ouro${loot.length > 0 ? `, ${loot.length} item(ns) encontrado(s)` : ''}${materialsText}.`,
+      text: `Vitória! +${xpGained} XP, +${goldGained} ouro${loot.length > 0 ? `, ${loot.length} item(ns) encontrado(s)` : ''}${autoSalvaged > 0 ? `, ${autoSalvaged} comum(ns) desmontado(s)` : ''}${materialsText}.`,
       actorIsPlayer: true,
       xpGained,
       goldGained,

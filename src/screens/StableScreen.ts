@@ -16,6 +16,7 @@ import {
   setMountNickname,
   syncMountUnlocks,
 } from '../systems/MountSystem';
+import { keyFor, keyLabelFor } from '../systems/Keybindings';
 import { saveGame } from '../systems/SaveSystem';
 import { el, goToLazy } from '../ui/dom';
 import { addHotkeyHint, bindBackKey } from '../ui/menuKeys';
@@ -203,8 +204,8 @@ export class StableScreen implements Screen {
       text: '< Voltar à Aventura',
       onClick: () => this.leave(),
     });
-    addHotkeyHint(backBtn, 'Esc / N');
-    this.unbindBackKey = bindBackKey(backBtn, ['n']);
+    addHotkeyHint(backBtn, `Esc / ${keyLabelFor('stable')}`);
+    this.unbindBackKey = bindBackKey(backBtn, [keyFor('stable')]);
 
     this.goldEl = el('div', { className: 'subtitle' });
     this.tabsEl = el('div', { className: 'stable-tabs' });

@@ -1,0 +1,235 @@
+/* ==========================================================================
+   Configurações — the tabbed options menu (screens/SettingsScreen.ts) and
+   the CSS half of its options (ui/interfaceOptions.ts publishes classes and
+   custom properties on <html>; everything they drive lives here). Imported
+   by main.ts right after style.css, so equal-specificity rules here win.
+   Every rule that changes the game's look is gated behind an `opt-*` class
+   that is only present when the player changed that option — with default
+   settings this file restyles nothing but the settings screen itself.
+   ========================================================================== */
+
+/* --- Settings screen: tabs, sections, key table --------------------------- */
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  width: min(640px, 92vw);
+  margin-bottom: 8px;
+}
+.settings-tabs > * {
+  zoom: var(--ui-scale);
+}
+.settings-tab {
+  font-size: 18px;
+  padding: 5px 12px;
+}
+.is-touch .settings-tab {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.settings-section {
+  color: var(--accent);
+  font-size: 19px;
+  padding: 14px 0 4px;
+  border-bottom: 1px solid var(--panel-border);
+}
+.settings-section:first-child {
+  padding-top: 0;
+}
+.settings-subsection {
+  color: var(--text-dim);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 10px 0 0;
+}
+.settings-key-row {
+  padding: 6px 0;
+}
+.settings-keycap {
+  min-width: 110px;
+  text-align: center;
+  font-size: 17px;
+}
+.settings-keycap.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  animation: settings-keycap-pulse 0.9s ease-in-out infinite alternate;
+}
+@keyframes settings-keycap-pulse {
+  from {
+    background: #3a2e4a;
+  }
+  to {
+    background: #5a4473;
+  }
+}
+.settings-key-row.conflict .settings-label,
+.settings-key-row.conflict .settings-keycap {
+  color: var(--hp);
+  border-color: var(--hp);
+}
+.settings-key-conflict {
+  color: var(--hp);
+}
+.settings-key-notice {
+  color: var(--accent);
+}
+.settings-reset-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 0 4px;
+}
+.settings-reset {
+  font-size: 16px;
+}
+
+/* --- FPS counter + sound captions (appended to <body>, outside #ui-root) - */
+.fps-counter {
+  position: fixed;
+  left: calc(6px + var(--safe-l));
+  bottom: calc(10px + var(--safe-b));
+  z-index: 50;
+  padding: 1px 6px;
+  font-family: 'VT323', monospace;
+  font-size: 15px;
+  color: #b8ffb0;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 3px;
+  pointer-events: none;
+}
+.sound-captions {
+  position: fixed;
+  left: 50%;
+  bottom: calc(255px + var(--safe-b));
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+.sound-caption {
+  font-family: 'VT323', monospace;
+  font-size: 19px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.72);
+  padding: 2px 10px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+@media (max-width: 560px), (max-height: 480px) {
+  .sound-captions {
+    bottom: calc(160px + var(--safe-b));
+  }
+  .sound-caption {
+    font-size: 16px;
+  }
+}
+
+/* --- Interface: show/hide HUD pieces --------------------------------------- */
+.opt-hide-minimap .minimap-canvas:not(.expanded),
+.opt-hide-minimap .minimap-expand-btn,
+.opt-hide-minimap .worldmap-open-btn {
+  display: none !important;
+}
+.opt-hide-quest-tracker .quest-tracker,
+.opt-hide-quest-tracker .quest-zone-hint {
+  display: none !important;
+}
+/* NPC names are also their tap target — keep the box (the interact prompt
+   still works either way), just hide the text. */
+.opt-hide-nameplates .npc-label {
+  color: transparent !important;
+  text-shadow: none !important;
+}
+/* Enemy labels stay clickable (target picking) even with both parts hidden. */
+.opt-hide-nameplates .enemy-label .ename,
+.opt-hide-enemy-bars .enemy-label .enemy-hpbar-bg {
+  visibility: hidden;
+}
+.opt-hide-key-hints .hud-hint,
+.opt-hide-key-hints .hotkey-hint {
+  display: none !important;
+}
+.opt-hide-clock .hud-clock {
+  display: none !important;
+}
+.opt-hud-faded .hud-panel,
+.opt-hud-faded .quest-tracker,
+.opt-hud-faded .quest-zone-hint,
+.opt-hud-faded .minimap-canvas:not(.expanded),
+.opt-hud-faded .minimap-expand-btn,
+.opt-hud-faded .worldmap-open-btn,
+.opt-hud-faded .hud-hint,
+.opt-hud-faded .xp-bar,
+.opt-hud-faded .menu-btn,
+.opt-hud-faded .camera-angle-btn,
+.opt-hud-faded .hotbar,
+.opt-hud-faded .item-hotbar {
+  opacity: var(--hud-opacity, 1);
+}
+
+/* --- Controles (toque): joystick size / opacity / side --------------------- */
+.opt-joystick-custom .joystick {
+  transform: scale(var(--joystick-scale, 1));
+  transform-origin: bottom left;
+  opacity: var(--joystick-opacity, 1);
+}
+.opt-joystick-right .joystick {
+  left: auto;
+  right: calc(16px + var(--safe-r));
+  transform-origin: bottom right;
+}
+.opt-joystick-right .item-hotbar {
+  right: auto;
+  left: calc(12px + var(--safe-l));
+}
+
+/* --- Acessibilidade -------------------------------------------------------- */
+/* Daltonization matrix (ui/colorblind.ts) over the HUD/menus (HP/MP, item
+   rarity, markers). Deliberately NOT on #game-canvas: an SVG url() filter on
+   the WebGL canvas rendered it black in headless Chromium testing. */
+.opt-colorblind #ui-root {
+  filter: url(#opt-colorblind-filter);
+}
+.opt-high-contrast {
+  --text: #ffffff;
+  --text-dim: #ece4f5;
+  --panel-border: #f2c14e;
+}
+.opt-high-contrast .panel,
+.opt-high-contrast .quest-tracker,
+.opt-high-contrast .minimap-canvas {
+  background: rgba(4, 3, 6, 0.96);
+}
+.opt-high-contrast .btn {
+  background: #1b1424;
+  border-color: #d8cce6;
+}
+.opt-high-contrast .btn:hover,
+.opt-high-contrast .btn.active,
+.opt-high-contrast .btn.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.opt-high-contrast .npc-label,
+.opt-high-contrast .enemy-label .ename,
+.opt-high-contrast .dungeon-portal-label,
+.opt-high-contrast .hud-hint {
+  color: #ffffff;
+  text-shadow:
+    -2px 0 0 #000,
+    2px 0 0 #000,
+    0 -2px 0 #000,
+    0 2px 0 #000;
+}
+.opt-high-contrast .enemy-hpbar-bg {
+  border: 1px solid #fff;
+}
+.opt-high-contrast #game-canvas {
+  filter: contrast(1.15) saturate(1.1);
+}

@@ -19,6 +19,8 @@ import { confirmDialog } from '../ui/dialogs';
 import { el, goToLazy } from '../ui/dom';
 import { ItemCompareController } from '../ui/itemComparePanel';
 import { addHotkeyHint, bindBackKey } from '../ui/menuKeys';
+import { gameplayOptions } from '../systems/gameplayOptions';
+import { keyFor, keyLabelFor } from '../systems/Keybindings';
 import { compareItems } from '../systems/ItemComparison';
 
 /** "3x Minério de Ferro, 1x Essência Sedenta" */
@@ -255,8 +257,8 @@ export class InventoryScreen implements Screen {
         });
       },
     });
-    addHotkeyHint(backBtn, 'Esc / I');
-    this.unbindBackKey = bindBackKey(backBtn, ['i']);
+    addHotkeyHint(backBtn, `Esc / ${keyLabelFor('inventory')}`);
+    this.unbindBackKey = bindBackKey(backBtn, [keyFor('inventory')]);
 
     const screen = el('div', { className: 'inventory-screen screen' }, [
       el('div', { className: 'top-bar' }, [el('h1', { text: 'Inventário e Equipamento' }), this.powerScoreEl]),
@@ -417,7 +419,7 @@ export class InventoryScreen implements Screen {
   /** Breaks a bag item into materials — Raro-or-better (or anything worked on at a bench) asks first. */
   private async salvage(instance: EquipmentInstance): Promise<void> {
     const yields = salvageYield(instance);
-    if (salvageNeedsConfirm(instance)) {
+    if (gameplayOptions().confirmRare && salvageNeedsConfirm(instance)) {
       const ok = await confirmDialog(this.game.uiRoot, {
         title: 'Desmontar item?',
         message: `${itemDisplayName(instance)} (${RARITY_LABEL[instance.rarity]}) será destruído e renderá ${describeYield(yields)}.${instance.socketedGemId ? ' A gema encaixada volta para você.' : ''}`,

@@ -8,6 +8,7 @@ import { computeSkillLevelStats, ultimateLevelForCharacter, ULTIMATE_MAX_LEVEL }
 import { saveGame } from '../systems/SaveSystem';
 import { el, goToLazy } from '../ui/dom';
 import { addHotkeyHint, bindBackKey } from '../ui/menuKeys';
+import { keyFor, keyLabelFor } from '../systems/Keybindings';
 
 export class SkillTreeScreen implements Screen {
   scene = new THREE.Scene();
@@ -74,8 +75,8 @@ export class SkillTreeScreen implements Screen {
         });
       },
     });
-    addHotkeyHint(backBtn, 'Esc / K');
-    this.unbindBackKey = bindBackKey(backBtn, ['k']);
+    addHotkeyHint(backBtn, `Esc / ${keyLabelFor('skills')}`);
+    this.unbindBackKey = bindBackKey(backBtn, [keyFor('skills')]);
 
     const screen = el('div', { className: 'skilltree-screen screen' }, [
       el('div', { className: 'top-bar' }, [

@@ -19,6 +19,8 @@ import { recordEnemyDefeated, recordEnemyEngaged } from './AchievementSystem';
 import { BLOCK_COOLDOWN, CombatEngine, DODGE_COOLDOWN, ITEM_COOLDOWN, type CombatEvent } from './CombatSystem';
 import { audio } from './AudioSystem';
 import { combatFeel, damagePopupStyle, hitSeverity } from './combatFeel';
+import { gameplayOptions, nearestIndex } from './gameplayOptions';
+import { isActionKey, keyLabelFor, skillSlotForKey, SKILL_SLOT_ACTIONS } from './Keybindings';
 import { CLASS_METER_MAX, FLOW_MAX_LEVEL, comboLabel } from './classMechanics';
 import { archetypeProfileFor, chaseSpeedMultiplierFor } from './enemyArchetypes';
 import { computeSkillLevelStats } from './skillMath';
@@ -216,8 +218,9 @@ const PACK_OFFSETS: Array<{ dx: number; dz: number }> = [
   { dx: -0.55, dz: -0.5 },
 ];
 const LABEL_VISIBLE_DISTANCE = 13; // world units — roughly where the scene fog starts hiding things anyway
-/** Fires the class ability (Golpe Selvagem / Milagre da Fé / Dreno das Almas) — "R" for "recurso". Unbound anywhere else during combat (OverworldScreen only reads E/M/Escape/WASD/arrows). */
-const CLASS_ABILITY_KEY = 'r';
+// The class ability (Golpe Selvagem / Milagre da Fé / Dreno das Almas) fires
+// on the 'classAbility' key binding — "R" for "recurso" by default; see
+// systems/Keybindings.ts.
 
 /** Owns every monster on the map (model + simple AI) and the combat HUD that appears while the player is fighting one. */
 export class OverworldCombat {
@@ -1014,7 +1017,7 @@ export class OverworldCombat {
     this.blockFillEl = blockFillEl;
     const blockBtn = el('div', { className: 'hotbar-slot block', onClick: () => this.onBlockClicked() }, [
       el('div', { className: 'hotbar-name', text: 'Bloquear' }),
-      el('div', { className: 'hotbar-level', text: 'Espaço' }),
+      el('div', { className: 'hotbar-level', text: keyLabelFor('block') }),
       blockFillEl,
     ]);
 
@@ -1022,7 +1025,7 @@ export class OverworldCombat {
     this.dodgeFillEl = dodgeFillEl;
     const dodgeBtn = el('div', { className: 'hotbar-slot dodge', onClick: () => this.onDodgeClicked() }, [
       el('div', { className: 'hotbar-name', text: 'Esquivar' }),
-      el('div', { className: 'hotbar-level', text: 'Shift' }),
+      el('div', { className: 'hotbar-level', text: keyLabelFor('dodge') }),
       dodgeFillEl,
     ]);
 
@@ -1040,7 +1043,7 @@ export class OverworldCombat {
         { className: `hotbar-slot ${skill.isUltimate ? 'ultimate' : ''}`, onClick: () => this.onHotbarClicked(skill.id) },
         [el('div', { className: 'hotbar-name', text: skill.name }), el('div', { className: 'hotbar-level', text: keyLabel }), costEl, fillEl],
       );
-      if (i < 9) addHotkeyHint(slotEl, String(i + 1)); // number keys 1-9, see handleKeyDown
+      if (i < 9) addHotkeyHint(slotEl, keyLabelFor(SKILL_SLOT_ACTIONS[i])); // skill-slot keys (1-9 by default), see handleKeyDown
       slotEls.push(slotEl);
       this.hotbar.push({ skill, totalCooldown: stats.cooldown, cost, el: slotEl, fillEl });
     });
@@ -1056,11 +1059,11 @@ export class OverworldCombat {
         {
           className: `hotbar-slot class-ability mech-${mechanic.id}`,
           onClick: () => this.onClassAbilityClicked(),
-          attrs: { title: ability.description, 'aria-label': `${ability.name} (${CLASS_ABILITY_KEY.toUpperCase()}): ${ability.description}` },
+          attrs: { title: ability.description, 'aria-label': `${ability.name} (${keyLabelFor('classAbility')}): ${ability.description}` },
         },
         [
           el('div', { className: 'hotbar-name', text: ability.name }),
-          el('div', { className: 'hotbar-level', text: CLASS_ABILITY_KEY.toUpperCase() }),
+          el('div', { className: 'hotbar-level', text: keyLabelFor('classAbility') }),
           el('div', { className: 'hotbar-cost', text: mechanic.name }),
         ],
       );
@@ -1111,19 +1114,20 @@ export class OverworldCombat {
       this.showMessage('Alvo cancelado.', 1500);
       return true;
     }
-    if (e.key === ' ') {
+    // Keys come from Configurações → Controles (Space / Shift / R / 1-9 by default).
+    if (isActionKey('block', e.key)) {
       this.onBlockClicked();
       return true;
     }
-    if (e.key === 'Shift') {
+    if (isActionKey('dodge', e.key)) {
       this.onDodgeClicked();
       return true;
     }
-    if (e.key.toLowerCase() === CLASS_ABILITY_KEY && this.classAbilityBtnEl) {
+    if (isActionKey('classAbility', e.key) && this.classAbilityBtnEl) {
       this.onClassAbilityClicked();
       return true;
     }
-    const num = Number(e.key);
+    const num = skillSlotForKey(e.key);
     if (num >= 1 && num <= this.hotbar.length) {
       this.onHotbarClicked(this.hotbar[num - 1].skill.id);
       return true;
@@ -1148,6 +1152,12 @@ export class OverworldCombat {
       if (alive.length === 0) return;
       if (alive.length === 1) {
         this.tryUseSkill(skillId, this.engine.enemies.indexOf(alive[0].enemy));
+        return;
+      }
+      // Configurações → Jogabilidade → "Alvo automático": the nearest engaged enemy instead of asking for a click.
+      if (gameplayOptions().autoTarget) {
+        const nearest = alive[nearestIndex(this.playerWorldPos, alive.map((m) => m.model.position))];
+        this.tryUseSkill(skillId, this.engine.enemies.indexOf(nearest.enemy));
         return;
       }
       this.showMessage(`Escolha o alvo de ${skill.name} (clique em um inimigo)...`, 4000);
@@ -1714,7 +1724,7 @@ export class OverworldCombat {
     // is followed by one more refresh before `endEngagement` tears the HUD
     // down, and announcing there would bury the "Vitória!" message.
     if (full && !this.lastClassMeterReady && mechanic.ability && this.classAbilityBtnEl && this.engine.outcome === 'ongoing') {
-      this.showMessage(`${mechanic.ability.name} pronto! (${CLASS_ABILITY_KEY.toUpperCase()})`, 2200);
+      this.showMessage(`${mechanic.ability.name} pronto! (${keyLabelFor('classAbility')})`, 2200);
     } else if (full && !this.lastClassMeterReady && mechanic.readyMessage && this.engine.outcome === 'ongoing') {
       this.showMessage(mechanic.readyMessage, 2200);
     }

@@ -63,7 +63,7 @@ export function syncMountUnlocks(player: MountHolder): string[] {
     player.unlockedMounts.push(def.id);
     if (!player.equippedMounts[def.kind]) player.equippedMounts[def.kind] = def.id;
     if (def.unlock.kind !== 'start') {
-      messages.push(`Nova montaria ${def.kind === 'voadora' ? 'voadora' : 'terrestre'}: ${def.name}! Veja no Estábulo (N).`);
+      messages.push(`Nova montaria ${def.kind === 'voadora' ? 'voadora' : 'terrestre'}: ${def.name}! Veja no Estábulo.`);
     }
   }
   // Canonical order (as in data/mounts.ts) so menus never reshuffle.

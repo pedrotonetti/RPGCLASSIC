@@ -18,16 +18,28 @@ test('settings screen exposes and persists the Fase 7 options', async ({ page })
   await page.locator('.settings-toggle').click();
   await expect(page.locator('.settings-screen')).toBeVisible();
 
-  for (const label of ['Volume do Ambiente', 'Tremor de tela', 'Números de dano', 'Reduzir movimento']) {
+  // Configurações is tabbed: each option lives under its own tab.
+  const tab = (name: string) => page.locator('.settings-tab').filter({ hasText: name });
+  for (const [tabName, label] of [
+    ['Áudio', 'Volume do Ambiente'],
+    ['Câmera', 'Tremor de tela'],
+    ['Interface', 'Números de dano'],
+    ['Acessibilidade', 'Reduzir movimento'],
+  ]) {
+    await tab(tabName).click();
     await expect(page.locator('.settings-row').filter({ hasText: label })).toBeVisible();
   }
 
+  await tab('Câmera').click();
   await page.locator('.settings-row-shake').getByText('Suave').click();
+  await tab('Interface').click();
   await page.locator('.settings-row-damage-numbers').getByText('Desativado').click();
-  await page.locator('.settings-row-reduce-motion').getByText('Ativado').click();
+  await tab('Acessibilidade').click();
+  await page.locator('.settings-row-reduce-motion').getByText('Ativado', { exact: true }).click();
 
   const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('rpgclassic:settings:v1') ?? '{}'));
   expect(stored).toMatchObject({ screenShake: 0.5, damageNumbers: false, reduceMotion: true });
+  await tab('Câmera').click();
   await expect(page.locator('.settings-row-shake .settings-segment.active')).toHaveText('Suave');
 });
 
