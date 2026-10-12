@@ -12,6 +12,9 @@ import { cloneCodexState, createInitialCodexState, normalizeCodexState, type Cod
 import { restoreEventState, serializeEventState, type WorldEventSave, type WorldEventState } from '../systems/EventSystem';
 import { resolveItemEffects, setStatBonus, type PassiveContext, type ResolvedItemEffects } from '../systems/ItemPassives';
 import { sanitizePity, type LootPityState } from '../systems/LootPity';
+import { cloneDungeonRecords, normalizeDungeonRecords, type DungeonRecords } from '../systems/DungeonRecordSystem';
+import type { DungeonRunPlan } from '../systems/DungeonModifierSystem';
+import { addModifiers, type ItemModifiers } from '../data/affixes';
 import { createInitialGameClock, type GameClockState } from '../systems/GameClock';
 import { normalizePity } from '../systems/RareEncounterSystem';
 import { createInitialWorldState, type WorldState } from '../systems/WorldStateSystem';
@@ -90,6 +93,8 @@ export interface PlayerSaveData {
   discoveredLoreIds: string[];
   /** Recent-fight performance feeding systems/AdaptiveDifficulty.ts; absent on old saves. */
   adaptive: AdaptiveState;
+  /** Dungeons 2.0 records per dungeon id (fastest run, clears, most Distorções) — see systems/DungeonRecordSystem.ts. Absent on old saves; normalized to {} (no schema bump needed). */
+  dungeonRecords: DungeonRecords;
 }
 
 /** The three closures Ato 3 branches into — see LORE.md's "O final". */
@@ -142,6 +147,7 @@ export class Player implements StatusEffectHolder {
   rarePity: number;
   discoveredLoreIds: string[];
   adaptive: AdaptiveState;
+  dungeonRecords: DungeonRecords;
   /**
    * Session-only "enter the next dungeon at this tier" hand-off — set by
    * OverworldScreen.enterDungeon just before swapping to the dungeon's own
@@ -151,6 +157,12 @@ export class Player implements StatusEffectHolder {
    * actually mounting, never a save/reload.
    */
   pendingDungeonTier = 1;
+  /** Session-only companion to `pendingDungeonTier`: the Distorções/room seed the player saw at the portal (see DungeonModifierSystem.planDungeonRun). Consumed (reset to null) by the dungeon screen's mount, never saved. */
+  pendingDungeonPlan: DungeonRunPlan | null = null;
+  /** Session-only: the current dungeon run's own player modifiers (Distorções + shrine blessings), folded into `itemEffects`. Null outside a dungeon. */
+  dungeonRunMods: Partial<ItemModifiers> | null = null;
+  /** Session-only: multiplies every heal while inside a distorted dungeon (Seiva Amarga). 1 everywhere else. */
+  dungeonHealingMult = 1;
   /** Active bleed/burn/slow afflictions — never persisted (battle-scoped only; `OverworldCombat` clears it when a fight ends). */
   statusEffects: ActiveStatusEffect[] = [];
 
@@ -193,6 +205,7 @@ export class Player implements StatusEffectHolder {
     this.rarePity = normalizePity(data?.rarePity);
     this.discoveredLoreIds = data?.discoveredLoreIds ?? [];
     this.adaptive = data?.adaptive ? normalizeAdaptiveState(data.adaptive) : createInitialAdaptiveState();
+    this.dungeonRecords = normalizeDungeonRecords(data?.dungeonRecords);
     this.currentHp = data?.currentHp ?? this.stats.maxHp;
     this.currentMp = data?.currentMp ?? this.stats.maxMp;
   }
@@ -251,7 +264,10 @@ export class Player implements StatusEffectHolder {
 
   /** Affix modifiers, unique passives and set bonuses live right now. */
   itemEffects(combat: Partial<PassiveContext> = {}): ResolvedItemEffects {
-    return resolveItemEffects(this.equipment, this.passiveContext(combat));
+    const resolved = resolveItemEffects(this.equipment, this.passiveContext(combat));
+    // A dungeon run's Distorções/blessings stack AFTER the gear caps on purpose — they're the run's own rules, not gear.
+    if (this.dungeonRunMods) addModifiers(resolved.mods, this.dungeonRunMods);
+    return resolved;
   }
 
   /** A skill's mana cost after equipment discounts. */
@@ -325,7 +341,7 @@ export class Player implements StatusEffectHolder {
 
   heal(amount: number): number {
     const before = this.currentHp;
-    this.currentHp = Math.min(this.stats.maxHp, this.currentHp + Math.max(0, Math.round(amount)));
+    this.currentHp = Math.min(this.stats.maxHp, this.currentHp + Math.max(0, Math.round(amount * this.dungeonHealingMult)));
     return this.currentHp - before;
   }
 
@@ -491,6 +507,7 @@ export class Player implements StatusEffectHolder {
       rarePity: this.rarePity,
       discoveredLoreIds: [...this.discoveredLoreIds],
       adaptive: cloneAdaptiveState(this.adaptive),
+      dungeonRecords: cloneDungeonRecords(this.dungeonRecords),
     };
   }
 }

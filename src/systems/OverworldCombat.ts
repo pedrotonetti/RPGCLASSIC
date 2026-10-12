@@ -21,7 +21,8 @@ import { combatFeel, damagePopupStyle, hitSeverity } from './combatFeel';
 import { CLASS_METER_MAX, FLOW_MAX_LEVEL, comboLabel } from './classMechanics';
 import { archetypeProfileFor, chaseSpeedMultiplierFor } from './enemyArchetypes';
 import { computeSkillLevelStats } from './skillMath';
-import { activeStatusTypes } from './statusEffects';
+import { activeStatusTypes, applyStatusEffect } from './statusEffects';
+import type { DungeonRoomKind } from '../data/dungeonRooms';
 import { pickEncounterEnemyIds } from './EncounterSystem';
 import { pickSpawnPoints, rollPackSize, type TileRect } from './monsterSpawning';
 import { notifyEnemyDefeated, notifyLevelChanged } from './QuestSystem';
@@ -73,6 +74,8 @@ interface WorldMonster {
   dungeonEncounterIndex?: number;
   /** The one boss monster of a dungeon run, if any. */
   isDungeonBoss?: boolean;
+  /** Multiplies chase speed — a dungeon Distorção (Frenesi das Raízes); unset = 1. */
+  chaseSpeedMult?: number;
   /** Stronger "Ancestral"/"Fulgente" spawn (RareEncounterSystem); reverts to ordinary on respawn. */
   variant?: 'rare';
   nameEl: HTMLElement;
@@ -114,6 +117,24 @@ export interface DungeonBossSpawn {
   enemyId: string;
   /** Existing enemy id whose 3D shape to reuse for the boss's model (see data/dungeons.ts's own doc comment on this). */
   visualId: string;
+}
+
+/**
+ * Dungeons 2.0 run rules for spawnDungeonEncounters — the combined Distorções
+ * (see systems/DungeonModifierSystem.ts) plus the run's room layout (see
+ * systems/DungeonRoomSystem.ts). Every field is optional; omitted = the old
+ * behavior.
+ */
+export interface DungeonSpawnRules {
+  /** Per encounter index: 'shrine'/'trap' rooms spawn no monsters, 'elite' rooms spawn tougher "Elite" monsters. */
+  roomKinds?: DungeonRoomKind[];
+  /** Extra stat multiplier for an elite room's monsters (on top of tier + Distorções). */
+  eliteStatMult?: number;
+  enemyStatMult?: number;
+  enemyActionIntervalMult?: number;
+  enemyChaseSpeedMult?: number;
+  /** A regular monster dying deals this share of the player's max HP (never lethal) and optionally burns. */
+  deathBurst?: { maxHpPct: number; burn: boolean } | null;
 }
 
 export interface DungeonCombatHooks {
@@ -246,6 +267,8 @@ export class OverworldCombat {
 
   /** Set only inside a dungeon zone (see OverworldScreen.mount) — lets encounter/boss defeats drive that dungeon's own run-state tracking (DungeonSystem.ts) without OverworldCombat needing to know anything about dungeons itself. */
   private dungeonHooks: DungeonCombatHooks | null = null;
+  /** Set alongside `dungeonHooks` for a distorted run — see DungeonSpawnRules.deathBurst. */
+  private dungeonDeathBurst: { maxHpPct: number; burn: boolean } | null = null;
 
   private pendingTargetPick: ((monster: WorldMonster) => void) | null = null;
   private rareEnabled = false;
@@ -387,9 +410,13 @@ export class OverworldCombat {
    * (or ordinary tier-1) run, so nothing here changes from before unless the
    * caller picked a higher tier at the portal.
    */
-  spawnDungeonEncounters(encounters: DungeonEncounterSpawn[], boss: DungeonBossSpawn, hooks: DungeonCombatHooks, tierMultiplier = 1): void {
+  spawnDungeonEncounters(encounters: DungeonEncounterSpawn[], boss: DungeonBossSpawn, hooks: DungeonCombatHooks, tierMultiplier = 1, rules: DungeonSpawnRules = {}): void {
     this.ensureBaseHud();
     this.dungeonHooks = hooks;
+    this.dungeonDeathBurst = rules.deathBurst ?? null;
+    const statMult = tierMultiplier * (rules.enemyStatMult ?? 1);
+    const actionIntervalMult = rules.enemyActionIntervalMult ?? 1;
+    const chaseSpeedMult = rules.enemyChaseSpeedMult ?? 1;
 
     // Small fixed offsets (world units) so a pod's monsters fan out instead
     // of stacking exactly on top of one another.
@@ -401,18 +428,29 @@ export class OverworldCombat {
       { dx: -0.25, dy: -0.4 },
     ];
     encounters.forEach((encounter, index) => {
+      const kind = rules.roomKinds?.[index] ?? 'combat';
+      if (kind === 'shrine' || kind === 'trap') return;
+      const elite = kind === 'elite';
       encounter.enemyIds.forEach((enemyId, slot) => {
         const off = GROUP_OFFSETS[slot % GROUP_OFFSETS.length];
-        const m = this.buildMonster(enemyId, encounter.atTile.x + off.dx / TILE_SIZE, encounter.atTile.y + off.dy / TILE_SIZE, { tierMultiplier });
+        const m = this.buildMonster(enemyId, encounter.atTile.x + off.dx / TILE_SIZE, encounter.atTile.y + off.dy / TILE_SIZE, {
+          tierMultiplier: elite ? statMult * (rules.eliteStatMult ?? 1) : statMult,
+          namePrefix: elite ? 'Elite' : undefined,
+          scale: elite ? 1.25 : undefined,
+          actionIntervalMult,
+        });
         m.dungeonEncounterIndex = index;
         m.noRespawn = true;
+        m.chaseSpeedMult = chaseSpeedMult;
+        if (elite) m.labelEl.classList.add('elite');
         this.monsters.push(m);
       });
     });
 
-    const bossMonster = this.buildMonster(boss.enemyId, boss.atTile.x, boss.atTile.y, { visualId: boss.visualId, scale: 1.6, tierMultiplier });
+    const bossMonster = this.buildMonster(boss.enemyId, boss.atTile.x, boss.atTile.y, { visualId: boss.visualId, scale: 1.6, tierMultiplier: statMult, actionIntervalMult });
     bossMonster.isDungeonBoss = true;
     bossMonster.noRespawn = true;
+    bossMonster.chaseSpeedMult = chaseSpeedMult;
     this.monsters.push(bossMonster);
   }
 
@@ -516,8 +554,13 @@ export class OverworldCombat {
     }
   }
 
-  private buildMonster(enemyId: string, tx: number, ty: number, opts: { visualId?: string; scale?: number; tierMultiplier?: number; variant?: 'rare' } = {}): WorldMonster {
-    const enemy = new Enemy(enemyId, opts.tierMultiplier ?? 1);
+  private buildMonster(
+    enemyId: string,
+    tx: number,
+    ty: number,
+    opts: { visualId?: string; scale?: number; tierMultiplier?: number; variant?: 'rare'; namePrefix?: string; actionIntervalMult?: number } = {},
+  ): WorldMonster {
+    const enemy = new Enemy(enemyId, opts.tierMultiplier ?? 1, opts.namePrefix ?? '', opts.actionIntervalMult ?? 1);
     const model = buildEnemyModel(opts.visualId ?? enemyId, enemy.color);
     const spawnX = tx * 2 + 1;
     const spawnZ = ty * 2 + 1;
@@ -693,7 +736,7 @@ export class OverworldCombat {
 
     if (m.state === 'chase') {
       const playerHpFraction = this.player.currentHp / this.player.stats.maxHp;
-      const speed = (CHASE_BASE_SPEED + m.enemy.stats.speed * CHASE_SPEED_PER_STAT) * profile.chaseSpeedMult * chaseSpeedMultiplierFor(profile, playerHpFraction);
+      const speed = (CHASE_BASE_SPEED + m.enemy.stats.speed * CHASE_SPEED_PER_STAT) * profile.chaseSpeedMult * chaseSpeedMultiplierFor(profile, playerHpFraction) * (m.chaseSpeedMult ?? 1);
       m.model.position.x += (dx / dist) * speed * dt;
       m.model.position.z += (dz / dist) * speed * dt;
       m.model.rotation.y = Math.atan2(dx, dz);
@@ -1497,6 +1540,8 @@ export class OverworldCombat {
       if (m.variant === 'rare') this.grantRareReward(m);
     }
 
+    if (this.dungeonDeathBurst && !m.isDungeonBoss && m.dungeonEncounterIndex !== undefined) this.applyDeathBurst(this.dungeonDeathBurst);
+
     if (m.dungeonEncounterIndex !== undefined && this.dungeonHooks) {
       const index = m.dungeonEncounterIndex;
       const podStillAlive = this.monsters.some((other) => other.dungeonEncounterIndex === index && other.state !== 'dead');
@@ -1505,6 +1550,17 @@ export class OverworldCombat {
     if (m.isDungeonBoss && this.dungeonHooks) {
       this.dungeonHooks.onBossDefeated();
     }
+  }
+
+  /** Brasas Vingativas (data/dungeonModifiers.ts): a dying dungeon monster scorches the player — never lethal, so it can't end a fight on its own. */
+  private applyDeathBurst(burst: { maxHpPct: number; burn: boolean }): void {
+    if (!this.player.isAlive()) return;
+    const damage = Math.min(this.player.currentHp - 1, Math.round(this.player.stats.maxHp * burst.maxHpPct));
+    if (damage <= 0) return;
+    this.player.currentHp -= damage;
+    if (burst.burn && this.engine) applyStatusEffect(this.player, 'burn', damage);
+    this.vfx.spawnHitImpact(this.playerWorldPos, 'magical', 'burn');
+    this.showMessage(`Brasas Vingativas: o inimigo explode! (-${damage} de vida)`, 1800);
   }
 
   /**

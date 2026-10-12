@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { Player } from '../entities/Player';
 import { DUNGEON_DEFINITIONS, getDungeonBossDefinition, getDungeonById } from '../data/dungeons';
-import { completeDungeon, encounterProgressText, recordEncounterCleared, startDungeonRun } from './DungeonSystem';
+import { rarityTier } from '../config/rarity';
+import { checkAchievements, isUnlocked } from './AchievementSystem';
+import { dayIndex, planDungeonRun } from './DungeonModifierSystem';
+import { ELITE_REWARD_BONUS } from './DungeonRoomSystem';
+import {
+  addRunBlessing,
+  chestRarityFloor,
+  completeDungeon,
+  encounterProgressText,
+  recordEncounterCleared,
+  runPlayerModifiers,
+  runRewardBonus,
+  startDungeonRun,
+} from './DungeonSystem';
+import { PITY_LEGENDARY_THRESHOLD } from './LootPity';
+import { getCounter } from './WorldStateSystem';
 
 function freshPlayer(): Player {
   return Player.createNew('Testador', 'warrior');
@@ -179,5 +194,130 @@ describe('completeDungeon — repeatable-tier scaling', () => {
 
     completeDungeon(player, dungeon, startDungeonRun(dungeon, 5));
     expect(player.dungeonTiers[dungeon.id]).toBe(5);
+  });
+});
+
+describe('Dungeons 2.0 — planned runs (Distorções + varied rooms)', () => {
+  const day = dayIndex(new Date(2026, 9, 11));
+
+  it('a planned run carries its Distorções, the featured one, and a seeded room layout', () => {
+    const dungeon = getDungeonById('silent_root_rift');
+    const plan = planDungeonRun(dungeon, 5, day);
+    const state = startDungeonRun(dungeon, 5, plan);
+    expect(state.modifierIds).toEqual(plan.modifierIds);
+    expect(state.featuredModifierId).toBe(plan.featuredId);
+    expect(state.rooms).toHaveLength(dungeon.encounters.length);
+    expect(state.rooms[0].kind).toBe('combat');
+    expect(startDungeonRun(dungeon, 5, plan).rooms).toEqual(state.rooms); // same plan, same rooms
+  });
+
+  it('an unplanned run is all plain ambushes with no Distorções (legacy behaviour)', () => {
+    const state = startDungeonRun(getDungeonById('root_hollow'), 2);
+    expect(state.modifierIds).toEqual([]);
+    expect(state.rooms.every((r) => r.kind === 'combat')).toBe(true);
+    expect(runRewardBonus(state)).toBe(0);
+  });
+
+  it('recordEncounterCleared with an index never counts the same room twice, and tallies elites', () => {
+    const dungeon = getDungeonById('rotten_sap_gallery');
+    let state = startDungeonRun(dungeon, 1);
+    state = { ...state, rooms: state.rooms.map((r, i) => (i === 2 ? { kind: 'elite' as const } : r)) };
+    state = recordEncounterCleared(state, 2);
+    const again = recordEncounterCleared(state, 2);
+    expect(again).toBe(state);
+    expect(state.clearedEncounters).toBe(1);
+    expect(state.elitesCleared).toBe(1);
+    expect(runRewardBonus(state)).toBeCloseTo(ELITE_REWARD_BONUS);
+  });
+
+  it("blessings stack into the run's player modifiers on top of the Distorções", () => {
+    const dungeon = getDungeonById('root_hollow');
+    const plan = { dungeonId: dungeon.id, tier: 2, modifierIds: ['fio_da_navalha'], featuredId: 'fio_da_navalha', seed: 1 };
+    let state = startDungeonRun(dungeon, 2, plan);
+    const before = state;
+    state = addRunBlessing(state, { critChance: 0.1 });
+    state = addRunBlessing(state, { damageDealt: 0.12 });
+    expect(before.blessings).toEqual({});
+    const mods = runPlayerModifiers(state);
+    expect(mods.critChance).toBeCloseTo(0.25);
+    expect(mods.damageDealt).toBeCloseTo(0.12);
+    expect(mods.damageTaken).toBeCloseTo(0.25);
+  });
+
+  it('Player.itemEffects folds the run modifiers in, and heals shrink under Seiva Amarga', () => {
+    const player = freshPlayer();
+    const baseCrit = player.itemEffects().mods.critChance;
+    player.dungeonRunMods = { critChance: 0.15 };
+    expect(player.itemEffects().mods.critChance).toBeCloseTo(baseCrit + 0.15);
+    player.dungeonRunMods = null;
+    expect(player.itemEffects().mods.critChance).toBeCloseTo(baseCrit);
+
+    player.currentHp = 1;
+    player.dungeonHealingMult = 0.6;
+    expect(player.heal(50)).toBe(30);
+  });
+
+  it('chest rarity floor climbs with tier and heavy Distorções, capped at Mítico', () => {
+    expect(chestRarityFloor(1, 0)).toBe('azul');
+    expect(chestRarityFloor(3, 0)).toBe('amarelo');
+    expect(chestRarityFloor(5, 0)).toBe('vermelho');
+    expect(chestRarityFloor(5, 0.6)).toBe('laranja');
+    expect(chestRarityFloor(5, 5)).toBe('laranja');
+    expect(rarityTier(chestRarityFloor(1, 0.5))).toBeGreaterThan(rarityTier(chestRarityFloor(1, 0.1)));
+  });
+
+  it('a distorted clear pays more gold, drops the Baú da Distorção at or above its floor, and records the run', () => {
+    const player = freshPlayer();
+    const dungeon = getDungeonById('root_hollow');
+    const plan = { dungeonId: dungeon.id, tier: 1, modifierIds: ['casca_endurecida', 'seiva_amarga'], featuredId: 'casca_endurecida', seed: 9 };
+    const state = startDungeonRun(dungeon, 1, plan);
+    const bonus = runRewardBonus(state);
+    expect(bonus).toBeGreaterThan(0);
+    const bagBefore = player.bag.length;
+    const { reward } = completeDungeon(player, dungeon, state, { elapsedSeconds: 200, rng: () => 0 });
+    expect(reward.bonusGold).toBe(Math.round(dungeon.bonusGold * (1 + bonus)));
+    expect(reward.chestItem).not.toBeNull();
+    expect(rarityTier(reward.chestItem!.rarity)).toBeGreaterThanOrEqual(rarityTier(chestRarityFloor(1, bonus)));
+    expect(player.bag.length).toBe(bagBefore + 2);
+    expect(reward.newFastest).toBe(true);
+    expect(reward.message).toContain('Baú da Distorção');
+    expect(reward.message).toContain('Novo recorde: 3:20');
+    expect(player.dungeonRecords[dungeon.id]).toEqual({ clears: 1, fastestSeconds: 200, fastestTier: 1, mostModifiers: 2 });
+    expect(getCounter(player.worldState, 'dungeon_distorted_clears')).toBe(1);
+  });
+
+  it('the chest honors and feeds loot pity: a due Lendário guarantee beats the chest floor, then resets', () => {
+    const player = freshPlayer();
+    player.lootPity.sinceLegendary = PITY_LEGENDARY_THRESHOLD;
+    const dungeon = getDungeonById('root_hollow');
+    const plan = { dungeonId: dungeon.id, tier: 1, modifierIds: ['seiva_amarga'], featuredId: 'x', seed: 3 };
+    const { reward } = completeDungeon(player, dungeon, startDungeonRun(dungeon, 1, plan), { rng: () => 0 });
+    expect(rarityTier(reward.chestItem!.rarity)).toBeGreaterThanOrEqual(rarityTier('vermelho'));
+    expect(player.lootPity.sinceLegendary).toBe(0);
+  });
+
+  it('three Distorções unlock Tripla Distorção; elites feed Caçador de Elites', () => {
+    const player = freshPlayer();
+    const dungeon = getDungeonById('silent_root_rift');
+    const plan = { dungeonId: dungeon.id, tier: 5, modifierIds: ['seiva_amarga', 'frenesi_das_raizes', 'sede_voraz'], featuredId: 'x', seed: 4 };
+    let state = startDungeonRun(dungeon, 5, plan);
+    state = { ...state, rooms: state.rooms.map((r, i) => (i === 1 ? { kind: 'elite' as const } : r)) };
+    state = recordEncounterCleared(state, 1);
+    completeDungeon(player, dungeon, state, { rng: () => 0.5 });
+    expect(getCounter(player.worldState, 'dungeon_three_distortion_clears')).toBe(1);
+    expect(getCounter(player.worldState, 'dungeon_elites_slain')).toBe(1);
+    const unlocked = checkAchievements(player).map((a) => a.id);
+    expect(unlocked).toContain('tripla_distorcao');
+    expect(isUnlocked(player.achievements, 'cacador_de_elites')).toBe(false);
+  });
+
+  it('an untimed or slower clear does not overwrite the speed record', () => {
+    const player = freshPlayer();
+    const dungeon = getDungeonById('root_hollow');
+    completeDungeon(player, dungeon, startDungeonRun(dungeon, 1), { elapsedSeconds: 120 });
+    const { reward } = completeDungeon(player, dungeon, startDungeonRun(dungeon, 2), { elapsedSeconds: 300 });
+    expect(reward.newFastest).toBe(false);
+    expect(player.dungeonRecords[dungeon.id].fastestSeconds).toBe(120);
+    expect(player.dungeonRecords[dungeon.id].clears).toBe(2);
   });
 });
