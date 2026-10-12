@@ -3,6 +3,7 @@ import type { Game } from '../engine/Game';
 import type { Screen } from '../engine/Screen';
 import type { Player } from '../entities/Player';
 import { audio } from '../systems/AudioSystem';
+import { combatFeel } from '../systems/combatFeel';
 import { loadSettings, saveSettings, type GameSettings } from '../systems/GameSettings';
 import { el } from '../ui/dom';
 import { buildDevPanel } from './DevPanel';
@@ -102,6 +103,93 @@ export class SettingsScreen implements Screen {
   }
 
   /**
+   * Fase 7: a generic segmented row (same look as lowPowerRow) for the
+   * ambient/combat-feel options — one helper instead of a hand-written
+   * method per toggle, since four of them share the exact same shape.
+   */
+  private choiceRow<T>(label: string, options: Array<{ value: T; label: string }>, get: () => T, set: (v: T) => void, className = ''): HTMLElement {
+    const container = el('div', { className: 'settings-segmented' });
+    const render = () => {
+      container.replaceChildren(
+        ...options.map((opt) =>
+          el('div', {
+            className: `btn settings-segment${get() === opt.value ? ' active' : ''}`,
+            text: opt.label,
+            onClick: () => {
+              set(opt.value);
+              this.persist();
+              render();
+            },
+          }),
+        ),
+      );
+    };
+    render();
+    return el('div', { className: `settings-row${className ? ` ${className}` : ''}` }, [el('div', { className: 'settings-label', text: label }), container]);
+  }
+
+  /** Pushes the current combat-feel options into the shared combatFeel instance so a change applies the moment the player returns to the game. */
+  private applyFeel(): void {
+    combatFeel.configure({ screenShake: this.settings.screenShake, damageNumbers: this.settings.damageNumbers, reduceMotion: this.settings.reduceMotion });
+  }
+
+  /** The Fase 7 block: ambient volume + "Tremor de tela" / "Números de dano" / "Reduzir movimento". */
+  private feelRows(): HTMLElement[] {
+    const onOff = [
+      { value: true, label: 'Ativado' },
+      { value: false, label: 'Desativado' },
+    ];
+    return [
+      this.volumeRow(
+        'Volume do Ambiente',
+        () => this.settings.ambientVolume,
+        (v) => {
+          this.settings.ambientVolume = v;
+          audio.setAmbientVolume(v);
+        },
+      ),
+      this.choiceRow(
+        'Tremor de tela',
+        [
+          { value: 0, label: 'Desligado' },
+          { value: 0.5, label: 'Suave' },
+          { value: 1, label: 'Normal' },
+        ],
+        () => this.settings.screenShake,
+        (v) => {
+          this.settings.screenShake = v;
+          this.applyFeel();
+        },
+        'settings-row-shake',
+      ),
+      this.choiceRow(
+        'Números de dano',
+        onOff,
+        () => this.settings.damageNumbers,
+        (v) => {
+          this.settings.damageNumbers = v;
+          this.applyFeel();
+        },
+        'settings-row-damage-numbers',
+      ),
+      this.choiceRow(
+        'Reduzir movimento',
+        onOff,
+        () => this.settings.reduceMotion,
+        (v) => {
+          this.settings.reduceMotion = v;
+          this.applyFeel();
+        },
+        'settings-row-reduce-motion',
+      ),
+      el('div', {
+        className: 'settings-hint',
+        text: 'Reduzir movimento desliga o tremor de tela, as pausas de impacto e o afastamento da câmera em combate.',
+      }),
+    ];
+  }
+
+  /**
    * Tapping the screen's own title 7 times within 2.5s reveals the dev
    * panel — same undiscoverable-on-purpose gesture MainMenuScreen's own
    * easter eggs use (see its onLogoClick), not a visible button, since this
@@ -158,6 +246,7 @@ export class SettingsScreen implements Screen {
         className: 'settings-hint',
         text: 'O Modo Economia reduz sombra, anti-serrilhado e resolução de brilho para telas mais fracas — o ajuste manual vale a partir do próximo carregamento do jogo.',
       }),
+      ...this.feelRows(),
       this.devSlot,
     ]);
 

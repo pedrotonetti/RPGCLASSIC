@@ -92,6 +92,8 @@ export interface CombatEvent {
   affinity?: DamageAffinity;
   /** Set on `damage`/`heal`/`buff` events raised by an actual skill (not a DoT tick) — lets the UI pick the right shared hit/impact VFX without re-deriving it from the skill id. */
   skillKind?: 'physical' | 'magical' | 'heal' | 'buff';
+  /** Set on a player `damage` event from an elemental skill — lets the floating number take that element's colour (see systems/combatFeel.ts). */
+  element?: DamageElement;
 }
 
 const STATUS_LABEL: Record<StatusEffectType, string> = {
@@ -513,6 +515,7 @@ export class CombatEngine {
       targetHpAfter: enemy.currentHp,
       skillKind: kind,
       affinity: affinity ?? undefined,
+      ...(opts.element ? { element: opts.element } : {}),
     });
     // Silent on purpose: a heal event per hit would replay the potion sound every swing.
     if (fx.mods.lifeSteal > 0) this.player.heal(Math.min(dealt, hpBefore) * fx.mods.lifeSteal);

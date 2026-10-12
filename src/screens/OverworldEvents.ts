@@ -174,6 +174,12 @@ export class OverworldEvents {
 
   // --- lifecycle -----------------------------------------------------------
 
+  /** The kind of event currently staged in this zone, or null — read by the ambient bed (Fase 7, see systems/ambientAudio.ts) to darken/muffle the soundscape. */
+  activeEventKind(): WorldEventDefinition['kind'] | null {
+    const active = this.currentEvent();
+    return active ? (getWorldEventById(active.defId)?.kind ?? null) : null;
+  }
+
   private currentEvent(): ActiveWorldEvent | null {
     const active = this.state.active;
     return active && active.zoneId === this.host.zone.id && active === this.realized ? active : null;
