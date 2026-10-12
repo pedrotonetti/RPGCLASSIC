@@ -30,6 +30,34 @@ export interface GameSettings {
   damageNumbers: boolean;
   /** Accessibility: disables camera shake, hit-stop freeze frames and the combat zoom-out regardless of `screenShake`. */
   reduceMotion: boolean;
+  /**
+   * "Tamanho da interface" — scales HUD and menu text/controls (see
+   * ui/uiScale.ts). Optional (absent = 'medio') so settings blobs saved
+   * before it existed, and every other settings field added alongside it,
+   * keep loading unchanged; read it through `uiScaleOf`.
+   */
+  uiScale?: UiScale;
+  /** Small-screen HUD: quest tracker collapsed to a single tappable line. Optional (absent = expanded). */
+  questTrackerCollapsed?: boolean;
+}
+
+export type UiScale = 'pequeno' | 'medio' | 'grande';
+
+export const UI_SCALE_OPTIONS: Array<{ value: UiScale; label: string; factor: number }> = [
+  { value: 'pequeno', label: 'Pequeno', factor: 0.9 },
+  { value: 'medio', label: 'Médio', factor: 1 },
+  { value: 'grande', label: 'Grande', factor: 1.15 },
+];
+
+/** The stored scale, falling back to 'medio' when absent or unrecognized (e.g. a hand-edited/corrupted value). */
+export function uiScaleOf(settings: GameSettings): UiScale {
+  const found = UI_SCALE_OPTIONS.find((o) => o.value === settings.uiScale);
+  return found ? found.value : 'medio';
+}
+
+/** Multiplier applied to the UI for a given scale setting. */
+export function uiScaleFactor(scale: UiScale): number {
+  return UI_SCALE_OPTIONS.find((o) => o.value === scale)?.factor ?? 1;
 }
 
 const SETTINGS_KEY = 'rpgclassic:settings:v1';

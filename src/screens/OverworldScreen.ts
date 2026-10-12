@@ -78,6 +78,8 @@ import {
 import { combatFeel, combatZoomFactor } from '../systems/combatFeel';
 import { el, goToLazy } from '../ui/dom';
 import { isTouchDevice } from '../ui/device';
+import { HudPolish } from '../ui/hudPolish';
+import { addHotkeyHint } from '../ui/menuKeys';
 import { buildAchievementToast, type AchievementToastHandle } from '../ui/achievementToast';
 import { buildGlobeIconSvg, buildWorldMapOverlay, type WorldMapOverlayHandle } from '../ui/worldMap';
 import { LoreFragmentLayer, loreFragmentSpeaker } from './LoreFragmentLayer';
@@ -375,6 +377,10 @@ export class OverworldScreen implements Screen {
   private act3ChoiceEl!: HTMLElement;
   private act3EpilogueEl!: HTMLElement;
   private act3EpilogueTextEl!: HTMLElement;
+  /** Low-HP vignette + collapsible quest tracker (ui/hudPolish.ts). */
+  private hudPolish: HudPolish | null = null;
+  /** Desktop menu hotkeys (I/K/J) → the pause menu's own buttons, so a hotkey goes through exactly the same save-and-open path as clicking. Filled by buildPauseOverlay. */
+  private menuHotkeys: Record<string, HTMLElement> = {};
 
   private isMoving = false;
   /** Eases toward 1 when the camera is squeezed by a dense obstacle cluster (resolveCameraXZ can't find a clear spot), toward 0 otherwise — see updateCamera. Replaces a direct Math.max height snap, which was a visible one-frame lurch. */
@@ -866,7 +872,12 @@ export class OverworldScreen implements Screen {
     if (this.questChoiceOverlay.isOpen) return;
 
     if (e.key === 'Escape') {
+      if (this.closeTopmostOverlay()) return;
       this.togglePause();
+      return;
+    }
+    if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && Object.hasOwn(this.menuHotkeys, e.key.toLowerCase())) {
+      this.menuHotkeys[e.key.toLowerCase()].click();
       return;
     }
     if (this.paused) return;
@@ -880,6 +891,29 @@ export class OverworldScreen implements Screen {
     if (e.key === 'm' || e.key === 'M') {
       this.cycleMount();
     }
+  }
+
+  /**
+   * Escape's "close the topmost thing" for the small in-world overlays that
+   * have their own close/continue button but no key of their own — the
+   * dungeon tier picker, the dungeon-complete panel ("Continuar
+   * explorando") and the Act 3 epilogue. The Act 3 CHOICE stays a forced
+   * decision on purpose. Returns whether anything was closed.
+   */
+  private closeTopmostOverlay(): boolean {
+    if (this.dungeonTierPickerEl) {
+      this.closeDungeonTierPicker();
+      return true;
+    }
+    if (this.act3EpilogueEl && !this.act3EpilogueEl.hidden) {
+      this.act3EpilogueEl.hidden = true;
+      return true;
+    }
+    if (this.dungeonCompleteEl && !this.dungeonCompleteEl.hidden) {
+      this.dungeonCompleteEl.hidden = true;
+      return true;
+    }
+    return false;
   }
 
   /** Shared by the [E] key and the on-screen interact-prompt tap — the only two ways to talk to an NPC or enter a dungeon, on keyboard and touch respectively. */
@@ -2576,7 +2610,7 @@ export class OverworldScreen implements Screen {
 
     this.refreshHud();
 
-    const hint = el('div', { className: 'hud-hint', text: 'ESC: menu · M: montaria' });
+    const hint = el('div', { className: 'hud-hint', text: 'ESC: menu · M: montaria\nI: inventário · K: habilidades · J: missões' });
     this.promptEl = el('div', { className: 'interact-prompt', text: '', onClick: () => this.tryInteract() });
     this.promptEl.hidden = true;
 
@@ -2608,6 +2642,7 @@ export class OverworldScreen implements Screen {
       this.promptEl,
       xpBar,
     );
+    this.hudPolish = new HudPolish(this.game.uiRoot, this.questTrackerEl);
   }
 
   /** Hands the dynamic-event director (see OverworldEvents) the few things it needs from this screen. Built after buildHud so its banner/arrow sit above the world but under every overlay. */
@@ -2667,6 +2702,7 @@ export class OverworldScreen implements Screen {
     const xpFraction = Math.min(1, Math.max(0, this.player.xp / this.player.xpToNextLevel));
     this.xpBarFillEl.style.width = `${xpFraction * 100}%`;
     this.clockEl.textContent = `${isNight(this.player.gameClock) ? '🌙' : '☀️'} ${formatTimeOfDay(this.player.gameClock)}`;
+    this.hudPolish?.update(this.player.currentHp, stats.maxHp);
   }
 
   private refreshQuestTracker(): void {
@@ -3282,6 +3318,9 @@ export class OverworldScreen implements Screen {
     ]);
     this.pauseOverlay.hidden = true;
     this.game.uiRoot.append(this.pauseOverlay);
+    addHotkeyHint(resumeBtn, 'Esc');
+    this.menuHotkeys = { i: inventoryBtn, k: skillsBtn, j: questLogBtn };
+    for (const [key, btn] of Object.entries(this.menuHotkeys)) addHotkeyHint(btn, key.toUpperCase());
     this.refreshMountSection();
   }
 

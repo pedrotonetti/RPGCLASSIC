@@ -7,6 +7,7 @@ import { Player } from '../entities/Player';
 import { computeSkillLevelStats, ultimateLevelForCharacter, ULTIMATE_MAX_LEVEL } from '../systems/skillMath';
 import { saveGame } from '../systems/SaveSystem';
 import { el, goToLazy } from '../ui/dom';
+import { addHotkeyHint, bindBackKey } from '../ui/menuKeys';
 
 export class SkillTreeScreen implements Screen {
   scene = new THREE.Scene();
@@ -40,7 +41,12 @@ export class SkillTreeScreen implements Screen {
     this.buildUi();
   }
 
-  unmount(): void {}
+  /** Escape (and this menu's own open hotkey, if any) presses the back button — see ui/menuKeys.ts. */
+  private unbindBackKey: (() => void) | null = null;
+
+  unmount(): void {
+    this.unbindBackKey?.();
+  }
 
   onResize(width: number, height: number): void {
     this.camera.aspect = width / height;
@@ -68,6 +74,8 @@ export class SkillTreeScreen implements Screen {
         });
       },
     });
+    addHotkeyHint(backBtn, 'Esc / K');
+    this.unbindBackKey = bindBackKey(backBtn, ['k']);
 
     const screen = el('div', { className: 'skilltree-screen screen' }, [
       el('div', { className: 'top-bar' }, [

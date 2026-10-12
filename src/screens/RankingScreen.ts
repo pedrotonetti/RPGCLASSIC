@@ -7,6 +7,7 @@ import { computePowerScore } from '../systems/PowerScore';
 import { DUNGEON_DEFINITIONS } from '../data/dungeons';
 import { DUNGEON_TIER_CAP } from '../systems/DungeonTierSystem';
 import { el, goToLazy } from '../ui/dom';
+import { addHotkeyHint, bindBackKey } from '../ui/menuKeys';
 
 export class RankingScreen implements Screen {
   scene = new THREE.Scene();
@@ -25,7 +26,12 @@ export class RankingScreen implements Screen {
     this.buildUi();
   }
 
-  unmount(): void {}
+  /** Escape (and this menu's own open hotkey, if any) presses the back button — see ui/menuKeys.ts. */
+  private unbindBackKey: (() => void) | null = null;
+
+  unmount(): void {
+    this.unbindBackKey?.();
+  }
 
   onResize(width: number, height: number): void {
     this.camera.aspect = width / height;
@@ -84,6 +90,8 @@ export class RankingScreen implements Screen {
           return new OverworldScreen(this.game, this.player, avatar);
         }),
     });
+    addHotkeyHint(backBtn, 'Esc');
+    this.unbindBackKey = bindBackKey(backBtn);
 
     const screen = el('div', { className: 'ranking-screen screen' }, [
       el('div', { className: 'top-bar' }, [
