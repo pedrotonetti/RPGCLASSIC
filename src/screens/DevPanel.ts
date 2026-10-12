@@ -79,7 +79,7 @@ export function buildDevPanel(player: Player | null): HTMLElement {
     onClick: () => {
       for (const def of MOUNT_DEFINITIONS) if (!player.unlockedMounts.includes(def.id)) player.unlockedMounts.push(def.id);
       saveGame(player);
-      showStatus('Todas as montarias liberadas — equipe no Inventário.');
+      showStatus('Todas as montarias liberadas — equipe no Estábulo (N).');
     },
   });
   const mountXpBtn = el('div', {

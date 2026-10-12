@@ -10,7 +10,7 @@ import { getGemById } from '../data/gems';
 import { getItemById } from '../data/items';
 import { getMaterialById } from '../data/materials';
 import { getMountById } from '../data/mounts';
-import { addMountXp, FLY_XP_PER_SECOND, mountProfile, mountStage, nextMountInCycle, syncMountUnlocks } from '../systems/MountSystem';
+import { addMountXp, FLY_XP_PER_SECOND, mountDisplayName, mountProfile, mountStage, nextMountInCycle, syncMountUnlocks } from '../systems/MountSystem';
 import { dialogueLinesFor, getNpcById, NPC_DEFINITIONS, type NpcDefinition, type VendorInfo } from '../data/npcs';
 import {
   arriveWorldPosition,
@@ -3276,6 +3276,17 @@ export class OverworldScreen implements Screen {
         });
       },
     });
+    const stableBtn = el('div', {
+      className: 'btn',
+      text: 'Estábulo',
+      onClick: () => {
+        saveGame(this.player);
+        goToLazy(this.game, async () => {
+          const { StableScreen } = await import('./StableScreen');
+          return new StableScreen(this.game, this.player);
+        });
+      },
+    });
     const rankingBtn = el('div', {
       className: 'btn',
       text: 'Ranking (estimado)',
@@ -3350,7 +3361,7 @@ export class OverworldScreen implements Screen {
 
     this.pauseOverlay = el('div', { className: 'panel pause-overlay' }, [
       el('h2', { text: 'Pausado' }),
-      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, skillsBtn, rankingBtn, questLogBtn, achievementsBtn, worldMapBtn, settingsBtn]),
+      el('div', { className: 'stack' }, [resumeBtn, inventoryBtn, stableBtn, skillsBtn, rankingBtn, questLogBtn, achievementsBtn, worldMapBtn, settingsBtn]),
       el('div', { className: 'pause-divider' }),
       this.mountSectionEl,
       el('div', { className: 'pause-divider' }),
@@ -3359,7 +3370,7 @@ export class OverworldScreen implements Screen {
     this.pauseOverlay.hidden = true;
     this.game.uiRoot.append(this.pauseOverlay);
     addHotkeyHint(resumeBtn, 'Esc');
-    this.menuHotkeys = { i: inventoryBtn, k: skillsBtn, j: questLogBtn };
+    this.menuHotkeys = { i: inventoryBtn, n: stableBtn, k: skillsBtn, j: questLogBtn };
     for (const [key, btn] of Object.entries(this.menuHotkeys)) addHotkeyHint(btn, key.toUpperCase());
     this.refreshMountSection();
   }
@@ -3378,7 +3389,7 @@ export class OverworldScreen implements Screen {
           className: `btn mount-option ${active ? 'primary' : ''}`,
           onClick: () => this.setMounted(active ? null : mountId),
         }, [
-          el('span', { text: active ? `Montado: ${profile.name}` : `${kind === 'voadora' ? 'Voar' : 'Montar'}: ${profile.name}` }),
+          el('span', { text: active ? `Montado: ${mountDisplayName(this.player, mountId)}` : `${kind === 'voadora' ? 'Voar' : 'Montar'}: ${mountDisplayName(this.player, mountId)}` }),
           el('span', { className: 'mount-perk', text: perk }),
         ]),
       );
@@ -3386,7 +3397,7 @@ export class OverworldScreen implements Screen {
     if (this.player.activeMountId) {
       buttons.push(el('div', { className: 'btn', text: 'Desmontar', onClick: () => this.setMounted(null) }));
     }
-    buttons.push(el('div', { className: 'mount-hint', text: 'Troque de montaria no Inventário · tecla M alterna' }));
+    buttons.push(el('div', { className: 'mount-hint', text: 'Troque de montaria no Estábulo (N) · tecla M alterna' }));
     this.mountSectionEl.replaceChildren(...buttons);
   }
 

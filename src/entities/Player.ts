@@ -5,7 +5,7 @@ import type { CharacterClassDefinition, EquipmentInstance, EquipmentSlot, SkillD
 import { computeEquipmentBonus, createStarterItem, getEquipmentTemplate } from '../data/equipment';
 import { getItemById } from '../data/items';
 import { getMountById, normalizeMountId, type MountKind } from '../data/mounts';
-import { mountProfile, normalizeEquippedMounts, normalizeMountXp, syncMountUnlocks } from '../systems/MountSystem';
+import { mountProfile, normalizeEquippedMounts, normalizeMountNicknames, normalizeMountXp, syncMountUnlocks } from '../systems/MountSystem';
 import { computeSkillLevelStats, skillPointsForLevel, ultimateLevelForCharacter } from '../systems/skillMath';
 import { statusSpeedMultiplier, type ActiveStatusEffect, type StatusEffectHolder } from '../systems/statusEffects';
 import { cloneAdaptiveState, createInitialAdaptiveState, normalizeAdaptiveState, type AdaptiveState } from '../systems/AdaptiveDifficulty';
@@ -62,6 +62,8 @@ export interface PlayerSaveData {
   equippedMounts?: Partial<Record<MountKind, string>>;
   /** Evolution XP per flying mount id. Absent on old saves. */
   mountXp?: Record<string, number>;
+  /** Player-given mount names (Estábulo). Absent on old saves. */
+  mountNicknames?: Record<string, string>;
   /** Which of Ato 3's three branching endings (see LORE.md) the player chose — null until OverworldScreen's Act3ChoiceOverlay resolves one. Also doubles as "has the player finished the main story" for anything that should only apply post-ending. */
   act3Ending: Act3Ending | null;
   /** Whether this character has already dismissed OverworldScreen's first-time tutorial overlay — false only for a brand-new character, never reset afterward. */
@@ -138,6 +140,7 @@ export class Player implements StatusEffectHolder {
   activeMountId: string | null;
   equippedMounts: Partial<Record<MountKind, string>>;
   mountXp: Record<string, number>;
+  mountNicknames: Record<string, string>;
   act3Ending: Act3Ending | null;
   hasSeenTutorial: boolean;
   dungeonTiers: Record<string, number>;
@@ -210,6 +213,7 @@ export class Player implements StatusEffectHolder {
     this.activeMountId = normalizeMountId(data?.activeMountId);
     this.equippedMounts = {};
     this.mountXp = normalizeMountXp(data?.mountXp);
+    this.mountNicknames = normalizeMountNicknames(data?.mountNicknames);
     this.act3Ending = data?.act3Ending ?? null;
     this.hasSeenTutorial = data?.hasSeenTutorial ?? false;
     this.dungeonTiers = data?.dungeonTiers ?? {};
@@ -542,6 +546,7 @@ export class Player implements StatusEffectHolder {
       dungeonRecords: cloneDungeonRecords(this.dungeonRecords),
       equippedMounts: { ...this.equippedMounts },
       mountXp: { ...this.mountXp },
+      mountNicknames: { ...this.mountNicknames },
     };
   }
 }

@@ -3722,35 +3722,7 @@ body {
   font-weight: normal;
 }
 
-/* --- Montarias no Inventário ------------------------------------------- */
-.mount-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 8px;
-}
-.mount-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.25);
-}
-.mount-card.equipped {
-  border-color: var(--accent, #e3b341);
-  box-shadow: 0 0 0 1px var(--accent, #e3b341) inset;
-}
-.mount-card.locked {
-  opacity: 0.55;
-}
-.mount-card .mount-name {
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.mount-card .mount-perk,
+/* --- Montarias (barra de XP, amostra de cor, dica do menu de pausa) ------------------------------------------- */
 .mount-hint {
   font-size: 0.8em;
   opacity: 0.85;
@@ -3775,4 +3747,196 @@ body {
 .mount-equipped {
   font-size: 0.85em;
   color: var(--accent, #e3b341);
+}
+
+/* --- Estábulo (StableScreen) --------------------------------------------- */
+.stable-screen {
+  display: grid;
+  grid-template-columns: 1fr min(440px, 46vw);
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    'top top'
+    'drag panel'
+    'bottom bottom';
+  padding: calc(12px + var(--safe-t)) calc(16px + var(--safe-r)) calc(8px + var(--safe-b)) calc(16px + var(--safe-l));
+  gap: 8px;
+}
+.stable-screen .top-bar {
+  grid-area: top;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stable-screen .bottom-bar {
+  grid-area: bottom;
+}
+.stable-drag {
+  grid-area: drag;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+  min-height: 160px;
+}
+.stable-drag:active {
+  cursor: grabbing;
+}
+.stable-panel {
+  grid-area: panel;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding: 10px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+}
+.stable-tabs {
+  display: flex;
+  gap: 6px;
+}
+.stable-tab {
+  flex: 1;
+  text-align: center;
+  padding: 10px 6px;
+  min-height: 44px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+.stable-tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(227, 179, 65, 0.12);
+}
+.stable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stable-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+}
+.stable-item.selected {
+  border-color: var(--accent);
+  background: rgba(227, 179, 65, 0.1);
+}
+.stable-item.locked {
+  opacity: 0.55;
+}
+.stable-item-name {
+  flex: 1;
+}
+.stable-item-tag {
+  font-size: 0.75em;
+  color: var(--accent);
+  opacity: 0.9;
+}
+.stable-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 10px;
+}
+.stable-name {
+  margin: 0;
+  color: var(--accent);
+  font-weight: normal;
+}
+.stable-sub,
+.stable-hint {
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+.stable-hint {
+  opacity: 0.6;
+}
+.stable-lock {
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.stable-stages {
+  display: flex;
+  gap: 4px;
+}
+.stable-stage {
+  flex: 1;
+  text-align: center;
+  font-size: 0.8em;
+  padding: 8px 4px;
+  min-height: 36px;
+  border-radius: 6px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  opacity: 0.7;
+}
+.stable-stage.reached {
+  border-style: solid;
+  opacity: 1;
+}
+.stable-stage.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.stable-stat {
+  display: grid;
+  grid-template-columns: 80px 1fr 56px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+}
+.stable-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+.stable-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #c98a2a, #ffd36b);
+}
+.stable-stat-value {
+  text-align: right;
+}
+.stable-perk {
+  font-size: 0.85em;
+}
+.stable-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.stable-nick {
+  flex: 1;
+  min-width: 120px;
+}
+.btn.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+/* Phones: 3D preview on top, panel below. */
+@media (max-width: 819px) {
+  .stable-screen {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 34vh 1fr auto;
+    grid-template-areas:
+      'top'
+      'drag'
+      'panel'
+      'bottom';
+  }
 }

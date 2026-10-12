@@ -63,7 +63,7 @@ export function syncMountUnlocks(player: MountHolder): string[] {
     player.unlockedMounts.push(def.id);
     if (!player.equippedMounts[def.kind]) player.equippedMounts[def.kind] = def.id;
     if (def.unlock.kind !== 'start') {
-      messages.push(`Nova montaria ${def.kind === 'voadora' ? 'voadora' : 'terrestre'}: ${def.name}! Equipe-a no Inventário.`);
+      messages.push(`Nova montaria ${def.kind === 'voadora' ? 'voadora' : 'terrestre'}: ${def.name}! Veja no Estábulo (N).`);
     }
   }
   // Canonical order (as in data/mounts.ts) so menus never reshuffle.
@@ -137,6 +137,50 @@ export function normalizeMountXp(raw: unknown): Record<string, number> {
   if (!raw || typeof raw !== 'object') return result;
   for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof value === 'number' && Number.isFinite(value) && value > 0 && MOUNT_DEFINITIONS.some((m) => m.id === id)) result[id] = value;
+  }
+  return result;
+}
+
+/** Mount XP granted by one "Alimentar" at the Estábulo. */
+export const FEED_XP = 60;
+
+/** Gold cost of feeding an evolving mount — grows with its stage. */
+export function feedCost(player: Pick<Player, 'mountXp'>, mountId: string): number {
+  return 60 + 90 * mountStage(player, mountId);
+}
+
+/**
+ * Estábulo "Alimentar": trades gold for evolution XP on an unlocked,
+ * still-evolving mount. Returns a pt-BR result line (evolution included) or
+ * the reason it couldn't.
+ */
+export function feedMount(player: Pick<Player, 'mountXp' | 'gold' | 'unlockedMounts'>, mountId: string): { ok: boolean; message: string } {
+  if (!player.unlockedMounts.includes(mountId)) return { ok: false, message: 'Montaria ainda bloqueada.' };
+  if (!nextEvolution(player, mountId)) return { ok: false, message: 'Esta montaria já está na forma final.' };
+  const cost = feedCost(player, mountId);
+  if (player.gold < cost) return { ok: false, message: `Ouro insuficiente (precisa de ${cost}).` };
+  player.gold -= cost;
+  const evolved = addMountXp(player, mountId, FEED_XP);
+  return { ok: true, message: evolved ?? `Alimentada! +${FEED_XP} XP de montaria (−${cost} ouro).` };
+}
+
+/** Classic RPG nickname: trimmed, max 18 chars; empty clears it. */
+export function setMountNickname(player: Pick<Player, 'mountNicknames'>, mountId: string, name: string): void {
+  const clean = name.trim().slice(0, 18);
+  if (clean) player.mountNicknames[mountId] = clean;
+  else delete player.mountNicknames[mountId];
+}
+
+/** The name to show for a mount: its nickname, else its current stage's name. */
+export function mountDisplayName(player: Pick<Player, 'mountXp' | 'mountNicknames'>, mountId: string): string {
+  return player.mountNicknames[mountId] ?? mountProfile(player, mountId).name;
+}
+
+export function normalizeMountNicknames(raw: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!raw || typeof raw !== 'object') return result;
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'string' && value.trim() && MOUNT_DEFINITIONS.some((m) => m.id === id)) result[id] = value.trim().slice(0, 18);
   }
   return result;
 }
