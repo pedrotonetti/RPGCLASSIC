@@ -73,6 +73,7 @@ test('"Tamanho da interface" aplica e persiste a escala', async ({ page }) => {
 
   await page.locator('.settings-toggle').click();
   await expect(page.locator('.settings-screen')).toBeVisible();
+  await page.locator('.settings-tab').filter({ hasText: 'Acessibilidade' }).click();
   const row = page.locator('.settings-row').filter({ hasText: 'Tamanho da interface' });
   await expect(row.locator('.settings-segment.active')).toHaveText('Médio');
 

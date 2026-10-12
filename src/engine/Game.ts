@@ -56,6 +56,8 @@ export class Game {
   private current: Screen | null = null;
   private timer = new THREE.Timer();
   private rafHandle = 0;
+  /** Settings hook ("Limite de FPS"/FPS counter — systems/graphicsOptions.ts): returning false skips this animation frame; the skipped time folds into the next frame's dt. */
+  frameGate: ((nowMs: number) => boolean) | null = null;
 
   private composer: EffectComposer;
   private renderPass: RenderPass;
@@ -143,6 +145,7 @@ export class Game {
 
   private loop = (): void => {
     this.rafHandle = requestAnimationFrame(this.loop);
+    if (this.frameGate && !this.frameGate(performance.now())) return;
     this.timer.update();
     const dt = Math.min(this.timer.getDelta(), 0.1);
     if (this.current) {
@@ -163,6 +166,13 @@ export class Game {
    */
   setVignetteDarkness(darkness: number): void {
     this.vignettePass.uniforms.darkness.value = darkness;
+  }
+
+  /** Settings hook ("Escala de renderização" — systems/graphicsOptions.ts): renderer and post-processing chain together, so the passes really draw at the lower resolution. */
+  setPixelRatio(ratio: number): void {
+    this.renderer.setPixelRatio(ratio);
+    this.composer.setPixelRatio(ratio);
+    this.resize();
   }
 
   dispose(): void {

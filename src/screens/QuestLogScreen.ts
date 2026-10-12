@@ -11,6 +11,7 @@ import { currentQuest } from '../systems/QuestSystem';
 import { saveGame } from '../systems/SaveSystem';
 import { el, goToLazy } from '../ui/dom';
 import { addHotkeyHint, bindBackKey } from '../ui/menuKeys';
+import { keyFor, keyLabelFor } from '../systems/Keybindings';
 
 /** Name of a `defeat` objective's enemy (regular or boss id — see Enemy.def's own fallback), or a generic label when the objective accepts any enemy. */
 function enemyLabel(targetId: string | undefined): string {
@@ -124,8 +125,8 @@ export class QuestLogScreen implements Screen {
         });
       },
     });
-    addHotkeyHint(backBtn, 'Esc / J');
-    this.unbindBackKey = bindBackKey(backBtn, ['j']);
+    addHotkeyHint(backBtn, `Esc / ${keyLabelFor('quests')}`);
+    this.unbindBackKey = bindBackKey(backBtn, [keyFor('quests')]);
 
     const screen = el('div', { className: 'questlog-screen screen' }, [
       el('div', { className: 'top-bar' }, [

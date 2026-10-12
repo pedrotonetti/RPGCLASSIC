@@ -77,6 +77,13 @@ import {
   type AmbientBiome,
 } from '../systems/ambientAudio';
 import { combatFeel, combatZoomFactor } from '../systems/combatFeel';
+// Configurações (full options menu): key remaps, camera/gameplay options, per-scene graphics.
+import { isActionKey, keyFor, keyLabel, keyLabelFor, normalizeKey } from '../systems/Keybindings';
+import { autosaveIntervalSeconds, cameraOptions, gameplayOptions, visibleChars } from '../systems/gameplayOptions';
+import { easeAngle, easeFactor, orbitDragDelta, orbitKeyDelta, wrapAngle } from '../systems/cameraControl';
+import { applySceneGraphics } from '../systems/graphicsOptions';
+import { salvageNeedsConfirm } from '../systems/SalvageSystem';
+import { confirmDialog } from '../ui/dialogs';
 import { el, goToLazy } from '../ui/dom';
 import { isTouchDevice } from '../ui/device';
 import { HudPolish } from '../ui/hudPolish';
@@ -407,6 +414,26 @@ export class OverworldScreen implements Screen {
   private camDistance = CAMERA_RIG_PRESETS[0].distance;
   private camHeight = CAMERA_RIG_PRESETS[0].height;
   private camLookHeight = CAMERA_RIG_PRESETS[0].lookHeight;
+  /**
+   * Configurações → Câmera: the azimuth actually rendered/used for input
+   * this frame, and the one it eases toward. Both start at CAMERA_YAW and
+   * only ever move when the player explicitly orbits (rotate keys or a
+   * right-mouse drag — see updateCameraOrbit); the camera still never
+   * rotates with the avatar's own facing.
+   */
+  private camYaw = CAMERA_YAW;
+  private camYawTarget = CAMERA_YAW;
+  private orbitDragPointerId: number | null = null;
+  private orbitDragLastX = 0;
+  /** Seconds since the last periodic autosave (Configurações → Jogabilidade). */
+  private autosaveTimer = 0;
+  /** Dialogue typewriter (Configurações → Jogabilidade → velocidade do texto): seconds since the current line started. -1 = fully shown. */
+  private dialogueTypeElapsed = -1;
+  private onCanvasPointerDown = (ev: PointerEvent) => this.handleOrbitPointerDown(ev);
+  private onCanvasPointerMove = (ev: PointerEvent) => this.handleOrbitPointerMove(ev);
+  private onCanvasPointerUp = (ev: PointerEvent) => this.handleOrbitPointerUp(ev);
+  private onCanvasContextMenu = (ev: Event) => ev.preventDefault();
+  private onFocusLost = () => this.handleFocusLost();
 
   private heldKeys = new Set<string>();
   /** Normalized {x,z} from the on-screen joystick, magnitude <=1; null while untouched. */
@@ -596,6 +623,7 @@ export class OverworldScreen implements Screen {
     this.buildDungeonPortals();
     this.buildChests();
     this.loreLayer = new LoreFragmentLayer(this.scene, this.game.uiRoot, this.player.zoneId, this.currentWalkabilityGrid(), this.player.discoveredLoreIds);
+    this.applyViewOptions();
     this.positionCameraImmediate();
 
     this.combat = new OverworldCombat(this.game, this.player, this.scene, this.animator, () => this.handleDefeat(), this.playerModel);
@@ -676,6 +704,7 @@ export class OverworldScreen implements Screen {
 
     window.addEventListener('keydown', this.keydownHandler);
     window.addEventListener('keyup', this.keyupHandler);
+    this.addOptionListeners();
 
     saveGame(this.player);
   }
@@ -683,6 +712,7 @@ export class OverworldScreen implements Screen {
   unmount(): void {
     window.removeEventListener('keydown', this.keydownHandler);
     window.removeEventListener('keyup', this.keyupHandler);
+    this.removeOptionListeners();
 
     // Every zone travel / dungeon enter / dungeon exit constructs a brand
     // new OverworldScreen (each with its own `scene`), so the outgoing one's
@@ -766,6 +796,7 @@ export class OverworldScreen implements Screen {
     this.applyWorldMood();
     this.achievementToast.update(dt);
     this.updateAmbient(dt);
+    this.tickOptions(dt);
   }
 
   /** Fase 7: picks this zone's ambient palette and sets the bed straight away (a zone-change crossfade from whatever the last zone left playing). */
@@ -840,7 +871,7 @@ export class OverworldScreen implements Screen {
   // --- input -----------------------------------------------------------
 
   private onKeyDown(e: KeyboardEvent): void {
-    this.heldKeys.add(e.key.toLowerCase());
+    this.heldKeys.add(normalizeKey(e.key));
 
     if (this.showingTutorial) {
       if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') this.dismissTutorial();
@@ -870,20 +901,20 @@ export class OverworldScreen implements Screen {
     }
 
     if (this.dialogueNpc) {
-      if (e.key === 'e' || e.key === 'E' || e.key === 'Enter' || e.key === ' ') this.advanceDialogue();
+      if (isActionKey('interact', e.key) || e.key === 'Enter' || e.key === ' ') this.advanceDialogue();
       else if (e.key === 'Escape') this.closeDialogue();
       return;
     }
 
     if (this.questChoiceOverlay.isOpen) return;
 
-    if (e.key === 'Escape') {
+    if (isActionKey('pause', e.key)) {
       if (this.closeTopmostOverlay()) return;
       this.togglePause();
       return;
     }
-    if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && Object.hasOwn(this.menuHotkeys, e.key.toLowerCase())) {
-      this.menuHotkeys[e.key.toLowerCase()].click();
+    if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && Object.hasOwn(this.menuHotkeys, normalizeKey(e.key))) {
+      this.menuHotkeys[normalizeKey(e.key)].click();
       return;
     }
     if (this.paused) return;
@@ -893,8 +924,9 @@ export class OverworldScreen implements Screen {
       return;
     }
 
-    if (e.key === 'e' || e.key === 'E') this.tryInteract();
-    if (e.key === 'm' || e.key === 'M') {
+    if (isActionKey('cameraReset', e.key)) this.camYawTarget = CAMERA_YAW;
+    if (isActionKey('interact', e.key)) this.tryInteract();
+    if (isActionKey('mount', e.key)) {
       this.cycleMount();
     }
   }
@@ -972,17 +1004,18 @@ export class OverworldScreen implements Screen {
   }
 
   private onKeyUp(e: KeyboardEvent): void {
-    this.heldKeys.delete(e.key.toLowerCase());
+    this.heldKeys.delete(normalizeKey(e.key));
   }
 
   /** Combines every held keyboard direction into one normalized vector (diagonals blend naturally); the on-screen joystick is a free 2D drag, so it's used as-is (unclamped magnitude gives analog-speed movement) whenever no keyboard key is held. Raw screen-relative: x = right(+1)/left(-1), z = back(+1)/forward(-1) — not a world-space direction yet, see computeInputAxis. */
   private computeLocalInputAxis(): { x: number; z: number } {
     const k = this.heldKeys;
     const active: Dir[] = [];
-    if (k.has('arrowup') || k.has('w')) active.push('up');
-    if (k.has('arrowdown') || k.has('s')) active.push('down');
-    if (k.has('arrowleft') || k.has('a')) active.push('left');
-    if (k.has('arrowright') || k.has('d')) active.push('right');
+    // Arrows always move; the letter keys come from Configurações → Controles.
+    if (k.has('ArrowUp') || k.has(keyFor('moveUp'))) active.push('up');
+    if (k.has('ArrowDown') || k.has(keyFor('moveDown'))) active.push('down');
+    if (k.has('ArrowLeft') || k.has(keyFor('moveLeft'))) active.push('left');
+    if (k.has('ArrowRight') || k.has(keyFor('moveRight'))) active.push('right');
 
     const axis = { x: 0, z: 0 };
     for (const dir of active) {
@@ -1032,8 +1065,8 @@ export class OverworldScreen implements Screen {
     const local = this.computeLocalInputAxis();
     if (local.x === 0 && local.z === 0) return local;
 
-    const forward = { x: Math.sin(CAMERA_YAW), z: Math.cos(CAMERA_YAW) };
-    const right = { x: -Math.cos(CAMERA_YAW), z: Math.sin(CAMERA_YAW) };
+    const forward = { x: Math.sin(this.camYaw), z: Math.cos(this.camYaw) };
+    const right = { x: -Math.cos(this.camYaw), z: Math.sin(this.camYaw) };
     const inputForward = -local.z;
     const inputRight = local.x;
     return {
@@ -1531,22 +1564,22 @@ export class OverworldScreen implements Screen {
     const touch = isTouchDevice();
     if (this.nearbyNpc) {
       this.promptEl.hidden = false;
-      this.promptEl.textContent = touch ? `Toque para falar com ${this.nearbyNpc.name}` : `[E] Falar com ${this.nearbyNpc.name}`;
+      this.promptEl.textContent = touch ? `Toque para falar com ${this.nearbyNpc.name}` : `[${keyLabelFor('interact')}] Falar com ${this.nearbyNpc.name}`;
     } else if (this.nearbyShrine) {
       this.promptEl.hidden = false;
-      this.promptEl.textContent = touch ? `Toque para examinar ${this.nearbyShrine.name}` : `[E] Examinar ${this.nearbyShrine.name}`;
+      this.promptEl.textContent = touch ? `Toque para examinar ${this.nearbyShrine.name}` : `[${keyLabelFor('interact')}] Examinar ${this.nearbyShrine.name}`;
     } else if (this.nearbyDungeon) {
       this.promptEl.hidden = false;
-      this.promptEl.textContent = touch ? `Toque para preparar ${this.nearbyDungeon.name}` : `[E] Preparar incursão: ${this.nearbyDungeon.name}`;
+      this.promptEl.textContent = touch ? `Toque para preparar ${this.nearbyDungeon.name}` : `[${keyLabelFor('interact')}] Preparar incursão: ${this.nearbyDungeon.name}`;
     } else if (this.nearbyChest) {
       this.promptEl.hidden = false;
-      this.promptEl.textContent = touch ? `Toque para abrir ${this.nearbyChest.name}` : `[E] Abrir ${this.nearbyChest.name}`;
+      this.promptEl.textContent = touch ? `Toque para abrir ${this.nearbyChest.name}` : `[${keyLabelFor('interact')}] Abrir ${this.nearbyChest.name}`;
     } else if (this.nearbyEventSpot) {
       this.promptEl.hidden = false;
-      this.promptEl.textContent = touch ? this.nearbyEventSpot.touchPrompt : this.nearbyEventSpot.keyPrompt;
+      this.promptEl.textContent = touch ? this.nearbyEventSpot.touchPrompt : this.nearbyEventSpot.keyPrompt.replace('[E]', `[${keyLabelFor('interact')}]`);
     } else if (this.nearbyLore) {
       this.promptEl.hidden = false;
-      this.promptEl.textContent = touch ? `Toque para examinar ${this.nearbyLore.title}` : `[E] Examinar ${this.nearbyLore.title}`;
+      this.promptEl.textContent = touch ? `Toque para examinar ${this.nearbyLore.title}` : `[${keyLabelFor('interact')}] Examinar ${this.nearbyLore.title}`;
     } else {
       this.promptEl.hidden = true;
     }
@@ -1593,10 +1626,23 @@ export class OverworldScreen implements Screen {
     if (!this.dialogueNpc) return;
     this.dialogueNameEl.textContent = this.dialogueNpc.name;
     this.dialogueLineEl.textContent = this.dialogueLines[this.dialogueLineIndex];
+    // Configurações → velocidade do texto: anything slower than instant types the line out (see tickOptions).
+    if (gameplayOptions().textSpeed !== 'instantaneo') {
+      this.dialogueTypeElapsed = 0;
+      this.dialogueLineEl.textContent = '';
+    } else {
+      this.dialogueTypeElapsed = -1;
+    }
   }
 
   private advanceDialogue(): void {
     if (!this.dialogueNpc) return;
+    // First press while a line is still typing just finishes it.
+    if (this.dialogueTypeElapsed >= 0) {
+      this.dialogueTypeElapsed = -1;
+      this.dialogueLineEl.textContent = this.dialogueLines[this.dialogueLineIndex];
+      return;
+    }
     this.dialogueLineIndex += 1;
     if (this.dialogueLineIndex >= this.dialogueLines.length) {
       this.closeDialogue();
@@ -1714,15 +1760,17 @@ export class OverworldScreen implements Screen {
     this.tutorialOverlayEl = el('div', { className: 'panel tutorial-overlay' }, [
       el('h2', { text: 'Bem-vindo(a) a Ipêra' }),
       el('ul', { className: 'tutorial-steps' }, [
-        el('li', { text: 'Mova-se com WASD, as setas do teclado, ou o joystick na tela.' }),
+        el('li', { text: `Mova-se com ${(['moveUp', 'moveLeft', 'moveDown', 'moveRight'] as const).map((a) => keyLabelFor(a)).join('')}, as setas do teclado, ou o joystick na tela.` }),
         el('li', { text: 'Enfrente as criaturas pelo caminho para ganhar XP e subir de nível.' }),
         el('li', { text: 'Siga a seta de missão para encontrar o alvo do seu objetivo atual.' }),
-        el('li', { text: 'Aproxime-se de um NPC e pressione E (ou toque nele) para conversar.' }),
+        el('li', { text: `Aproxime-se de um NPC e pressione ${keyLabelFor('interact')} (ou toque nele) para conversar.` }),
       ]),
       closeBtn,
     ]);
-    this.tutorialOverlayEl.hidden = this.player.hasSeenTutorial;
-    this.showingTutorial = !this.player.hasSeenTutorial;
+    // Configurações → Jogabilidade → "Mostrar tutoriais" off skips it (without marking it seen).
+    const showTutorial = !this.player.hasSeenTutorial && gameplayOptions().tutorials;
+    this.tutorialOverlayEl.hidden = !showTutorial;
+    this.showingTutorial = showTutorial;
     this.game.uiRoot.append(this.tutorialOverlayEl);
   }
 
@@ -2172,7 +2220,17 @@ export class OverworldScreen implements Screen {
             el('div', {
               className: 'btn small',
               text: `Vender (${price}g)`,
-              onClick: () => {
+              onClick: async () => {
+                // Configurações → Jogabilidade → "Confirmar itens raros": same Raro-or-worked-on rule as salvaging.
+                if (gameplayOptions().confirmRare && salvageNeedsConfirm(instance)) {
+                  const ok = await confirmDialog(this.game.uiRoot, {
+                    title: 'Vender item?',
+                    message: `${itemDisplayName(instance)} (${RARITY_LABEL[instance.rarity]}) será vendido por ${price} de ouro.`,
+                    confirmLabel: 'Vender',
+                    danger: true,
+                  });
+                  if (!ok || !this.shopNpc || !this.player.bag.some((i) => i.uid === instance.uid)) return;
+                }
                 this.player.bag = this.player.bag.filter((i) => i.uid !== instance.uid);
                 if (instance.socketedGemId) this.player.addItem(instance.socketedGemId, 1);
                 this.player.gold += price;
@@ -2498,7 +2556,7 @@ export class OverworldScreen implements Screen {
    * in smoothly instead of snapped, both here and by every caller.
    */
   private desiredCameraPosition(target: THREE.Vector3 = this.scratchDesiredCamPos): THREE.Vector3 {
-    this.scratchCamForward.set(Math.sin(CAMERA_YAW), 0, Math.cos(CAMERA_YAW));
+    this.scratchCamForward.set(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
     target.copy(this.avatar.position).addScaledVector(this.scratchCamForward, -this.camDistance);
     target.y += this.camHeight;
 
@@ -2537,7 +2595,7 @@ export class OverworldScreen implements Screen {
     // cameraHeightFor below so this frame's render already reflects
     // however far the ease has gotten.
     const rigTarget = CAMERA_RIG_PRESETS[this.cameraAngleIndex];
-    const rigLerp = 1 - Math.exp(-dt * 5);
+    const rigLerp = easeFactor(dt, 5, cameraOptions().smoothing);
     // Fase 7: pull back a little while fighting (more with more enemies
     // engaged) so the whole band stays in frame — eased slower than the
     // preset ease so it reads as a drift, not a cut. Off under "Reduzir
@@ -2549,7 +2607,7 @@ export class OverworldScreen implements Screen {
     this.camLookHeight += (rigTarget.lookHeight - this.camLookHeight) * rigLerp;
 
     const desired = this.desiredCameraPosition();
-    const followLerp = 1 - Math.exp(-dt * 6);
+    const followLerp = easeFactor(dt, 6, cameraOptions().smoothing);
     this.camera.position.x += (desired.x - this.camera.position.x) * followLerp;
     this.camera.position.z += (desired.z - this.camera.position.z) * followLerp;
 
@@ -2650,7 +2708,11 @@ export class OverworldScreen implements Screen {
 
     this.refreshHud();
 
-    const hint = el('div', { className: 'hud-hint', text: 'ESC: menu · M: montaria\nI: inventário · K: habilidades · J: missões' });
+    // Reads the live key bindings (Configurações → Controles) — with the defaults it's the same text as always.
+    const hint = el('div', {
+      className: 'hud-hint',
+      text: `${keyLabelFor('pause').toUpperCase()}: menu · ${keyLabelFor('mount')}: montaria\n${keyLabelFor('inventory')}: inventário · ${keyLabelFor('skills')}: habilidades · ${keyLabelFor('quests')}: missões`,
+    });
     this.promptEl = el('div', { className: 'interact-prompt', text: '', onClick: () => this.tryInteract() });
     this.promptEl.hidden = true;
 
@@ -2667,8 +2729,9 @@ export class OverworldScreen implements Screen {
     this.cameraAngleBtn = el('div', {
       className: 'camera-angle-btn',
       onClick: () => this.cycleCameraAngle(),
-      attrs: { title: `Ângulo da câmera: ${CAMERA_RIG_PRESETS[0].label}`, 'aria-label': 'Mudar ângulo da câmera' },
+      attrs: { title: `Ângulo da câmera: ${CAMERA_RIG_PRESETS[this.cameraAngleIndex].label}`, 'aria-label': 'Mudar ângulo da câmera' },
     });
+    this.cameraAngleBtn.classList.toggle('alt-angle', this.cameraAngleIndex !== 0);
     this.cameraAngleBtn.append(buildEyeIconSvg());
 
     this.game.uiRoot.append(
@@ -2688,6 +2751,7 @@ export class OverworldScreen implements Screen {
   /** Hands the dynamic-event director (see OverworldEvents) the few things it needs from this screen. Built after buildHud so its banner/arrow sit above the world but under every overlay. */
   private buildWorldEvents(): void {
     let walkGrid: ReturnType<typeof buildWalkabilityGrid> | null = null;
+    const currentYaw = () => this.camYaw;
     this.worldEvents = new OverworldEvents({
       game: this.game,
       player: this.player,
@@ -2696,7 +2760,10 @@ export class OverworldScreen implements Screen {
       combat: this.combat,
       zone: this.zoneDef,
       tiles: this.tiles,
-      cameraYaw: CAMERA_YAW,
+      // A getter: the player can orbit the camera (Configurações → Câmera).
+      get cameraYaw() {
+        return currentYaw();
+      },
       avatarPosition: () => this.avatar.position,
       isBlockedTile: (x, y) => {
         walkGrid ??= this.currentWalkabilityGrid();
@@ -2730,6 +2797,103 @@ export class OverworldScreen implements Screen {
     const preset = CAMERA_RIG_PRESETS[this.cameraAngleIndex];
     this.cameraAngleBtn.classList.toggle('alt-angle', this.cameraAngleIndex !== 0);
     this.cameraAngleBtn.setAttribute('title', `Ângulo da câmera: ${preset.label}`);
+  }
+
+  // --- Configurações (full options menu) ---------------------------------
+
+  /** Mount-time camera/graphics options: FOV, the starting camera rig, shadows and view distance (systems/graphicsOptions.ts). Every return from the settings screen rebuilds this screen, so this is also where a change lands. */
+  private applyViewOptions(): void {
+    const cam = cameraOptions();
+    this.camera.fov = cam.fov;
+    this.camera.updateProjectionMatrix();
+    this.cameraAngleIndex = cam.defaultView;
+    const rig = CAMERA_RIG_PRESETS[this.cameraAngleIndex];
+    this.camDistance = rig.distance;
+    this.camHeight = rig.height;
+    this.camLookHeight = rig.lookHeight;
+    applySceneGraphics(this.scene, this.camera);
+  }
+
+  private addOptionListeners(): void {
+    const canvas = this.game.renderer.domElement;
+    canvas.addEventListener('pointerdown', this.onCanvasPointerDown);
+    canvas.addEventListener('pointermove', this.onCanvasPointerMove);
+    canvas.addEventListener('pointerup', this.onCanvasPointerUp);
+    canvas.addEventListener('pointercancel', this.onCanvasPointerUp);
+    canvas.addEventListener('contextmenu', this.onCanvasContextMenu);
+    window.addEventListener('blur', this.onFocusLost);
+    document.addEventListener('visibilitychange', this.onFocusLost);
+  }
+
+  private removeOptionListeners(): void {
+    const canvas = this.game.renderer.domElement;
+    canvas.removeEventListener('pointerdown', this.onCanvasPointerDown);
+    canvas.removeEventListener('pointermove', this.onCanvasPointerMove);
+    canvas.removeEventListener('pointerup', this.onCanvasPointerUp);
+    canvas.removeEventListener('pointercancel', this.onCanvasPointerUp);
+    canvas.removeEventListener('contextmenu', this.onCanvasContextMenu);
+    window.removeEventListener('blur', this.onFocusLost);
+    document.removeEventListener('visibilitychange', this.onFocusLost);
+  }
+
+  /** Right-mouse drag on the 3D view orbits the camera (desktop). */
+  private handleOrbitPointerDown(ev: PointerEvent): void {
+    if (ev.button !== 2 || ev.pointerType !== 'mouse') return;
+    this.orbitDragPointerId = ev.pointerId;
+    this.orbitDragLastX = ev.clientX;
+    this.game.renderer.domElement.setPointerCapture?.(ev.pointerId);
+  }
+
+  private handleOrbitPointerMove(ev: PointerEvent): void {
+    if (ev.pointerId !== this.orbitDragPointerId) return;
+    const dx = ev.clientX - this.orbitDragLastX;
+    this.orbitDragLastX = ev.clientX;
+    const cam = cameraOptions();
+    this.camYawTarget = wrapAngle(this.camYawTarget + orbitDragDelta(dx, cam.rotateSensitivity, cam.invertRotation));
+  }
+
+  private handleOrbitPointerUp(ev: PointerEvent): void {
+    if (ev.pointerId !== this.orbitDragPointerId) return;
+    this.orbitDragPointerId = null;
+  }
+
+  /** "Pausar ao sair da janela" (Configurações → Jogabilidade). */
+  private handleFocusLost(): void {
+    if (document.visibilityState === 'visible' && document.hasFocus()) return;
+    if (!gameplayOptions().pauseOnFocusLoss || this.paused || this.showingTutorial) return;
+    if (this.dialogueNpc || this.shopNpc || this.worldMapOpen || this.minimapExpanded || this.questChoiceOverlay?.isOpen) return;
+    this.togglePause();
+  }
+
+  /** Per-frame bits of the options menu: rotate-key orbit, camera yaw easing, periodic autosave, dialogue typewriter. */
+  private tickOptions(dt: number): void {
+    const cam = cameraOptions();
+    const frozen = this.paused || !!this.dialogueNpc || !!this.shopNpc || this.showingTutorial;
+    if (!frozen) {
+      const dir = (this.heldKeys.has(keyFor('cameraRight')) ? 1 : 0) - (this.heldKeys.has(keyFor('cameraLeft')) ? 1 : 0);
+      if (dir !== 0) this.camYawTarget = wrapAngle(this.camYawTarget + orbitKeyDelta(dir, dt, cam.rotateSensitivity, cam.invertRotation));
+    }
+    if (this.camYaw !== this.camYawTarget) {
+      this.camYaw = easeAngle(this.camYaw, this.camYawTarget, dt, cam.smoothing);
+      if (Math.abs(wrapAngle(this.camYawTarget - this.camYaw)) < 1e-4) this.camYaw = this.camYawTarget;
+    }
+
+    const autosaveEvery = autosaveIntervalSeconds(gameplayOptions().autosaveMinutes);
+    if (autosaveEvery > 0) {
+      this.autosaveTimer += dt;
+      if (this.autosaveTimer >= autosaveEvery) {
+        this.autosaveTimer = 0;
+        if (this.player.isAlive()) saveGame(this.player);
+      }
+    }
+
+    if (this.dialogueTypeElapsed >= 0 && this.dialogueNpc) {
+      this.dialogueTypeElapsed += dt;
+      const line = this.dialogueLines[this.dialogueLineIndex] ?? '';
+      const shown = visibleChars(line.length, this.dialogueTypeElapsed, gameplayOptions().textSpeed);
+      this.dialogueLineEl.textContent = line.slice(0, shown);
+      if (shown >= line.length) this.dialogueTypeElapsed = -1;
+    }
   }
 
   /** Keeps the always-visible HP/MP/gold/level/XP readout live now that combat happens in-place instead of in a separate screen with its own status bar. Called every frame (see update()), so a level-up or an XP tick from a kill shows immediately — this used to build the name-line's "Nv.X" once in buildHud() and never touch it again, silently going stale the moment the player leveled up. */
@@ -2842,8 +3006,8 @@ export class OverworldScreen implements Screen {
       return;
     }
 
-    const forward = { x: Math.sin(CAMERA_YAW), z: Math.cos(CAMERA_YAW) };
-    const right = { x: -Math.cos(CAMERA_YAW), z: Math.sin(CAMERA_YAW) };
+    const forward = { x: Math.sin(this.camYaw), z: Math.cos(this.camYaw) };
+    const right = { x: -Math.cos(this.camYaw), z: Math.sin(this.camYaw) };
     const compForward = dx * forward.x + dz * forward.z;
     const compRight = dx * right.x + dz * right.z;
     // Screen-space bearing: +compForward reads as "up" on screen (Y grows
@@ -3193,13 +3357,18 @@ export class OverworldScreen implements Screen {
 
     const updateFromPointer = (ev: PointerEvent) => {
       const rect = base.getBoundingClientRect();
+      // Configurações → Controles → tamanho do joystick scales it with a CSS
+      // transform: rect is in scaled screen pixels, the knob's own translate
+      // in unscaled local ones — `s` converts between the two (1 by default).
+      const s = base.offsetWidth > 0 ? rect.width / base.offsetWidth : 1;
+      const radius = RADIUS * s;
       const dx = ev.clientX - (rect.left + rect.width / 2);
       const dy = ev.clientY - (rect.top + rect.height / 2);
       const dist = Math.hypot(dx, dy);
-      const clampedX = dist > RADIUS ? (dx / dist) * RADIUS : dx;
-      const clampedY = dist > RADIUS ? (dy / dist) * RADIUS : dy;
-      knob.style.transform = `translate(${clampedX}px, ${clampedY}px)`;
-      this.joystickAxis = { x: clampedX / RADIUS, z: clampedY / RADIUS };
+      const clampedX = dist > radius ? (dx / dist) * radius : dx;
+      const clampedY = dist > radius ? (dy / dist) * radius : dy;
+      knob.style.transform = `translate(${clampedX / s}px, ${clampedY / s}px)`;
+      this.joystickAxis = { x: clampedX / radius, z: clampedY / radius };
     };
 
     const release = (ev: PointerEvent) => {
@@ -3244,7 +3413,7 @@ export class OverworldScreen implements Screen {
       [
         this.dialogueNameEl,
         this.dialogueLineEl,
-        el('div', { className: 'dialogue-hint', text: '(toque, E ou Enter para continuar)' }),
+        el('div', { className: 'dialogue-hint', text: `(toque, ${keyLabelFor('interact')} ou Enter para continuar)` }),
         skipBtn,
       ],
     );
@@ -3359,8 +3528,9 @@ export class OverworldScreen implements Screen {
     this.pauseOverlay.hidden = true;
     this.game.uiRoot.append(this.pauseOverlay);
     addHotkeyHint(resumeBtn, 'Esc');
-    this.menuHotkeys = { i: inventoryBtn, k: skillsBtn, j: questLogBtn };
-    for (const [key, btn] of Object.entries(this.menuHotkeys)) addHotkeyHint(btn, key.toUpperCase());
+    // Keyed by the live bindings (Configurações → Controles); I/K/J by default.
+    this.menuHotkeys = { [keyFor('inventory')]: inventoryBtn, [keyFor('skills')]: skillsBtn, [keyFor('quests')]: questLogBtn };
+    for (const [key, btn] of Object.entries(this.menuHotkeys)) addHotkeyHint(btn, keyLabel(key));
     this.refreshMountSection();
   }
 
@@ -3386,7 +3556,7 @@ export class OverworldScreen implements Screen {
     if (this.player.activeMountId) {
       buttons.push(el('div', { className: 'btn', text: 'Desmontar', onClick: () => this.setMounted(null) }));
     }
-    buttons.push(el('div', { className: 'mount-hint', text: 'Troque de montaria no Inventário · tecla M alterna' }));
+    buttons.push(el('div', { className: 'mount-hint', text: `Troque de montaria no Inventário · tecla ${keyLabelFor('mount')} alterna` }));
     this.mountSectionEl.replaceChildren(...buttons);
   }
 

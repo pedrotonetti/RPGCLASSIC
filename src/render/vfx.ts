@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { StatusEffectType } from '../config/types';
+import { particleScale } from '../systems/graphicsOptions';
 
 /**
  * A small, reusable combat-VFX library — Three.js particles/simple geometry
@@ -112,7 +113,7 @@ export class StatusEffectOverlay {
   }
 
   private spawn(type: StatusEffectType): void {
-    const count = 9;
+    const count = Math.max(4, Math.round(9 * particleScale()));
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + Math.random() * 0.4;
@@ -200,7 +201,9 @@ export interface OneShotEffect {
 
 /** A radial particle burst — the workhorse primitive behind almost every effect here. */
 function makeBurst(opts: { color: number; count: number; speed: number; size: number; life: number; upBias?: number; gravity?: number }): OneShotEffect {
-  const { color, count, speed, size, life, upBias = 0.3, gravity = 1.6 } = opts;
+  const { color, speed, size, life, upBias = 0.3, gravity = 1.6 } = opts;
+  // "Partículas/efeitos" (Configurações → Gráficos): Baixo halves every burst.
+  const count = Math.max(3, Math.round(opts.count * particleScale()));
   const velocities: THREE.Vector3[] = [];
   const positions = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
