@@ -39,6 +39,7 @@ export class MainMenuScreen implements Screen {
   private rim!: THREE.DirectionalLight;
   private time = 0;
   private settingsBtn!: HTMLElement;
+  private accountBtn!: HTMLElement;
 
   // "Something watches from the fog" — a rare, brief glimpse of a pair of
   // glowing eyes far behind the distant silhouette, never guaranteed on any
@@ -393,6 +394,13 @@ export class MainMenuScreen implements Screen {
     this.secretToastTimer = 4.5;
   }
 
+  private openAccount(): void {
+    goToLazy(this.game, async () => {
+      const { AuthScreen } = await import('./AuthScreen');
+      return new AuthScreen(this.game, () => this.game.goTo(new MainMenuScreen(this.game)));
+    });
+  }
+
   private openSettings(): void {
     goToLazy(this.game, async () => {
       const { SettingsScreen } = await import('./SettingsScreen');
@@ -520,6 +528,12 @@ export class MainMenuScreen implements Screen {
       slots.map((entry, slot) => this.buildSlotCard(slot, entry)),
     );
 
+    this.accountBtn = el('div', {
+      className: 'btn settings-toggle account-toggle',
+      text: '👤',
+      attrs: { title: 'Conta', 'aria-label': 'Conta e saves na nuvem' },
+      onClick: () => this.openAccount(),
+    });
     this.settingsBtn = el('div', {
       className: 'btn settings-toggle',
       text: '⚙',
@@ -533,6 +547,7 @@ export class MainMenuScreen implements Screen {
       { className: 'main-menu screen' },
       [
         this.settingsBtn,
+        this.accountBtn,
         el('div', { className: 'top-bar' }, [
           // Not a real button — no visible affordance hints at this, on
           // purpose (see onLogoClick/LOGO_CLICK_THRESHOLD); a title-screen

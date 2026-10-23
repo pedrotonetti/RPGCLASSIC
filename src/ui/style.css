@@ -216,6 +216,26 @@ body {
   padding: 0;
   border-radius: 50%;
 }
+.main-menu .account-toggle {
+  right: calc(64px + var(--safe-r));
+}
+.auth-input {
+  flex: 1;
+  pointer-events: auto;
+}
+.auth-qr {
+  width: 180px;
+  height: 180px;
+  background: #fff;
+  padding: 8px;
+  border-radius: 6px;
+  align-self: center;
+}
+.auth-secret {
+  word-break: break-all;
+  user-select: all;
+  text-align: center;
+}
 .save-slots {
   display: flex;
   flex-direction: column;
